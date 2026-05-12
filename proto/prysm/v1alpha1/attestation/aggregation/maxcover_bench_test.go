@@ -1,12 +1,13 @@
-package aggregation
+package aggregation_test
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	aggtesting "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation/aggregation/testing"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation/aggregation"
+	aggtesting "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation/aggregation/testing"
 )
 
 func BenchmarkMaxCoverProblem_MaxCover(b *testing.B) {
@@ -66,7 +67,7 @@ func BenchmarkMaxCoverProblem_MaxCover(b *testing.B) {
 		},
 	}
 	for _, tt := range tests {
-		name := fmt.Sprintf("%d_attestations_with_%d_bit(s)_set", tt.numCandidates, tt.numMarkedBits)
+		name := fmt.Sprintf("%d_aggregations_with_%d_bit(s)_set", tt.numCandidates, tt.numMarkedBits)
 		b.Run(fmt.Sprintf("cur_%s", name), func(b *testing.B) {
 			b.StopTimer()
 			var bitlists []bitfield.Bitlist
@@ -77,12 +78,12 @@ func BenchmarkMaxCoverProblem_MaxCover(b *testing.B) {
 
 			}
 			b.StartTimer()
-			for i := 0; i < b.N; i++ {
-				candidates := make([]*MaxCoverCandidate, len(bitlists))
+			for b.Loop() {
+				candidates := make([]*aggregation.MaxCoverCandidate, len(bitlists))
 				for i := 0; i < len(bitlists); i++ {
-					candidates[i] = NewMaxCoverCandidate(i, &bitlists[i])
+					candidates[i] = aggregation.NewMaxCoverCandidate(i, &bitlists[i])
 				}
-				mc := &MaxCoverProblem{Candidates: candidates}
+				mc := &aggregation.MaxCoverProblem{Candidates: candidates}
 				_, err := mc.Cover(len(bitlists), tt.allowOverlaps)
 				_ = err
 			}
@@ -97,8 +98,8 @@ func BenchmarkMaxCoverProblem_MaxCover(b *testing.B) {
 
 			}
 			b.StartTimer()
-			for i := 0; i < b.N; i++ {
-				_, _, err := MaxCover(bitlists, len(bitlists), tt.allowOverlaps)
+			for b.Loop() {
+				_, _, err := aggregation.MaxCover(bitlists, len(bitlists), tt.allowOverlaps)
 				_ = err
 			}
 		})

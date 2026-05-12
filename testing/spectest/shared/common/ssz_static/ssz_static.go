@@ -6,11 +6,11 @@ import (
 	"path"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/spectest/utils"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/golang/snappy"
 	fssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/spectest/utils"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 // RunSSZStaticTests executes "ssz_static" tests for the given fork of phase using the provided
@@ -56,7 +56,7 @@ func RunSSZStaticTests(t *testing.T, config, forkOrPhase string, unmarshaller Un
 
 					// All types support fastssz generated code, but may also include a custom HTR method.
 					var htrs []HTR
-					htrs = append(htrs, func(s interface{}) ([32]byte, error) {
+					htrs = append(htrs, func(s any) ([32]byte, error) {
 						sszObj, ok := s.(fssz.HashRoot)
 						if !ok {
 							return [32]byte{}, errors.New("could not get hash root, not compatible object")

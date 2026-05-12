@@ -3,19 +3,20 @@ package attestations
 import (
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 // pruneExpired prunes attestations pool on every slot interval.
 func (s *Service) pruneExpired() {
-	ticker := time.NewTicker(s.cfg.pruneInterval)
-	defer ticker.Stop()
+	secondsPerSlot := params.BeaconConfig().SecondsPerSlot
+	offset := time.Duration(secondsPerSlot-1) * time.Second
+	slotTicker := slots.NewSlotTickerWithOffset(s.genesisTime, offset, secondsPerSlot)
+	defer slotTicker.Done()
 	for {
 		select {
-		case <-ticker.C:
+		case <-slotTicker.C():
 			s.pruneExpiredAtts()
 			s.updateMetrics()
 		case <-s.ctx.Done():
@@ -61,12 +62,8 @@ func (s *Service) pruneExpiredAtts() {
 	if _, err := s.cfg.Pool.DeleteSeenUnaggregatedAttestations(); err != nil {
 		log.WithError(err).Error("Cannot delete seen attestations")
 	}
-	unAggregatedAtts, err := s.cfg.Pool.UnaggregatedAttestations()
-	if err != nil {
-		log.WithError(err).Error("Could not get unaggregated attestations")
-		return
-	}
-	for _, att := range unAggregatedAtts {
+
+	for _, att := range s.cfg.Pool.UnaggregatedAttestations() {
 		if s.expired(att.GetData().Slot) {
 			if err := s.cfg.Pool.DeleteUnaggregatedAttestation(att); err != nil {
 				log.WithError(err).Error("Could not delete expired unaggregated attestation")
@@ -84,6 +81,14 @@ func (s *Service) pruneExpiredAtts() {
 			expiredBlockAtts.Inc()
 		}
 	}
+
+	expirySlot, err := s.expirySlot()
+	if err != nil {
+		log.WithError(err).Error("Could not get expiry slot for seen aggregated attestations")
+		return
+	}
+
+	s.cfg.Pool.DeleteSeenAggregatedAttestationsBefore(expirySlot)
 }
 
 // Return true if the input slot has been expired.
@@ -101,9 +106,8 @@ func (s *Service) expired(providedSlot primitives.Slot) bool {
 // Handles expiration of attestations before deneb.
 func (s *Service) expiredPreDeneb(slot primitives.Slot) bool {
 	expirationSlot := slot + params.BeaconConfig().SlotsPerEpoch
-	expirationTime := s.genesisTime + uint64(expirationSlot.Mul(params.BeaconConfig().SecondsPerSlot))
-	currentTime := uint64(prysmTime.Now().Unix())
-	return currentTime >= expirationTime
+	expirationTime := s.genesisTime.Add(time.Duration(expirationSlot.Mul(params.BeaconConfig().SecondsPerSlot)) * time.Second)
+	return expirationTime.Before(time.Now())
 }
 
 // Attestations for a slot before the returned slot are considered expired.

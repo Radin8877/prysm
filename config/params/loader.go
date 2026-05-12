@@ -4,12 +4,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/math"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/math"
-	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
@@ -35,7 +35,7 @@ func UnmarshalConfig(yamlFile []byte, conf *BeaconChainConfig) (*BeaconChainConf
 			conf = MinimalSpecConfig().Copy()
 		} else {
 			// Default to using mainnet.
-			conf = MainnetConfig().Copy()
+			conf = MainnetConfig()
 		}
 	}
 	for i, line := range lines {
@@ -65,6 +65,8 @@ func UnmarshalConfig(yamlFile []byte, conf *BeaconChainConfig) (*BeaconChainConf
 	}
 	// recompute SqrRootSlotsPerEpoch constant to handle non-standard values of SlotsPerEpoch
 	conf.SqrRootSlotsPerEpoch = primitives.Slot(math.IntegerSquareRoot(uint64(conf.SlotsPerEpoch)))
+	// Recompute the fork schedule
+	conf.InitializeForkSchedule()
 	log.Debugf("Config file values: %+v", conf)
 	return conf, nil
 }
@@ -184,6 +186,7 @@ func ConfigToYaml(cfg *BeaconChainConfig) []byte {
 		fmt.Sprintf("GENESIS_FORK_VERSION: %#x", cfg.GenesisForkVersion),
 		fmt.Sprintf("CHURN_LIMIT_QUOTIENT: %d", cfg.ChurnLimitQuotient),
 		fmt.Sprintf("SECONDS_PER_SLOT: %d", cfg.SecondsPerSlot),
+		fmt.Sprintf("SLOT_DURATION_MS: %d", cfg.SlotDurationMilliseconds),
 		fmt.Sprintf("SLOTS_PER_EPOCH: %d", cfg.SlotsPerEpoch),
 		fmt.Sprintf("SECONDS_PER_ETH1_BLOCK: %d", cfg.SecondsPerETH1Block),
 		fmt.Sprintf("ETH1_FOLLOW_DISTANCE: %d", cfg.Eth1FollowDistance),
@@ -191,6 +194,7 @@ func ConfigToYaml(cfg *BeaconChainConfig) []byte {
 		fmt.Sprintf("SHARD_COMMITTEE_PERIOD: %d", cfg.ShardCommitteePeriod),
 		fmt.Sprintf("MIN_VALIDATOR_WITHDRAWABILITY_DELAY: %d", cfg.MinValidatorWithdrawabilityDelay),
 		fmt.Sprintf("MAX_VALIDATORS_PER_WITHDRAWALS_SWEEP: %d", cfg.MaxValidatorsPerWithdrawalsSweep),
+		fmt.Sprintf("MAX_BUILDERS_PER_WITHDRAWALS_SWEEP: %d", cfg.MaxBuildersPerWithdrawalsSweep),
 		fmt.Sprintf("MAX_SEED_LOOKAHEAD: %d", cfg.MaxSeedLookahead),
 		fmt.Sprintf("EJECTION_BALANCE: %d", cfg.EjectionBalance),
 		fmt.Sprintf("MIN_PER_EPOCH_CHURN_LIMIT: %d", cfg.MinPerEpochChurnLimit),
@@ -212,20 +216,23 @@ func ConfigToYaml(cfg *BeaconChainConfig) []byte {
 		fmt.Sprintf("MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS: %d", cfg.MinEpochsForBlobsSidecarsRequest),
 		fmt.Sprintf("MAX_REQUEST_BLOCKS_DENEB: %d", cfg.MaxRequestBlocksDeneb),
 		fmt.Sprintf("MAX_REQUEST_BLOB_SIDECARS: %d", cfg.MaxRequestBlobSidecars),
+		fmt.Sprintf("MAX_REQUEST_BLOB_SIDECARS_ELECTRA: %d", cfg.MaxRequestBlobSidecarsElectra),
 		fmt.Sprintf("BLOB_SIDECAR_SUBNET_COUNT: %d", cfg.BlobsidecarSubnetCount),
+		fmt.Sprintf("BLOB_SIDECAR_SUBNET_COUNT_ELECTRA: %d", cfg.BlobsidecarSubnetCountElectra),
 		fmt.Sprintf("DENEB_FORK_EPOCH: %d", cfg.DenebForkEpoch),
 		fmt.Sprintf("DENEB_FORK_VERSION: %#x", cfg.DenebForkVersion),
 		fmt.Sprintf("ELECTRA_FORK_EPOCH: %d", cfg.ElectraForkEpoch),
 		fmt.Sprintf("ELECTRA_FORK_VERSION: %#x", cfg.ElectraForkVersion),
 		fmt.Sprintf("FULU_FORK_EPOCH: %d", cfg.FuluForkEpoch),
 		fmt.Sprintf("FULU_FORK_VERSION: %#x", cfg.FuluForkVersion),
+		fmt.Sprintf("GLOAS_FORK_VERSION: %#x", cfg.GloasForkVersion),
+		fmt.Sprintf("GLOAS_FORK_EPOCH: %d", cfg.GloasForkEpoch),
 		fmt.Sprintf("EPOCHS_PER_SUBNET_SUBSCRIPTION: %d", cfg.EpochsPerSubnetSubscription),
 		fmt.Sprintf("ATTESTATION_SUBNET_EXTRA_BITS: %d", cfg.AttestationSubnetExtraBits),
 		fmt.Sprintf("ATTESTATION_SUBNET_PREFIX_BITS: %d", cfg.AttestationSubnetPrefixBits),
 		fmt.Sprintf("SUBNETS_PER_NODE: %d", cfg.SubnetsPerNode),
 		fmt.Sprintf("NODE_ID_BITS: %d", cfg.NodeIdBits),
-		fmt.Sprintf("GOSSIP_MAX_SIZE: %d", cfg.GossipMaxSize),
-		fmt.Sprintf("MAX_CHUNK_SIZE: %d", cfg.MaxChunkSize),
+		fmt.Sprintf("MAX_PAYLOAD_SIZE: %d", cfg.MaxPayloadSize),
 		fmt.Sprintf("ATTESTATION_SUBNET_COUNT: %d", cfg.AttestationSubnetCount),
 		fmt.Sprintf("ATTESTATION_PROPAGATION_SLOT_RANGE: %d", cfg.AttestationPropagationSlotRange),
 		fmt.Sprintf("MAX_REQUEST_BLOCKS: %d", cfg.MaxRequestBlocks),
@@ -235,6 +242,28 @@ func ConfigToYaml(cfg *BeaconChainConfig) []byte {
 		fmt.Sprintf("MESSAGE_DOMAIN_INVALID_SNAPPY:  %#x", cfg.MessageDomainInvalidSnappy),
 		fmt.Sprintf("MESSAGE_DOMAIN_VALID_SNAPPY: %#x", cfg.MessageDomainValidSnappy),
 		fmt.Sprintf("MIN_EPOCHS_FOR_BLOCK_REQUESTS: %d", int(cfg.MinEpochsForBlockRequests)),
+		fmt.Sprintf("MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA: %d", cfg.MinPerEpochChurnLimitElectra),
+		fmt.Sprintf("MAX_BLOBS_PER_BLOCK: %d", cfg.DeprecatedMaxBlobsPerBlock),
+		fmt.Sprintf("PROPOSER_REORG_CUTOFF_BPS: %d", cfg.ProposerReorgCutoffBPS),
+		fmt.Sprintf("ATTESTATION_DUE_BPS: %d", cfg.AttestationDueBPS),
+		fmt.Sprintf("AGGREGATE_DUE_BPS: %d", cfg.AggregateDueBPS),
+		fmt.Sprintf("SYNC_MESSAGE_DUE_BPS: %d", cfg.SyncMessageDueBPS),
+		fmt.Sprintf("CONTRIBUTION_DUE_BPS: %d", cfg.ContributionDueBPS),
+		fmt.Sprintf("ATTESTATION_DUE_BPS_GLOAS: %d", cfg.AttestationDueBPSGloas),
+		fmt.Sprintf("AGGREGATE_DUE_BPS_GLOAS: %d", cfg.AggregateDueBPSGloas),
+		fmt.Sprintf("SYNC_MESSAGE_DUE_BPS_GLOAS: %d", cfg.SyncMessageDueBPSGloas),
+		fmt.Sprintf("CONTRIBUTION_DUE_BPS_GLOAS: %d", cfg.ContributionDueBPSGloas),
+		fmt.Sprintf("PAYLOAD_ATTESTATION_DUE_BPS: %d", cfg.PayloadAttestationDueBPS),
+	}
+
+	if len(cfg.BlobSchedule) > 0 {
+		lines = append(lines, "BLOB_SCHEDULE:")
+		for _, entry := range cfg.BlobSchedule {
+			lines = append(lines,
+				"  - EPOCH: "+strconv.FormatUint(uint64(entry.Epoch), 10),
+				"    MAX_BLOBS_PER_BLOCK: "+strconv.FormatUint(entry.MaxBlobsPerBlock, 10),
+			)
+		}
 	}
 
 	yamlFile := []byte(strings.Join(lines, "\n"))

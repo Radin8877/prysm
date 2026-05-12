@@ -1,14 +1,13 @@
 package payloadattribute
 
 import (
+	field_params "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	field_params "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 var (
@@ -22,6 +21,7 @@ type data struct {
 	suggestedFeeRecipient []byte
 	withdrawals           []*enginev1.Withdrawal
 	parentBeaconBlockRoot []byte
+	slotNumber            uint64
 }
 
 var (
@@ -31,7 +31,7 @@ var (
 )
 
 // New returns a new payload attribute with the given input object.
-func New(i interface{}) (Attributer, error) {
+func New(i any) (Attributer, error) {
 	switch a := i.(type) {
 	case nil:
 		return nil, blocks.ErrNilObject
@@ -41,6 +41,8 @@ func New(i interface{}) (Attributer, error) {
 		return initPayloadAttributeFromV2(a)
 	case *enginev1.PayloadAttributesV3:
 		return initPayloadAttributeFromV3(a)
+	case *enginev1.PayloadAttributesV4:
+		return initPayloadAttributeFromV4(a)
 	default:
 		return nil, errors.Wrapf(errUnsupportedPayloadAttribute, "unable to create payload attribute from type %T", i)
 	}
@@ -95,15 +97,29 @@ func initPayloadAttributeFromV3(a *enginev1.PayloadAttributesV3) (Attributer, er
 	}, nil
 }
 
+func initPayloadAttributeFromV4(a *enginev1.PayloadAttributesV4) (Attributer, error) {
+	if a == nil {
+		return nil, errNilPayloadAttribute
+	}
+
+	return &data{
+		version:               version.Gloas,
+		prevRandao:            a.PrevRandao,
+		timeStamp:             a.Timestamp,
+		suggestedFeeRecipient: a.SuggestedFeeRecipient,
+		withdrawals:           a.Withdrawals,
+		parentBeaconBlockRoot: a.ParentBeaconBlockRoot,
+		slotNumber:            a.SlotNumber,
+	}, nil
+}
+
 // EventData holds the values for a PayloadAttributes event.
 type EventData struct {
 	ProposerIndex     primitives.ValidatorIndex
 	ProposalSlot      primitives.Slot
 	ParentBlockNumber uint64
-	ParentBlockRoot   []byte
 	ParentBlockHash   []byte
 	Attributer        Attributer
-	HeadState         state.BeaconState
 	HeadBlock         interfaces.ReadOnlySignedBeaconBlock
 	HeadRoot          [field_params.RootLength]byte
 }

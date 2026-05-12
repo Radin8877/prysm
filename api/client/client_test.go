@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestValidHostname(t *testing.T) {

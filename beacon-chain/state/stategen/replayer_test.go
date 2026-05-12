@@ -4,13 +4,23 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
+
+type envelopeCountingHistory struct {
+	*mockHistory
+	envelopeCalls int
+}
+
+func (h *envelopeCountingHistory) ExecutionPayloadEnvelope(_ context.Context, _ [32]byte) (*ethpb.SignedBlindedExecutionPayloadEnvelope, error) {
+	h.envelopeCalls++
+	return nil, nil
+}
 
 func headerFromBlock(b interfaces.ReadOnlySignedBeaconBlock) (*ethpb.BeaconBlockHeader, error) {
 	bodyRoot, err := b.Block().Body().HashTreeRoot()
@@ -30,7 +40,7 @@ func headerFromBlock(b interfaces.ReadOnlySignedBeaconBlock) (*ethpb.BeaconBlock
 
 func TestReplayBlocks_ZeroDiff(t *testing.T) {
 	logHook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	specs := []mockHistorySpec{{slot: 0}}
 	hist := newMockHistory(t, specs, 0)
 	ch := NewCanonicalHistory(hist, hist, hist)
@@ -40,7 +50,7 @@ func TestReplayBlocks_ZeroDiff(t *testing.T) {
 }
 
 func TestReplayBlocks(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var zero, one, two, three, four, five primitives.Slot = 50, 51, 150, 151, 152, 200
 	specs := []mockHistorySpec{
 		{slot: zero},
@@ -88,8 +98,22 @@ func TestReplayBlocks(t *testing.T) {
 	// so there are multiple differences compared to the "db" state that applies all blocks
 }
 
+func TestReplayerBlocks_SkipsExecutionPayloadEnvelopeLookup_PreGloas(t *testing.T) {
+	ctx := t.Context()
+	specs := []mockHistorySpec{
+		{slot: 1, canonicalBlock: true},
+	}
+
+	base := newMockHistory(t, specs, 2)
+	hist := &envelopeCountingHistory{mockHistory: base}
+	ch := NewCanonicalHistory(hist, hist, hist)
+	_, err := ch.ReplayerForSlot(1).ReplayBlocks(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, hist.envelopeCalls)
+}
+
 func TestReplayToSlot(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var zero, one, two, three, four, five primitives.Slot = 50, 51, 150, 151, 152, 200
 	specs := []mockHistorySpec{
 		{slot: zero},

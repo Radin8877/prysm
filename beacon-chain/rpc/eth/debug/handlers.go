@@ -2,21 +2,33 @@ package debug
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/shared"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/api"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/eth/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/eth/shared"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+	"github.com/pkg/errors"
 )
 
-const errMsgStateFromConsensus = "Could not convert consensus state to response"
+const (
+	errMsgStateFromConsensus = "Could not convert consensus state to response"
+)
 
 // GetBeaconStateV2 returns the full beacon state for a given state ID.
 func (s *Server) GetBeaconStateV2(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +58,7 @@ func (s *Server) getBeaconStateV2(ctx context.Context, w http.ResponseWriter, id
 
 	isOptimistic, err := helpers.IsOptimistic(ctx, id, s.OptimisticModeFetcher, s.Stater, s.ChainInfoFetcher, s.BeaconDB)
 	if err != nil {
-		httputil.HandleError(w, "Could not check if state is optimistic: "+err.Error(), http.StatusInternalServerError)
+		helpers.HandleIsOptimisticError(w, err)
 		return
 	}
 	blockRoot, err := st.LatestBlockHeader().HashTreeRoot()
@@ -55,7 +67,7 @@ func (s *Server) getBeaconStateV2(ctx context.Context, w http.ResponseWriter, id
 		return
 	}
 	isFinalized := s.FinalizationFetcher.IsFinalized(ctx, blockRoot)
-	var respSt interface{}
+	var respSt any
 
 	switch st.Version() {
 	case version.Phase0:
@@ -100,25 +112,37 @@ func (s *Server) getBeaconStateV2(ctx context.Context, w http.ResponseWriter, id
 			httputil.HandleError(w, errMsgStateFromConsensus+": "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+	case version.Gloas:
+		if strings.ToLower(string(id)) == "head" {
+			st, err = s.Stater.State(ctx, []byte(strconv.FormatUint(uint64(s.HeadFetcher.HeadSlot()), 10)))
+			if err != nil {
+				shared.WriteStateFetchError(w, err)
+				return
+			}
+		}
+		respSt, err = structs.BeaconStateGloasFromConsensus(st)
+		if err != nil {
+			httputil.HandleError(w, errMsgStateFromConsensus+": "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	default:
 		httputil.HandleError(w, "Unsupported state version", http.StatusInternalServerError)
 		return
 	}
 
-	jsonBytes, err := json.Marshal(respSt)
-	if err != nil {
-		httputil.HandleError(w, "Could not marshal state into JSON: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
 	ver := version.String(st.Version())
-	resp := &structs.GetBeaconStateV2Response{
-		Version:             ver,
-		ExecutionOptimistic: isOptimistic,
-		Finalized:           isFinalized,
-		Data:                jsonBytes,
-	}
 	w.Header().Set(api.VersionHeader, ver)
-	httputil.WriteJson(w, resp)
+
+	// NOTE: Use an anonymous struct with Data as any instead of GetBeaconStateV2Response
+	// (which has Data as json.RawMessage) to avoid a double-encode: json.Marshal(state)
+	// into []byte, then json.Encode(response) copying those bytes again. With Data as any,
+	// the encoder marshals the state directly in a single pass, halving memory usage.
+	httputil.WriteJson(w, struct {
+		Version             string `json:"version"`
+		ExecutionOptimistic bool   `json:"execution_optimistic"`
+		Finalized           bool   `json:"finalized"`
+		Data                any    `json:"data"`
+	}{ver, isOptimistic, isFinalized, respSt})
 }
 
 // getBeaconStateSSZV2 returns the SSZ-serialized version of the full beacon state object for given state ID.
@@ -134,7 +158,7 @@ func (s *Server) getBeaconStateSSZV2(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 	w.Header().Set(api.VersionHeader, version.String(st.Version()))
-	httputil.WriteSsz(w, sszState, "beacon_state.ssz")
+	httputil.WriteSsz(w, sszState)
 }
 
 // GetForkChoiceHeadsV2 retrieves the leaves of the current fork choice tree.
@@ -189,7 +213,8 @@ func (s *Server) GetForkChoice(w http.ResponseWriter, r *http.Request) {
 				UnrealizedFinalizedEpoch: fmt.Sprintf("%d", n.UnrealizedFinalizedEpoch),
 				Balance:                  fmt.Sprintf("%d", n.Balance),
 				ExecutionOptimistic:      n.ExecutionOptimistic,
-				TimeStamp:                fmt.Sprintf("%d", n.Timestamp),
+				TimeStamp:                n.Timestamp.String(),
+				Target:                   fmt.Sprintf("%#x", n.Target),
 			},
 		}
 	}
@@ -206,4 +231,193 @@ func (s *Server) GetForkChoice(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	httputil.WriteJson(w, resp)
+}
+
+// DataColumnSidecars retrieves data column sidecars for a given block id.
+func (s *Server) DataColumnSidecars(w http.ResponseWriter, r *http.Request) {
+	ctx, span := trace.StartSpan(r.Context(), "debug.DataColumnSidecars")
+	defer span.End()
+
+	// Check if we're before Fulu fork - data columns are only available from Fulu onwards
+	fuluForkEpoch := params.BeaconConfig().FuluForkEpoch
+	if fuluForkEpoch == math.MaxUint64 {
+		httputil.HandleError(w, "Data columns are not supported - Fulu fork not configured", http.StatusBadRequest)
+		return
+	}
+
+	// Check if we're before Fulu fork based on current slot
+	currentSlot := s.GenesisTimeFetcher.CurrentSlot()
+	currentEpoch := primitives.Epoch(currentSlot / params.BeaconConfig().SlotsPerEpoch)
+	if currentEpoch < fuluForkEpoch {
+		httputil.HandleError(w, "Data columns are not supported - before Fulu fork", http.StatusBadRequest)
+		return
+	}
+
+	indices, err := parseDataColumnIndices(r.URL)
+	if err != nil {
+		httputil.HandleError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	blockId := r.PathValue("block_id")
+
+	verifiedDataColumns, rpcErr := s.Blocker.DataColumns(ctx, blockId, indices)
+	if rpcErr != nil {
+		code := core.ErrorReasonToHTTP(rpcErr.Reason)
+		switch code {
+		case http.StatusBadRequest:
+			httputil.HandleError(w, "Bad request: "+rpcErr.Err.Error(), code)
+			return
+		case http.StatusNotFound:
+			httputil.HandleError(w, "Not found: "+rpcErr.Err.Error(), code)
+			return
+		case http.StatusInternalServerError:
+			httputil.HandleError(w, "Internal server error: "+rpcErr.Err.Error(), code)
+			return
+		default:
+			httputil.HandleError(w, rpcErr.Err.Error(), code)
+			return
+		}
+	}
+
+	blk, err := s.Blocker.Block(ctx, []byte(blockId))
+	if !shared.WriteBlockFetchError(w, blk, err) {
+		return
+	}
+
+	if httputil.RespondWithSsz(r) {
+		sszResp, err := buildDataColumnSidecarsSSZResponse(verifiedDataColumns)
+		if err != nil {
+			httputil.HandleError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set(api.VersionHeader, version.String(blk.Version()))
+		httputil.WriteSsz(w, sszResp)
+		return
+	}
+
+	blkRoot, err := blk.Block().HashTreeRoot()
+	if err != nil {
+		httputil.HandleError(w, "Could not hash block: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	isOptimistic, err := s.OptimisticModeFetcher.IsOptimisticForRoot(ctx, blkRoot)
+	if err != nil {
+		httputil.HandleError(w, "Could not check if block is optimistic: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data, err := buildDataColumnSidecarsJsonResponse(verifiedDataColumns)
+	if err != nil {
+		httputil.HandleError(w, "Could not build data column sidecars response: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp := &structs.GetDebugDataColumnSidecarsResponse{
+		Version:             version.String(blk.Version()),
+		Data:                data,
+		ExecutionOptimistic: isOptimistic,
+		Finalized:           s.FinalizationFetcher.IsFinalized(ctx, blkRoot),
+	}
+	w.Header().Set(api.VersionHeader, version.String(blk.Version()))
+	httputil.WriteJson(w, resp)
+}
+
+// parseDataColumnIndices filters out invalid and duplicate data column indices
+func parseDataColumnIndices(url *url.URL) ([]int, error) {
+	const numberOfColumns = fieldparams.NumberOfColumns
+	rawIndices := url.Query()["indices"]
+	indices := make([]int, 0, numberOfColumns)
+	invalidIndices := make([]string, 0)
+loop:
+	for _, raw := range rawIndices {
+		ix, err := strconv.Atoi(raw)
+		if err != nil {
+			invalidIndices = append(invalidIndices, raw)
+			continue
+		}
+		if !(0 <= ix && uint64(ix) < numberOfColumns) {
+			invalidIndices = append(invalidIndices, raw)
+			continue
+		}
+		for i := range indices {
+			if ix == indices[i] {
+				continue loop
+			}
+		}
+		indices = append(indices, ix)
+	}
+
+	if len(invalidIndices) > 0 {
+		return nil, fmt.Errorf("requested data column indices %v are invalid", invalidIndices)
+	}
+	return indices, nil
+}
+
+func buildDataColumnSidecarsJsonResponse(verifiedDataColumns []blocks.VerifiedRODataColumn) ([]*structs.DataColumnSidecar, error) {
+	sidecars := make([]*structs.DataColumnSidecar, len(verifiedDataColumns))
+	for i, dc := range verifiedDataColumns {
+		cells := dc.Column()
+		column := make([]string, len(cells))
+		for j, cell := range cells {
+			column[j] = hexutil.Encode(cell)
+		}
+
+		comms, err := dc.KzgCommitments()
+		if err != nil {
+			return nil, err
+		}
+		kzgCommitments := make([]string, len(comms))
+		for j, commitment := range comms {
+			kzgCommitments[j] = hexutil.Encode(commitment)
+		}
+
+		kzgProofs := make([]string, len(dc.KzgProofs()))
+		for j, proof := range dc.KzgProofs() {
+			kzgProofs[j] = hexutil.Encode(proof)
+		}
+
+		incProof, err := dc.KzgCommitmentsInclusionProof()
+		if err != nil {
+			return nil, err
+		}
+		kzgCommitmentsInclusionProof := make([]string, len(incProof))
+		for j, proof := range incProof {
+			kzgCommitmentsInclusionProof[j] = hexutil.Encode(proof)
+		}
+
+		sbh, err := dc.SignedBlockHeader()
+		if err != nil {
+			return nil, err
+		}
+		sidecars[i] = &structs.DataColumnSidecar{
+			Index:                        strconv.FormatUint(dc.Index(), 10),
+			Column:                       column,
+			KzgCommitments:               kzgCommitments,
+			KzgProofs:                    kzgProofs,
+			SignedBeaconBlockHeader:      structs.SignedBeaconBlockHeaderFromConsensus(sbh),
+			KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+		}
+	}
+	return sidecars, nil
+}
+
+// buildDataColumnSidecarsSSZResponse builds SSZ response for data column sidecars
+func buildDataColumnSidecarsSSZResponse(verifiedDataColumns []blocks.VerifiedRODataColumn) ([]byte, error) {
+	if len(verifiedDataColumns) == 0 {
+		return []byte{}, nil
+	}
+
+	// Pre-allocate buffer for all sidecars using the known SSZ size
+	sizePerSidecar := (&ethpb.DataColumnSidecar{}).SizeSSZ()
+	ssz := make([]byte, 0, sizePerSidecar*len(verifiedDataColumns))
+
+	// Marshal and append each sidecar
+	for i, sidecar := range verifiedDataColumns {
+		sszrep, err := sidecar.MarshalSSZ()
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to marshal data column sidecar at index %d", i)
+		}
+		ssz = append(ssz, sszrep...)
+	}
+
+	return ssz, nil
 }

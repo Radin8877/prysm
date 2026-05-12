@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 func (c *beaconApiValidatorClient) prepareBeaconProposer(ctx context.Context, recipients []*ethpb.PrepareBeaconProposerRequest_FeeRecipientContainer) error {
@@ -26,5 +26,5 @@ func (c *beaconApiValidatorClient) prepareBeaconProposer(ctx context.Context, re
 		return errors.Wrap(err, "failed to marshal recipients")
 	}
 
-	return c.jsonRestHandler.Post(ctx, "/eth/v1/validator/prepare_beacon_proposer", nil, bytes.NewBuffer(marshalledJsonRecipients), nil)
+	return c.handler.Post(ctx, "/eth/v1/validator/prepare_beacon_proposer", nil, bytes.NewBuffer(marshalledJsonRecipients), nil)
 }

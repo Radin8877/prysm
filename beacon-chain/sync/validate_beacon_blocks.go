@@ -1,37 +1,41 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	blockfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/block"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	consensusblocks "github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	blockfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/block"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	consensusblocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	ErrOptimisticParent    = errors.New("parent of the block is optimistic")
-	errRejectCommitmentLen = errors.New("[REJECT] The length of KZG commitments is less than or equal to the limitation defined in Consensus Layer")
+	ErrOptimisticParent         = errors.New("parent of the block is optimistic")
+	errRejectCommitmentLen      = errors.New("[REJECT] The length of KZG commitments is less than or equal to the limitation defined in Consensus Layer")
+	ErrSlashingSignatureFailure = errors.New("proposer slashing signature verification failed")
 )
 
 // validateBeaconBlockPubSub checks that the incoming block has a valid BLS signature.
@@ -80,7 +84,7 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 		},
 	})
 
-	if features.Get().EnableSlasher {
+	if s.slasherEnabled {
 		// Feed the block header to slasher if enabled. This action
 		// is done in the background to avoid adding more load to this critical code path.
 		go func() {
@@ -93,12 +97,18 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 		}()
 	}
 
-	if err := validateDenebBeaconBlock(blk.Block()); err != nil {
-		return pubsub.ValidationReject, err
-	}
-
 	// Verify the block is the first block received for the proposer for the slot.
 	if s.hasSeenBlockIndexSlot(blk.Block().Slot(), blk.Block().ProposerIndex()) {
+		// Attempt to detect and broadcast equivocation before ignoring
+		err = s.detectAndBroadcastEquivocation(ctx, blk)
+		if err != nil {
+			// If signature verification fails, reject the block
+			if errors.Is(err, ErrSlashingSignatureFailure) {
+				return pubsub.ValidationReject, err
+			}
+			// In case there is some other error log but don't reject
+			log.WithError(err).Debug("Could not detect/broadcast equivocation")
+		}
 		return pubsub.ValidationIgnore, nil
 	}
 
@@ -117,6 +127,9 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 		log.WithError(err).WithFields(getBlockFields(blk)).Debug("Received block with an invalid parent")
 		return pubsub.ValidationReject, err
 	}
+	if res, err := s.validateExecutionPayloadBidParentValid(ctx, blk.Block()); err != nil {
+		return res, err
+	}
 
 	s.pendingQueueLock.RLock()
 	if s.seenPendingBlocks[blockRoot] {
@@ -128,7 +141,7 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 	// Be lenient in handling early blocks. Instead of discarding blocks arriving later than
 	// MAXIMUM_GOSSIP_CLOCK_DISPARITY in future, we tolerate blocks arriving at max two slots
 	// earlier (SECONDS_PER_SLOT * 2 seconds). Queue such blocks and process them at the right slot.
-	genesisTime := uint64(s.cfg.clock.GenesisTime().Unix())
+	genesisTime := s.cfg.clock.GenesisTime()
 	if err := slots.VerifyTime(genesisTime, blk.Block().Slot(), earlyBlockProcessingTolerance); err != nil {
 		log.WithError(err).WithFields(getBlockFields(blk)).Debug("Ignored block: could not verify slot time")
 		return pubsub.ValidationIgnore, nil
@@ -150,6 +163,12 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 		err := fmt.Errorf("finalized slot %d greater or equal to block slot %d", startSlot, blk.Block().Slot())
 		log.WithFields(getBlockFields(blk)).Debug(err)
 		return pubsub.ValidationIgnore, err
+	}
+
+	if s.cfg.chain.ShouldIgnoreData(blk.Block().ParentRoot(), blk.Block().Slot()) {
+		log.WithFields(getBlockFields(blk)).Debug("Ignoring block with canonical parent before justified checkpoint")
+		ignoredPreJustifiedBlockCount.Inc()
+		return pubsub.ValidationIgnore, nil
 	}
 
 	// Process the block if the clock jitter is less than MAXIMUM_GOSSIP_CLOCK_DISPARITY.
@@ -188,14 +207,39 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 		log.WithError(err).WithFields(getBlockFields(blk)).Debug("Could not identify parent for block")
 		return pubsub.ValidationIgnore, err
 	}
+	if res, err := s.validateExecutionPayloadBidParentSeen(ctx, blk.Block()); res == pubsub.ValidationIgnore {
+		if sigRes, sigErr := s.verifyPendingBlockSignature(ctx, blk, blockRoot); sigErr != nil {
+			log.WithError(sigErr).WithFields(getBlockFields(blk)).Debug("Could not verify block signature")
+			return sigRes, sigErr
+		}
+		s.pendingQueueLock.Lock()
+		if qErr := s.insertBlockToPendingQueue(blk.Block().Slot(), blk, blockRoot); qErr != nil {
+			s.pendingQueueLock.Unlock()
+			log.WithError(qErr).WithFields(getBlockFields(blk)).Debug("Could not insert block to pending queue")
+			return pubsub.ValidationIgnore, qErr
+		}
+		s.pendingQueueLock.Unlock()
+		go s.requestPayloadEnvelope(blk.Block().ParentRoot())
+		log.WithError(err).WithFields(getBlockFields(blk)).Debug("Parent payload not yet available, queuing block")
+		return pubsub.ValidationIgnore, err
+	}
+
+	if res, err := s.validateExecutionPayloadBid(ctx, blk.Block()); err != nil {
+		if res == pubsub.ValidationReject {
+			s.setBadBlock(ctx, blockRoot)
+		}
+		return res, err
+	}
 
 	err = s.validateBeaconBlock(ctx, blk, blockRoot)
 	if err != nil {
-		// If the parent is optimistic, process the block as usual
-		// This also does not penalize a peer which sends optimistic blocks
-		if !errors.Is(ErrOptimisticParent, err) {
+		if s.hasBadBlock(blockRoot) {
 			log.WithError(err).WithFields(getBlockFields(blk)).Debug("Could not validate beacon block")
 			return pubsub.ValidationReject, err
+		}
+		if !errors.Is(ErrOptimisticParent, err) {
+			log.WithError(err).WithFields(getBlockFields(blk)).Debug("Could not validate beacon block")
+			return pubsub.ValidationIgnore, err
 		}
 	}
 
@@ -210,7 +254,7 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 
 	// Log the arrival time of the accepted block
 	graffiti := blk.Block().Body().Graffiti()
-	startTime, err := slots.ToTime(genesisTime, blk.Block().Slot())
+	startTime, err := slots.StartTime(genesisTime, blk.Block().Slot())
 	logFields := logrus.Fields{
 		"blockSlot":     blk.Block().Slot(),
 		"proposerIndex": blk.Block().ProposerIndex(),
@@ -228,6 +272,16 @@ func (s *Service) validateBeaconBlockPubSub(ctx context.Context, pid peer.ID, ms
 
 	blockArrivalGossipSummary.Observe(float64(sinceSlotStartTime.Milliseconds()))
 	blockVerificationGossipSummary.Observe(float64(validationTime.Milliseconds()))
+
+	if s.cfg.operationNotifier != nil {
+		s.cfg.operationNotifier.OperationFeed().Send(&feed.Event{
+			Type: operation.BlockGossipReceived,
+			Data: &operation.BlockGossipReceivedData{
+				SignedBlock: blk,
+			},
+		})
+	}
+
 	return pubsub.ValidationAccept, nil
 }
 
@@ -240,12 +294,15 @@ func (s *Service) validateBeaconBlock(ctx context.Context, blk interfaces.ReadOn
 		return err
 	}
 
-	parentState, err := s.validatePhase0Block(ctx, blk, blockRoot)
+	verifyingState, err := s.validatePhase0Block(ctx, blk, blockRoot)
 	if err != nil {
 		return err
 	}
+	if verifyingState == nil {
+		return errors.New("could not get verifying state")
+	}
 
-	if err = s.validateBellatrixBeaconBlock(ctx, parentState, blk.Block()); err != nil {
+	if err = s.validateBellatrixBeaconBlock(ctx, verifyingState, blk.Block()); err != nil {
 		if errors.Is(err, ErrOptimisticParent) {
 			return err
 		}
@@ -260,28 +317,25 @@ func (s *Service) validateBeaconBlock(ctx context.Context, blk interfaces.ReadOn
 // - Checks that the parent is in our forkchoice tree.
 // - Validates that the proposer signature is valid.
 // - Validates that the proposer index is valid.
-func (s *Service) validatePhase0Block(ctx context.Context, blk interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte) (state.BeaconState, error) {
+// Returns a state that has compatible Randao Mix and active validator indices as the block's parent state advanced to the block's slot.
+// This state can be used for further block validations.
+func (s *Service) validatePhase0Block(ctx context.Context, blk interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte) (state.ReadOnlyBeaconState, error) {
 	if !s.cfg.chain.InForkchoice(blk.Block().ParentRoot()) {
 		s.setBadBlock(ctx, blockRoot)
 		return nil, blockchain.ErrNotDescendantOfFinalized
 	}
 
-	parentState, err := s.cfg.stateGen.StateByRoot(ctx, blk.Block().ParentRoot())
+	verifyingState, err := s.blockVerifyingState(ctx, blk)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := blocks.VerifyBlockSignatureUsingCurrentFork(parentState, blk, blockRoot); err != nil {
+	if err := blocks.VerifyBlockSignatureUsingCurrentFork(verifyingState, blk, blockRoot); err != nil {
+		if errors.Is(err, blocks.ErrInvalidSignature) {
+			s.setBadBlock(ctx, blockRoot)
+		}
 		return nil, err
 	}
-	// In the event the block is more than an epoch ahead from its
-	// parent state, we have to advance the state forward.
-	parentRoot := blk.Block().ParentRoot()
-	parentState, err = transition.ProcessSlotsUsingNextSlotCache(ctx, parentState, parentRoot[:], blk.Block().Slot())
-	if err != nil {
-		return nil, err
-	}
-	idx, err := helpers.BeaconProposerIndex(ctx, parentState)
+	idx, err := helpers.BeaconProposerIndexAtSlot(ctx, verifyingState, blk.Block().Slot())
 	if err != nil {
 		return nil, err
 	}
@@ -289,11 +343,67 @@ func (s *Service) validatePhase0Block(ctx context.Context, blk interfaces.ReadOn
 		s.setBadBlock(ctx, blockRoot)
 		return nil, errors.New("incorrect proposer index")
 	}
-	return parentState, nil
+	return verifyingState, nil
+}
+
+// blockVerifyingState returns the appropriate state to verify the signature and proposer index of the given block.
+// The returned state is guaranteed to be at the same epoch as the block's epoch, and have the same randao mix and active validator indices as the
+// block's parent state advanced to the block's slot.
+func (s *Service) blockVerifyingState(ctx context.Context, blk interfaces.ReadOnlySignedBeaconBlock) (state.ReadOnlyBeaconState, error) {
+	headRoot, err := s.cfg.chain.HeadRoot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parentRoot := blk.Block().ParentRoot()
+	blockSlot := blk.Block().Slot()
+	blockEpoch := slots.ToEpoch(blockSlot)
+	headSlot := s.cfg.chain.HeadSlot()
+	headEpoch := slots.ToEpoch(headSlot)
+	// Use head if it's the parent
+	if bytes.Equal(parentRoot[:], headRoot) {
+		// If they are in the same epoch, then we can return the head state directly
+		if blockEpoch == headEpoch {
+			return s.cfg.chain.HeadStateReadOnly(ctx)
+		}
+		// Otherwise, we need to process the head state to the block's slot
+		headState, err := s.cfg.chain.HeadState(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return transition.ProcessSlotsUsingNextSlotCache(ctx, headState, parentRoot[:], blk.Block().Slot())
+	}
+	// If head and block are in the same epoch and head is compatible with the parent's dependent root, then use head
+	if blockEpoch == headEpoch {
+		headDependent, err := s.cfg.chain.DependentRootForEpoch([32]byte(headRoot), blockEpoch)
+		if err != nil {
+			return nil, err
+		}
+		parentDependent, err := s.cfg.chain.DependentRootForEpoch([32]byte(parentRoot), blockEpoch)
+		if err != nil {
+			return nil, err
+		}
+		if bytes.Equal(headDependent[:], parentDependent[:]) {
+			return s.cfg.chain.HeadStateReadOnly(ctx)
+		}
+	}
+	// Otherwise retrieve the the parent state and advance it to the block's slot
+	roblock, err := consensusblocks.NewROBlockWithRoot(blk, [32]byte{}) // root is not used.
+	if err != nil {
+		return nil, err
+	}
+	parentState, err := s.cfg.chain.GetBlockPreState(ctx, roblock)
+	if err != nil {
+		return nil, err
+	}
+	parentEpoch := slots.ToEpoch(parentState.Slot())
+	if blockEpoch == parentEpoch {
+		return parentState, nil
+	}
+	return transition.ProcessSlotsUsingNextSlotCache(ctx, parentState, parentRoot[:], blk.Block().Slot())
 }
 
 func validateDenebBeaconBlock(blk interfaces.ReadOnlyBeaconBlock) error {
-	if blk.Version() < version.Deneb {
+	if blk.Version() < version.Deneb || blk.Version() >= version.Gloas {
 		return nil
 	}
 	commits, err := blk.Body().BlobKzgCommitments()
@@ -311,6 +421,8 @@ func validateDenebBeaconBlock(blk interfaces.ReadOnlyBeaconBlock) error {
 }
 
 // validateBellatrixBeaconBlock validates the block for the Bellatrix fork.
+// The verifying state is used only to check if the chain is execution enabled.
+//
 // spec code:
 //
 //	If the execution is enabled for the block -- i.e. is_execution_enabled(state, block.body) then validate the following:
@@ -323,14 +435,18 @@ func validateDenebBeaconBlock(blk interfaces.ReadOnlyBeaconBlock) error {
 //	   otherwise:
 //	      [IGNORE] The block's parent (defined by block.parent_root) passes all validation (including execution
 //	       node verification of the block.body.execution_payload).
-func (s *Service) validateBellatrixBeaconBlock(ctx context.Context, parentState state.BeaconState, blk interfaces.ReadOnlyBeaconBlock) error {
+func (s *Service) validateBellatrixBeaconBlock(ctx context.Context, verifyingState state.ReadOnlyBeaconState, blk interfaces.ReadOnlyBeaconBlock) error {
+	if blk.Version() >= version.Gloas {
+		return nil
+	}
+
 	// Error if block and state are not the same version
-	if parentState.Version() != blk.Version() {
+	if verifyingState.Version() != blk.Version() {
 		return errors.New("block and state are not the same version")
 	}
 
 	body := blk.Body()
-	executionEnabled, err := blocks.IsExecutionEnabled(parentState, body)
+	executionEnabled, err := blocks.IsExecutionEnabled(verifyingState, body)
 	if err != nil {
 		return err
 	}
@@ -338,7 +454,7 @@ func (s *Service) validateBellatrixBeaconBlock(ctx context.Context, parentState 
 		return nil
 	}
 
-	t, err := slots.ToTime(parentState.GenesisTime(), blk.Slot())
+	t, err := slots.StartTime(verifyingState.GenesisTime(), blk.Slot())
 	if err != nil {
 		return err
 	}
@@ -400,10 +516,32 @@ func (s *Service) setSeenBlockIndexSlot(slot primitives.Slot, proposerIdx primit
 
 // Returns true if the block is marked as a bad block.
 func (s *Service) hasBadBlock(root [32]byte) bool {
+	if features.BlacklistedBlock(root) {
+		return true
+	}
 	s.badBlockLock.RLock()
 	defer s.badBlockLock.RUnlock()
 	_, seen := s.badBlockCache.Get(string(root[:]))
 	return seen
+}
+
+// Returns true if the payload for the given block root is marked as bad.
+func (s *Service) hasBadPayload(root [32]byte) bool {
+	s.badPayloadLock.RLock()
+	defer s.badPayloadLock.RUnlock()
+	_, seen := s.badPayloadCache.Get(string(root[:]))
+	return seen
+}
+
+// Set bad payload in the cache.
+func (s *Service) setBadPayload(ctx context.Context, root [32]byte) {
+	s.badPayloadLock.Lock()
+	defer s.badPayloadLock.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	log.WithField("root", fmt.Sprintf("%#x", root)).Debug("Inserting in invalid payload cache")
+	s.badPayloadCache.Add(string(root[:]), true)
 }
 
 // Set bad block in the cache.
@@ -418,8 +556,8 @@ func (s *Service) setBadBlock(ctx context.Context, root [32]byte) {
 }
 
 // This captures metrics for block arrival time by subtracts slot start time.
-func captureArrivalTimeMetric(genesisTime uint64, currentSlot primitives.Slot) error {
-	startTime, err := slots.ToTime(genesisTime, currentSlot)
+func captureArrivalTimeMetric(genesis time.Time, currentSlot primitives.Slot) error {
+	startTime, err := slots.StartTime(genesis, currentSlot)
 	if err != nil {
 		return err
 	}
@@ -434,8 +572,8 @@ func captureArrivalTimeMetric(genesisTime uint64, currentSlot primitives.Slot) e
 // current_time +  MAXIMUM_GOSSIP_CLOCK_DISPARITY. in short, this function
 // returns true if the corresponding block should be queued and false if
 // the block should be processed immediately.
-func isBlockQueueable(genesisTime uint64, slot primitives.Slot, receivedTime time.Time) bool {
-	slotTime, err := slots.ToTime(genesisTime, slot)
+func isBlockQueueable(genesisTime time.Time, slot primitives.Slot, receivedTime time.Time) bool {
+	slotTime, err := slots.StartTime(genesisTime, slot)
 	if err != nil {
 		return false
 	}
@@ -455,4 +593,75 @@ func getBlockFields(b interfaces.ReadOnlySignedBeaconBlock) logrus.Fields {
 		"graffiti":      string(graffiti[:]),
 		"version":       b.Block().Version(),
 	}
+}
+
+// detectAndBroadcastEquivocation checks if the given block is an equivocating block by comparing it with
+// the head block. If the blocks are from the same slot and proposer but have different signatures,
+// it creates and broadcasts a proposer slashing object after verification.
+func (s *Service) detectAndBroadcastEquivocation(ctx context.Context, blk interfaces.ReadOnlySignedBeaconBlock) error {
+	slot := blk.Block().Slot()
+	proposerIndex := blk.Block().ProposerIndex()
+
+	// Get head block for comparison
+	headBlock, err := s.cfg.chain.HeadBlock(ctx)
+	if err != nil {
+		return errors.Wrap(err, "could not get head block")
+	}
+
+	// Only proceed if this block is from same slot and proposer as head
+	if headBlock.Block().Slot() != slot || headBlock.Block().ProposerIndex() != proposerIndex {
+		return nil
+	}
+
+	// Compare signatures
+	sig1 := blk.Signature()
+	sig2 := headBlock.Signature()
+
+	// If signatures match, these are the same block
+	if sig1 == sig2 {
+		return nil
+	}
+
+	// Extract headers for slashing
+	header1, err := blk.Header()
+	if err != nil {
+		return errors.Wrap(err, "could not get header from new block")
+	}
+	header2, err := headBlock.Header()
+	if err != nil {
+		return errors.Wrap(err, "could not get header from head block")
+	}
+
+	slashing := &ethpb.ProposerSlashing{
+		Header_1: header1,
+		Header_2: header2,
+	}
+
+	// Get state for verification
+	headState, err := s.cfg.chain.HeadStateReadOnly(ctx)
+	if err != nil {
+		return errors.Wrap(err, "could not get head state")
+	}
+
+	// Verify the slashing against current state
+	if err := blocks.VerifyProposerSlashing(headState, slashing); err != nil {
+		if errors.Is(err, blocks.ErrCouldNotVerifyBlockHeader) {
+			return errors.Wrap(ErrSlashingSignatureFailure, err.Error())
+		}
+		return errors.Wrap(err, "could not verify proposer slashing")
+	}
+
+	// Broadcast if verification passes
+	if !features.Get().DisableBroadcastSlashings {
+		if err := s.cfg.p2p.Broadcast(ctx, slashing); err != nil {
+			return errors.Wrap(err, "could not broadcast slashing object")
+		}
+	}
+
+	// Insert into slashing pool
+	if err := s.cfg.slashingPool.InsertProposerSlashing(ctx, headState, slashing); err != nil {
+		return errors.Wrap(err, "could not insert proposer slashing into pool")
+	}
+
+	return nil
 }

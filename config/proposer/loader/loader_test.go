@@ -1,7 +1,6 @@
 package loader
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -9,18 +8,18 @@ import (
 	"os"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/validator"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/iface"
+	dbTest "github.com/OffchainLabs/prysm/v7/validator/db/testing"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/validator"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/iface"
-	dbTest "github.com/prysmaticlabs/prysm/v5/validator/db/testing"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/urfave/cli/v2"
 )
@@ -83,7 +82,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 						},
 					},
 				}
-				return db.SaveProposerSettings(context.Background(), settings)
+				return db.SaveProposerSettings(t.Context(), settings)
 			},
 		},
 		{
@@ -164,7 +163,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 						},
 					},
 				}
-				return db.SaveProposerSettings(context.Background(), settings)
+				return db.SaveProposerSettings(t.Context(), settings)
 			},
 		},
 		{
@@ -218,7 +217,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 						},
 					},
 				}
-				return db.SaveProposerSettings(context.Background(), settings)
+				return db.SaveProposerSettings(t.Context(), settings)
 			},
 			validatorRegistrationEnabled: true,
 		},
@@ -731,7 +730,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 						},
 					},
 				}
-				return db.SaveProposerSettings(context.Background(), settings)
+				return db.SaveProposerSettings(t.Context(), settings)
 			},
 		},
 		{
@@ -786,7 +785,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 						},
 					},
 				}
-				return db.SaveProposerSettings(context.Background(), settings)
+				return db.SaveProposerSettings(t.Context(), settings)
 			},
 			validatorRegistrationEnabled: true,
 		},
@@ -834,7 +833,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 						},
 					},
 				}
-				return db.SaveProposerSettings(context.Background(), settings)
+				return db.SaveProposerSettings(t.Context(), settings)
 			},
 		},
 		{
@@ -930,7 +929,7 @@ func TestProposerSettingsLoader(t *testing.T) {
 					set.Bool(flags.EnableBuilderFlag.Name, true, "")
 				}
 				cliCtx := cli.NewContext(&app, set, nil)
-				validatorDB := dbTest.SetupDB(t, [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
+				validatorDB := dbTest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
 				if tt.withdb != nil {
 					err := tt.withdb(validatorDB)
 					require.NoError(t, err)
@@ -978,7 +977,7 @@ func Test_ProposerSettingsLoaderWithOnlyBuilder_DoesNotSaveInDB(t *testing.T) {
 			set := flag.NewFlagSet("test", 0)
 			set.Bool(flags.EnableBuilderFlag.Name, true, "")
 			cliCtx := cli.NewContext(&app, set, nil)
-			validatorDB := dbTest.SetupDB(t, [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
+			validatorDB := dbTest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
 			loader, err := NewProposerSettingsLoader(
 				cliCtx,
 				validatorDB,

@@ -1,20 +1,23 @@
 package doublylinkedtree
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 // Helper function to simulate the block being on time or delayed for proposer
 // boost. It alters the genesisTime tracked by the store.
-func driftGenesisTime(f *ForkChoice, slot primitives.Slot, delay uint64) {
-	f.SetGenesisTime(uint64(time.Now().Unix()) - uint64(slot)*params.BeaconConfig().SecondsPerSlot - delay)
+func driftGenesisTime(f *ForkChoice, slot primitives.Slot, delay time.Duration) {
+	genesis := time.Now()
+	s := time.Duration(slot*primitives.Slot(params.BeaconConfig().SecondsPerSlot)) * time.Second
+	genesis = genesis.Add(-1 * s)
+	genesis = genesis.Add(-1 * delay.Abs())
+	f.SetGenesisTime(genesis)
 }
 
 // Simple, ex-ante attack mitigation using proposer boost.
@@ -24,18 +27,17 @@ func driftGenesisTime(f *ForkChoice, slot primitives.Slot, delay uint64) {
 // and release their withheld block of slot n+2 in an attempt to win fork choice.
 // If the honest proposal is boosted at slot n+2, it will win against this attacker.
 func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	jEpoch, fEpoch := primitives.Epoch(0), primitives.Epoch(0)
 	zeroHash := params.BeaconConfig().ZeroHash
 	balances := make([]uint64, 64) // 64 active validators.
-	for i := 0; i < len(balances); i++ {
+	for i := range balances {
 		balances[i] = 10
 	}
 	t.Run("back-propagates boost score to ancestors after proposer boosting", func(t *testing.T) {
 		f := setup(jEpoch, fEpoch)
 		f.justifiedBalances = balances
 		f.store.committeeWeight = uint64(len(balances)*10) / uint64(params.BeaconConfig().SlotsPerEpoch)
-		f.numActiveValidators = uint64(len(balances))
 
 		// The head should always start at the finalized block.
 		headRoot, err := f.Head(ctx)
@@ -61,7 +63,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
-		f.ProcessAttestation(ctx, []uint64{0}, newRoot, fEpoch)
+		f.ProcessAttestation(ctx, []uint64{0}, newRoot, slot, true)
 		headRoot, err = f.Head(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, newRoot, headRoot, "Incorrect head for justified epoch at slot 1")
@@ -87,7 +89,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
-		f.ProcessAttestation(ctx, []uint64{1}, newRoot, fEpoch)
+		f.ProcessAttestation(ctx, []uint64{1}, newRoot, slot, true)
 		headRoot, err = f.Head(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, newRoot, headRoot, "Incorrect head for justified epoch at slot 2")
@@ -115,7 +117,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
-		f.ProcessAttestation(ctx, []uint64{2}, newRoot, fEpoch)
+		f.ProcessAttestation(ctx, []uint64{2}, newRoot, slot, true)
 		headRoot, err = f.Head(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, newRoot, headRoot, "Incorrect head for justified epoch at slot 3")
@@ -144,7 +146,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
-		f.ProcessAttestation(ctx, []uint64{3}, newRoot, fEpoch)
+		f.ProcessAttestation(ctx, []uint64{3}, newRoot, slot, true)
 		headRoot, err = f.Head(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, newRoot, headRoot, "Incorrect head for justified epoch at slot 3")
@@ -163,18 +165,18 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		// (1: 48) -> (2: 38) -> (3: 10)
 		//		    \--------------->(4: 18)
 		//
-		node1 := f.store.nodeByRoot[indexToHash(1)]
-		require.Equal(t, node1.weight, uint64(48))
-		node2 := f.store.nodeByRoot[indexToHash(2)]
-		require.Equal(t, node2.weight, uint64(38))
-		node3 := f.store.nodeByRoot[indexToHash(3)]
-		require.Equal(t, node3.weight, uint64(10))
-		node4 := f.store.nodeByRoot[indexToHash(4)]
-		require.Equal(t, node4.weight, uint64(18))
+		node1 := f.store.emptyNodeByRoot[indexToHash(1)]
+		require.Equal(t, node1.node.weight, uint64(48))
+		node2 := f.store.emptyNodeByRoot[indexToHash(2)]
+		require.Equal(t, node2.node.weight, uint64(38))
+		node3 := f.store.emptyNodeByRoot[indexToHash(3)]
+		require.Equal(t, node3.node.weight, uint64(10))
+		node4 := f.store.emptyNodeByRoot[indexToHash(4)]
+		require.Equal(t, node4.node.weight, uint64(18))
 
 		// Regression: process attestations for C, check that it
 		// becomes head, we need two attestations to have C.weight = 30 > 24 = D.weight
-		f.ProcessAttestation(ctx, []uint64{4, 5}, indexToHash(3), fEpoch)
+		f.ProcessAttestation(ctx, []uint64{4, 5}, indexToHash(3), slot+1, true)
 		headRoot, err = f.Head(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, indexToHash(3), headRoot, "Incorrect head for justified epoch at slot 4")
@@ -235,10 +237,10 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 
 		// The maliciously withheld block has one vote.
 		votes := []uint64{1}
-		f.ProcessAttestation(ctx, votes, maliciouslyWithheldBlock, fEpoch)
+		f.ProcessAttestation(ctx, votes, maliciouslyWithheldBlock, maliciouslyWithheldBlockSlot, true)
 		// The honest block has one vote.
 		votes = []uint64{2}
-		f.ProcessAttestation(ctx, votes, honestBlock, fEpoch)
+		f.ProcessAttestation(ctx, votes, honestBlock, honestBlockSlot, true)
 
 		// Ensure the head is STILL C, the honest block, as the honest block had proposer boost.
 		r, err = f.Head(ctx)
@@ -304,7 +306,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		// An attestation is received for B that has more voting power than C with the proposer boost,
 		// allowing B to then become the head if their attestation has enough adversarial votes.
 		votes := []uint64{1, 2}
-		f.ProcessAttestation(ctx, votes, maliciouslyWithheldBlock, fEpoch)
+		f.ProcessAttestation(ctx, votes, maliciouslyWithheldBlock, maliciouslyWithheldBlockSlot, true)
 
 		// Expect the head to have switched to B.
 		r, err = f.Head(ctx)
@@ -328,7 +330,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		f := setup(jEpoch, fEpoch)
 		f.justifiedBalances = balances
 		f.store.committeeWeight = uint64(len(balances)*10) / uint64(params.BeaconConfig().SlotsPerEpoch)
-		f.numActiveValidators = uint64(len(balances))
+
 		a := zeroHash
 
 		// The head should always start at the finalized block.
@@ -379,7 +381,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 
 		// An attestation for C is received at slot N+3.
 		votes := []uint64{1}
-		f.ProcessAttestation(ctx, votes, c, fEpoch)
+		f.ProcessAttestation(ctx, votes, c, cSlot, true)
 
 		// A block D, building on B, is received at slot N+3. It should not be able to win without boosting.
 		dSlot := primitives.Slot(3)
@@ -419,7 +421,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
 
 		votes = []uint64{2}
-		f.ProcessAttestation(ctx, votes, d2, fEpoch)
+		f.ProcessAttestation(ctx, votes, d2, dSlot, true)
 		// Ensure D becomes the head thanks to boosting.
 		r, err = f.Head(ctx)
 		require.NoError(t, err)
@@ -428,7 +430,7 @@ func TestForkChoice_BoostProposerRoot_PreventsExAnteAttack(t *testing.T) {
 }
 
 func TestForkChoice_BoostProposerRoot(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	root := [32]byte{'A'}
 	var zeroHash [32]byte
 
@@ -446,7 +448,7 @@ func TestForkChoice_BoostProposerRoot(t *testing.T) {
 		f := setup(0, 0)
 		slot := primitives.Slot(1)
 		currentSlot := primitives.Slot(1)
-		driftGenesisTime(f, currentSlot, params.BeaconConfig().SecondsPerSlot-1)
+		driftGenesisTime(f, currentSlot, time.Duration(params.BeaconConfig().SecondsPerSlot-1)*time.Second)
 		state, blkRoot, err := prepareForkchoiceState(ctx, slot, root, zeroHash, zeroHash, 0, 0)
 		require.NoError(t, err)
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
@@ -466,7 +468,7 @@ func TestForkChoice_BoostProposerRoot(t *testing.T) {
 		f := setup(0, 0)
 		slot := primitives.Slot(1)
 		currentSlot := primitives.Slot(1)
-		driftGenesisTime(f, currentSlot, 1)
+		driftGenesisTime(f, currentSlot, time.Second)
 		state, blkRoot, err := prepareForkchoiceState(ctx, slot, root, zeroHash, zeroHash, 0, 0)
 		require.NoError(t, err)
 		require.NoError(t, f.InsertNode(ctx, state, blkRoot))
@@ -476,10 +478,10 @@ func TestForkChoice_BoostProposerRoot(t *testing.T) {
 
 // Regression test (11053)
 func TestForkChoice_missingProposerBoostRoots(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	f := setup(1, 1)
 	balances := make([]uint64, 64) // 64 active validators.
-	for i := 0; i < len(balances); i++ {
+	for i := range balances {
 		balances[i] = 10
 	}
 	f.justifiedBalances = balances

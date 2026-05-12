@@ -3,12 +3,13 @@ package light_client
 import (
 	"fmt"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	consensustypes "github.com/prysmaticlabs/prysm/v5/consensus-types"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	consensustypes "github.com/OffchainLabs/prysm/v7/consensus-types"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -88,6 +89,10 @@ func NewWrappedUpdateAltair(p *pb.LightClientUpdateAltair) (interfaces.LightClie
 	}, nil
 }
 
+func (u *updateAltair) IsNil() bool {
+	return u == nil || u.p == nil
+}
+
 func (u *updateAltair) MarshalSSZTo(dst []byte) ([]byte, error) {
 	return u.p.MarshalSSZTo(dst)
 }
@@ -105,7 +110,7 @@ func (u *updateAltair) Proto() proto.Message {
 }
 
 func (u *updateAltair) Version() int {
-	return version.Altair
+	return slots.ToForkVersion(u.attestedHeader.Beacon().Slot)
 }
 
 func (u *updateAltair) AttestedHeader() interfaces.LightClientHeader {
@@ -255,6 +260,10 @@ func NewWrappedUpdateCapella(p *pb.LightClientUpdateCapella) (interfaces.LightCl
 	}, nil
 }
 
+func (u *updateCapella) IsNil() bool {
+	return u == nil || u.p == nil
+}
+
 func (u *updateCapella) MarshalSSZTo(dst []byte) ([]byte, error) {
 	return u.p.MarshalSSZTo(dst)
 }
@@ -272,7 +281,7 @@ func (u *updateCapella) Proto() proto.Message {
 }
 
 func (u *updateCapella) Version() int {
-	return version.Capella
+	return slots.ToForkVersion(u.attestedHeader.Beacon().Slot)
 }
 
 func (u *updateCapella) AttestedHeader() interfaces.LightClientHeader {
@@ -422,6 +431,10 @@ func NewWrappedUpdateDeneb(p *pb.LightClientUpdateDeneb) (interfaces.LightClient
 	}, nil
 }
 
+func (u *updateDeneb) IsNil() bool {
+	return u == nil || u.p == nil
+}
+
 func (u *updateDeneb) MarshalSSZTo(dst []byte) ([]byte, error) {
 	return u.p.MarshalSSZTo(dst)
 }
@@ -439,7 +452,7 @@ func (u *updateDeneb) Proto() proto.Message {
 }
 
 func (u *updateDeneb) Version() int {
-	return version.Deneb
+	return slots.ToForkVersion(u.attestedHeader.Beacon().Slot)
 }
 
 func (u *updateDeneb) AttestedHeader() interfaces.LightClientHeader {
@@ -590,6 +603,10 @@ func NewWrappedUpdateElectra(p *pb.LightClientUpdateElectra) (interfaces.LightCl
 	}, nil
 }
 
+func (u *updateElectra) IsNil() bool {
+	return u == nil || u.p == nil
+}
+
 func (u *updateElectra) MarshalSSZTo(dst []byte) ([]byte, error) {
 	return u.p.MarshalSSZTo(dst)
 }
@@ -607,7 +624,7 @@ func (u *updateElectra) Proto() proto.Message {
 }
 
 func (u *updateElectra) Version() int {
-	return version.Electra
+	return slots.ToForkVersion(u.attestedHeader.Beacon().Slot)
 }
 
 func (u *updateElectra) AttestedHeader() interfaces.LightClientHeader {

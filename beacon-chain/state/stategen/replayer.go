@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
 	"github.com/sirupsen/logrus"
 )
 
@@ -107,10 +107,12 @@ func (rs *stateReplayer) ReplayBlocks(ctx context.Context) (state.BeaconState, e
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+
 		s, err = executeStateTransitionStateGen(ctx, s, b)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "could not execute state transition")
 		}
+
 	}
 	if rs.target > s.Slot() {
 		s, err = ReplayProcessSlots(ctx, s, rs.target)
@@ -151,7 +153,7 @@ func (rs *stateReplayer) ReplayToSlot(ctx context.Context, replayTo primitives.S
 		"startSlot": s.Slot(),
 		"endSlot":   replayTo,
 		"diff":      replayTo - s.Slot(),
-	}).Debug("calling process_slots on remaining slots")
+	}).Debug("Calling process_slots on remaining slots")
 
 	// err will be handled after the bookend log
 	s, err = ReplayProcessSlots(ctx, s, replayTo)
@@ -161,7 +163,7 @@ func (rs *stateReplayer) ReplayToSlot(ctx context.Context, replayTo primitives.S
 	duration := time.Since(start)
 	log.WithFields(logrus.Fields{
 		"duration": duration,
-	}).Debug("time spent in process_slots")
+	}).Debug("Time spent in process_slots")
 	replayToSlotSummary.Observe(float64(duration.Milliseconds()))
 
 	return s, nil

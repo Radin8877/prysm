@@ -3,14 +3,14 @@ package fulu_test
 import (
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/fulu"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/fulu"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestUpgradeToFulu(t *testing.T) {
@@ -25,7 +25,7 @@ func TestUpgradeToFulu(t *testing.T) {
 	require.NoError(t, st.SetBalances(bals))
 
 	preForkState := st.Copy()
-	mSt, err := fulu.UpgradeToFulu(st)
+	mSt, err := fulu.UpgradeToFulu(t.Context(), st)
 	require.NoError(t, err)
 
 	require.Equal(t, preForkState.GenesisTime(), mSt.GenesisTime())
@@ -43,10 +43,8 @@ func TestUpgradeToFulu(t *testing.T) {
 	require.DeepSSZEqual(t, preForkState.BlockRoots(), mSt.BlockRoots())
 	require.DeepSSZEqual(t, preForkState.StateRoots(), mSt.StateRoots())
 
-	hr1, err := preForkState.HistoricalRoots()
-	require.NoError(t, err)
-	hr2, err := mSt.HistoricalRoots()
-	require.NoError(t, err)
+	hr1 := preForkState.HistoricalRoots()
+	hr2 := mSt.HistoricalRoots()
 	require.DeepEqual(t, hr1, hr2)
 
 	require.DeepSSZEqual(t, preForkState.Eth1Data(), mSt.Eth1Data())

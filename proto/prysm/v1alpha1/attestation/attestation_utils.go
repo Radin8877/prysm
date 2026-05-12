@@ -6,18 +6,17 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"runtime/debug"
 	"slices"
-	"sort"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 // ConvertToIndexed converts attestation to (almost) indexed-verifiable form.
@@ -45,9 +44,7 @@ func ConvertToIndexed(_ context.Context, attestation ethpb.Att, committees ...[]
 		return nil, err
 	}
 
-	sort.Slice(attIndices, func(i, j int) bool {
-		return attIndices[i] < attIndices[j]
-	})
+	slices.Sort(attIndices)
 
 	if attestation.Version() >= version.Electra {
 		return &ethpb.IndexedAttestationElectra{
@@ -100,13 +97,17 @@ func AttestingIndices(att ethpb.Att, committees ...[]primitives.ValidatorIndex) 
 	for _, c := range committees {
 		committeesLen += len(c)
 	}
+	if aggBits.Len() == 0 {
+		fmt.Printf("committee_bits: %v, aggregation_bits: %v, slot: %d", att.CommitteeBitsVal(), att.GetAggregationBits(), att.GetData().Slot)
+		debug.PrintStack()
+	}
 	if aggBits.Len() != uint64(committeesLen) {
 		return nil, fmt.Errorf("bitfield length %d is not equal to committee length %d", aggBits.Len(), committeesLen)
 	}
 
 	attesters := make([]uint64, 0, aggBits.Count())
 	committeeOffset := 0
-	for _, c := range committees {
+	for ci, c := range committees {
 		committeeAttesters := make([]uint64, 0, len(c))
 		for i, vi := range c {
 			if aggBits.BitAt(uint64(committeeOffset + i)) {
@@ -114,7 +115,7 @@ func AttestingIndices(att ethpb.Att, committees ...[]primitives.ValidatorIndex) 
 			}
 		}
 		if len(committeeAttesters) == 0 {
-			return nil, fmt.Errorf("no attesting indices found in committee %v", c)
+			return nil, fmt.Errorf("no attesting indices found for committee index %d", ci)
 		}
 		attesters = append(attesters, committeeAttesters...)
 		committeeOffset += len(c)
@@ -169,6 +170,10 @@ func VerifyIndexedAttestationSig(ctx context.Context, indexedAtt ethpb.IndexedAt
 // spec indexed attestation validation starting at Check if “indexed_attestation“
 // comment and ends at Verify aggregate signature comment.
 //
+// requires the caller to pass config params:
+// MAX_VALIDATORS_PER_COMMITTEE = committeeValMax
+// MAX_COMMITTEES_PER_SLOT = maxCommittees
+//
 // Spec pseudocode definition:
 //
 //	def is_valid_indexed_attestation(state: BeaconState, indexed_attestation: IndexedAttestation) -> bool:
@@ -184,7 +189,7 @@ func VerifyIndexedAttestationSig(ctx context.Context, indexedAtt ethpb.IndexedAt
 //	  domain = get_domain(state, DOMAIN_BEACON_ATTESTER, indexed_attestation.data.target.epoch)
 //	  signing_root = compute_signing_root(indexed_attestation.data, domain)
 //	  return bls.FastAggregateVerify(pubkeys, signing_root, indexed_attestation.signature)
-func IsValidAttestationIndices(ctx context.Context, indexedAttestation ethpb.IndexedAtt) error {
+func IsValidAttestationIndices(ctx context.Context, indexedAttestation ethpb.IndexedAtt, committeeValMax, maxCommittees uint64) error {
 	_, span := trace.StartSpan(ctx, "attestationutil.IsValidAttestationIndices")
 	defer span.End()
 
@@ -197,12 +202,12 @@ func IsValidAttestationIndices(ctx context.Context, indexedAttestation ethpb.Ind
 		return errors.New("expected non-empty attesting indices")
 	}
 	if indexedAttestation.Version() < version.Electra {
-		maxLength := params.BeaconConfig().MaxValidatorsPerCommittee
+		maxLength := committeeValMax
 		if uint64(len(indices)) > maxLength {
 			return fmt.Errorf("validator indices count exceeds MAX_VALIDATORS_PER_COMMITTEE, %d > %d", len(indices), maxLength)
 		}
 	} else {
-		maxLength := params.BeaconConfig().MaxValidatorsPerCommittee * params.BeaconConfig().MaxCommitteesPerSlot
+		maxLength := committeeValMax * maxCommittees
 		if uint64(len(indices)) > maxLength {
 			return fmt.Errorf("validator indices count exceeds MAX_VALIDATORS_PER_COMMITTEE * MAX_COMMITTEES_PER_SLOT, %d > %d", len(indices), maxLength)
 		}

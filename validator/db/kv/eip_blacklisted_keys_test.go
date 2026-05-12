@@ -1,20 +1,19 @@
 package kv
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestStore_EIPBlacklistedPublicKeys(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	numValidators := 100
 	publicKeys := make([][fieldparams.BLSPubkeyLength]byte, numValidators)
-	for i := 0; i < numValidators; i++ {
+	for i := range numValidators {
 		var key [fieldparams.BLSPubkeyLength]byte
 		copy(key[:], fmt.Sprintf("%d", i))
 		publicKeys[i] = key

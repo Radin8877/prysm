@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,7 +43,7 @@ func (s *Service) AttestationTargetState(ctx context.Context, target *ethpb.Chec
 	if err != nil {
 		return nil, err
 	}
-	if err := slots.ValidateClock(ss, uint64(s.genesisTime.Unix())); err != nil {
+	if err := slots.ValidateClock(ss, s.genesisTime); err != nil {
 		return nil, err
 	}
 	// We acquire the lock here instead than on gettAttPreState because that function gets called from UpdateHead that holds a write lock
@@ -69,7 +69,7 @@ func (s *Service) spawnProcessAttestationsRoutine() {
 	go func() {
 		_, err := s.clockWaiter.WaitForClock(s.ctx)
 		if err != nil {
-			log.WithError(err).Error("spawnProcessAttestationsRoutine failed to receive genesis data")
+			log.WithError(err).Error("Failed to receive genesis data")
 			return
 		}
 		if s.genesisTime.IsZero() {
@@ -94,6 +94,7 @@ func (s *Service) spawnProcessAttestationsRoutine() {
 		for {
 			select {
 			case <-s.ctx.Done():
+				ticker.Done()
 				return
 			case slotInterval := <-ticker.C():
 				if slotInterval.Interval > 0 {
@@ -103,7 +104,7 @@ func (s *Service) spawnProcessAttestationsRoutine() {
 				} else {
 					s.cfg.ForkChoiceStore.Lock()
 					if err := s.cfg.ForkChoiceStore.NewSlot(s.ctx, slotInterval.Slot); err != nil {
-						log.WithError(err).Error("could not process new slot")
+						log.WithError(err).Error("Could not process new slot")
 					}
 					s.cfg.ForkChoiceStore.Unlock()
 
@@ -132,37 +133,63 @@ func (s *Service) UpdateHead(ctx context.Context, proposingSlot primitives.Slot)
 	processAttsElapsedTime.Observe(float64(time.Since(start).Milliseconds()))
 
 	start = time.Now()
-	// return early if we haven't changed head
-	newHeadRoot, err := s.cfg.ForkChoiceStore.Head(ctx)
+	newHeadRoot, _, full, err := s.cfg.ForkChoiceStore.FullHead(ctx)
 	if err != nil {
 		log.WithError(err).Error("Could not compute head from new attestations")
 		return
 	}
-	if !s.isNewHead(newHeadRoot) {
+	if !s.isNewHead(newHeadRoot, full) {
 		return
 	}
 	log.WithField("newHeadRoot", fmt.Sprintf("%#x", newHeadRoot)).Debug("Head changed due to attestations")
-	headState, headBlock, err := s.getStateAndBlock(ctx, newHeadRoot)
+	headState, headBlock, err := s.getStateAndBlock(ctx, newHeadRoot, newHeadRoot)
 	if err != nil {
-		log.WithError(err).Error("could not get head block")
+		log.WithError(err).Error("Could not get head block and state")
 		return
 	}
 	newAttHeadElapsedTime.Observe(float64(time.Since(start).Milliseconds()))
-	fcuArgs := &fcuConfig{
-		headState:     headState,
-		headRoot:      newHeadRoot,
-		headBlock:     headBlock,
-		proposingSlot: proposingSlot,
-	}
 	if s.inRegularSync() {
-		fcuArgs.attributes = s.getPayloadAttribute(ctx, headState, proposingSlot, newHeadRoot[:])
+		attr := s.getPayloadAttribute(ctx, headState, proposingSlot, newHeadRoot[:], full)
+		if attr != nil && s.shouldOverrideFCU(newHeadRoot, proposingSlot) {
+			return
+		}
+		postGloas := slots.ToEpoch(proposingSlot) >= params.BeaconConfig().GloasForkEpoch
+		if postGloas {
+			blockHash, hashErr := s.cfg.ForkChoiceStore.BlockHash(newHeadRoot)
+			if hashErr != nil {
+				log.WithError(hashErr).Error("Could not get block hash from forkchoice for FCU")
+			} else {
+				go func() {
+					pid, err := s.notifyForkchoiceUpdateGloas(s.ctx, blockHash, attr)
+					if err != nil {
+						log.WithError(err).Error("Could not update forkchoice with engine")
+					}
+					if pid == nil {
+						if attr != nil {
+							log.Warn("Engine did not return a payload ID for the fork choice update with attributes")
+						}
+						return
+					}
+					var pId [8]byte
+					copy(pId[:], pid[:])
+					s.cfg.PayloadIDCache.Set(proposingSlot, newHeadRoot, pId)
+				}()
+			}
+		} else {
+			fcuArgs := &fcuConfig{
+				headState:     headState,
+				headRoot:      newHeadRoot,
+				headBlock:     headBlock,
+				proposingSlot: proposingSlot,
+				attributes:    attr,
+			}
+			go s.forkchoiceUpdateWithExecution(s.ctx, fcuArgs)
+		}
 	}
-	if fcuArgs.attributes != nil && s.shouldOverrideFCU(newHeadRoot, proposingSlot) {
-		return
+	if err := s.saveHead(s.ctx, newHeadRoot, headBlock, headState, full); err != nil {
+		log.WithError(err).Error("Could not save head")
 	}
-	if err := s.forkchoiceUpdateWithExecution(s.ctx, fcuArgs); err != nil {
-		log.WithError(err).Error("could not update forkchoice")
-	}
+	s.pruneAttsFromPool(s.ctx, headState, headBlock)
 }
 
 // This processes fork choice attestations from the pool to account for validator votes and fork choice.
@@ -177,9 +204,9 @@ func (s *Service) processAttestations(ctx context.Context, disparity time.Durati
 	for _, a := range atts {
 		// Based on the spec, don't process the attestation until the subsequent slot.
 		// This delays consideration in the fork choice until their slot is in the past.
-		// https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/fork-choice.md#validate_on_attestation
+		// https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/fork-choice.md#validate_on_attestation
 		nextSlot := a.GetData().Slot + 1
-		if err := slots.VerifyTime(uint64(s.genesisTime.Unix()), nextSlot, disparity); err != nil {
+		if err := slots.VerifyTime(s.genesisTime, nextSlot, disparity); err != nil {
 			continue
 		}
 

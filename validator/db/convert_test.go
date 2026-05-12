@@ -1,22 +1,21 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/common"
+	"github.com/OffchainLabs/prysm/v7/validator/db/filesystem"
+	"github.com/OffchainLabs/prysm/v7/validator/db/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/common"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/filesystem"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
 )
 
 func getPubkeyFromString(t *testing.T, pubkeyString string) [fieldparams.BLSPubkeyLength]byte {
@@ -36,7 +35,7 @@ func getFeeRecipientFromString(t *testing.T, feeRecipientString string) [fieldpa
 }
 
 func TestDB_ConvertDatabase(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKeyString1 := "0x80000060606fa05c7339dd7bcd0d3e4d8b573fa30dea2fdb4997031a703e3300326e3c054be682f92d9c367cd647bbea"
 	pubKeyString2 := "0x81000060606fa05c7339dd7bcd0d3e4d8b573fa30dea2fdb4997031a703e3300326e3c054be682f92d9c367cd647bbea"

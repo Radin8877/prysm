@@ -4,56 +4,62 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/electra"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	stateTesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/testing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls/common"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/electra"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	stateTesting "github.com/OffchainLabs/prysm/v7/beacon-chain/state/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestProcessPendingDepositsMultiplesSameDeposits(t *testing.T) {
-	st := stateWithActiveBalanceETH(t, 1000)
-	deps := make([]*eth.PendingDeposit, 2) // Make same deposit twice
-	validators := st.Validators()
-	sk, err := bls.RandKey()
-	require.NoError(t, err)
-	for i := 0; i < len(deps); i += 1 {
-		wc := make([]byte, 32)
-		wc[0] = params.BeaconConfig().ETH1AddressWithdrawalPrefixByte
-		wc[31] = byte(i)
-		validators[i].PublicKey = sk.PublicKey().Marshal()
-		validators[i].WithdrawalCredentials = wc
-		deps[i] = stateTesting.GeneratePendingDeposit(t, sk, 32, bytesutil.ToBytes32(wc), 0)
-	}
-	require.NoError(t, st.SetPendingDeposits(deps))
+	const (
+		depositCount      = uint64(2)
+		amountETH         = uint64(32)
+		slot              = 0
+		activeBalanceGwei = 10_000
+	)
 
-	err = electra.ProcessPendingDeposits(context.TODO(), st, 10000)
+	state := stateWithActiveBalanceETH(t, 0)
+
+	secretKey, err := bls.RandKey()
 	require.NoError(t, err)
 
-	val := st.Validators()
-	seenPubkeys := make(map[string]struct{})
-	for i := 0; i < len(val); i += 1 {
-		if len(val[i].PublicKey) == 0 {
-			continue
-		}
-		_, ok := seenPubkeys[string(val[i].PublicKey)]
-		if ok {
-			t.Fatalf("duplicated pubkeys")
-		} else {
-			seenPubkeys[string(val[i].PublicKey)] = struct{}{}
-		}
+	withdrawalCredentialsBytes := make([]byte, 32)
+	withdrawalCredentialsBytes[0] = params.BeaconConfig().ETH1AddressWithdrawalPrefixByte
+	withdrawalCredentials := bytesutil.ToBytes32(withdrawalCredentialsBytes)
+
+	validators := state.Validators()
+	require.Equal(t, 0, len(validators))
+
+	deposits := make([]*eth.PendingDeposit, 0, depositCount)
+	for range depositCount {
+		deposit := stateTesting.GeneratePendingDeposit(t, secretKey, amountETH, withdrawalCredentials, slot)
+		deposits = append(deposits, deposit)
 	}
+
+	err = state.SetPendingDeposits(deposits)
+	require.NoError(t, err)
+
+	err = electra.ProcessPendingDeposits(t.Context(), state, activeBalanceGwei)
+	require.NoError(t, err)
+
+	// The first deposit should create a new validator,
+	// and the second deposit should top up the same validator
+	// We should have 1 validator with balance of 64 ETH.
+	validators = state.Validators()
+	require.Equal(t, 1, len(validators))
+
+	balance, err := state.BalanceAtIndex(0)
+	require.NoError(t, err)
+	require.Equal(t, depositCount*amountETH, balance)
 }
 
 func TestProcessPendingDeposits(t *testing.T) {
@@ -96,7 +102,7 @@ func TestProcessPendingDeposits(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, primitives.Gwei(100), res)
 				// Validators 0..9 should have their balance increased
-				for i := primitives.ValidatorIndex(0); i < 10; i++ {
+				for i := range primitives.ValidatorIndex(10) {
 					b, err := st.BalanceAtIndex(i)
 					require.NoError(t, err)
 					require.Equal(t, params.BeaconConfig().MinActivationBalance+uint64(amountAvailForProcessing)/10, b)
@@ -123,7 +129,7 @@ func TestProcessPendingDeposits(t *testing.T) {
 			check: func(t *testing.T, st state.BeaconState) {
 				amountAvailForProcessing := helpers.ActivationExitChurnLimit(1_000 * 1e9)
 				// Validators 0..9 should have their balance increased
-				for i := primitives.ValidatorIndex(0); i < 2; i++ {
+				for i := range primitives.ValidatorIndex(2) {
 					b, err := st.BalanceAtIndex(i)
 					require.NoError(t, err)
 					require.Equal(t, params.BeaconConfig().MinActivationBalance+uint64(amountAvailForProcessing), b)
@@ -150,7 +156,7 @@ func TestProcessPendingDeposits(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, primitives.Gwei(0), res)
 				// Validators 0..4 should have their balance increased
-				for i := primitives.ValidatorIndex(0); i < 4; i++ {
+				for i := range primitives.ValidatorIndex(4) {
 					b, err := st.BalanceAtIndex(i)
 					require.NoError(t, err)
 					require.Equal(t, params.BeaconConfig().MinActivationBalance+uint64(amountAvailForProcessing)/5, b)
@@ -196,7 +202,7 @@ func TestProcessPendingDeposits(t *testing.T) {
 			},
 		},
 		{
-			name: "process excess balance that uses a point to infinity signature, processed as a topup",
+			name: "process excess balance as a topup",
 			state: func() state.BeaconState {
 				excessBalance := uint64(100)
 				st := stateWithActiveBalanceETH(t, 32)
@@ -209,7 +215,6 @@ func TestProcessPendingDeposits(t *testing.T) {
 				validators[0].PublicKey = sk.PublicKey().Marshal()
 				validators[0].WithdrawalCredentials = wc
 				dep := stateTesting.GeneratePendingDeposit(t, sk, excessBalance, bytesutil.ToBytes32(wc), 0)
-				dep.Signature = common.InfiniteSignature[:]
 				require.NoError(t, st.SetValidators(validators))
 				require.NoError(t, st.SetPendingDeposits([]*eth.PendingDeposit{dep}))
 				return st
@@ -296,7 +301,7 @@ func TestProcessPendingDeposits(t *testing.T) {
 				// The caller of this method would normally have the precompute balance values for total
 				// active balance for this epoch. For ease of test setup, we will compute total active
 				// balance from the given state.
-				tab, err = helpers.TotalActiveBalance(tt.state)
+				tab, err = helpers.TotalActiveBalance(t.Context(), tt.state)
 			}
 			require.NoError(t, err)
 			err = electra.ProcessPendingDeposits(context.TODO(), tt.state, primitives.Gwei(tab))
@@ -309,7 +314,7 @@ func TestProcessPendingDeposits(t *testing.T) {
 }
 
 func TestBatchProcessNewPendingDeposits(t *testing.T) {
-	t.Run("invalid batch initiates correct individual validation", func(t *testing.T) {
+	t.Run("one valid deposit one garbage deposit", func(t *testing.T) {
 		st := stateWithActiveBalanceETH(t, 0)
 		require.Equal(t, 0, len(st.Validators()))
 		require.Equal(t, 0, len(st.Balances()))
@@ -320,66 +325,47 @@ func TestBatchProcessNewPendingDeposits(t *testing.T) {
 		wc[31] = byte(0)
 		validDep := stateTesting.GeneratePendingDeposit(t, sk, params.BeaconConfig().MinActivationBalance, bytesutil.ToBytes32(wc), 0)
 		invalidDep := &eth.PendingDeposit{PublicKey: make([]byte, 48)}
-		// have a combination of valid and invalid deposits
 		deps := []*eth.PendingDeposit{validDep, invalidDep}
-		require.NoError(t, electra.BatchProcessNewPendingDeposits(context.Background(), st, deps))
-		// successfully added to register
+		require.NoError(t, electra.BatchProcessNewPendingDeposits(t.Context(), st, deps))
 		require.Equal(t, 1, len(st.Validators()))
 		require.Equal(t, 1, len(st.Balances()))
 	})
-}
 
-func TestProcessDepositRequests(t *testing.T) {
-	st, _ := util.DeterministicGenesisStateElectra(t, 1)
-	sk, err := bls.RandKey()
-	require.NoError(t, err)
-
-	t.Run("empty requests continues", func(t *testing.T) {
-		newSt, err := electra.ProcessDepositRequests(context.Background(), st, []*enginev1.DepositRequest{})
+	t.Run("two valid deposits from same key", func(t *testing.T) {
+		st := stateWithActiveBalanceETH(t, 0)
+		require.Equal(t, 0, len(st.Validators()))
+		require.Equal(t, 0, len(st.Balances()))
+		sk, err := bls.RandKey()
 		require.NoError(t, err)
-		require.DeepEqual(t, newSt, st)
-	})
-	t.Run("nil request errors", func(t *testing.T) {
-		_, err = electra.ProcessDepositRequests(context.Background(), st, []*enginev1.DepositRequest{nil})
-		require.ErrorContains(t, "nil deposit request", err)
+		wc := make([]byte, 32)
+		wc[0] = params.BeaconConfig().ETH1AddressWithdrawalPrefixByte
+		wc[31] = byte(0)
+		validDep := stateTesting.GeneratePendingDeposit(t, sk, params.BeaconConfig().MinActivationBalance, bytesutil.ToBytes32(wc), 0)
+		deps := []*eth.PendingDeposit{validDep, validDep}
+		require.NoError(t, electra.BatchProcessNewPendingDeposits(t.Context(), st, deps))
+		require.Equal(t, 1, len(st.Validators()))
+		require.Equal(t, 1, len(st.Balances()))
+		require.Equal(t, params.BeaconConfig().MinActivationBalance*2, st.Balances()[0])
 	})
 
-	vals := st.Validators()
-	vals[0].PublicKey = sk.PublicKey().Marshal()
-	vals[0].WithdrawalCredentials[0] = params.BeaconConfig().ETH1AddressWithdrawalPrefixByte
-	require.NoError(t, st.SetValidators(vals))
-	bals := st.Balances()
-	bals[0] = params.BeaconConfig().MinActivationBalance + 2000
-	require.NoError(t, st.SetBalances(bals))
-	require.NoError(t, st.SetPendingDeposits(make([]*eth.PendingDeposit, 0))) // reset pbd as the determinitstic state populates this already
-	withdrawalCred := make([]byte, 32)
-	withdrawalCred[0] = params.BeaconConfig().CompoundingWithdrawalPrefixByte
-	depositMessage := &eth.DepositMessage{
-		PublicKey:             sk.PublicKey().Marshal(),
-		Amount:                1000,
-		WithdrawalCredentials: withdrawalCred,
-	}
-	domain, err := signing.ComputeDomain(params.BeaconConfig().DomainDeposit, nil, nil)
-	require.NoError(t, err)
-	sr, err := signing.ComputeSigningRoot(depositMessage, domain)
-	require.NoError(t, err)
-	sig := sk.Sign(sr[:])
-	requests := []*enginev1.DepositRequest{
-		{
-			Pubkey:                depositMessage.PublicKey,
-			Index:                 0,
-			WithdrawalCredentials: depositMessage.WithdrawalCredentials,
-			Amount:                depositMessage.Amount,
-			Signature:             sig.Marshal(),
-		},
-	}
-	st, err = electra.ProcessDepositRequests(context.Background(), st, requests)
-	require.NoError(t, err)
-
-	pbd, err := st.PendingDeposits()
-	require.NoError(t, err)
-	require.Equal(t, 1, len(pbd))
-	require.Equal(t, uint64(1000), pbd[0].Amount)
+	t.Run("one valid one with invalid signature deposit", func(t *testing.T) {
+		st := stateWithActiveBalanceETH(t, 0)
+		require.Equal(t, 0, len(st.Validators()))
+		require.Equal(t, 0, len(st.Balances()))
+		sk, err := bls.RandKey()
+		require.NoError(t, err)
+		wc := make([]byte, 32)
+		wc[0] = params.BeaconConfig().ETH1AddressWithdrawalPrefixByte
+		wc[31] = byte(0)
+		validDep := stateTesting.GeneratePendingDeposit(t, sk, params.BeaconConfig().MinActivationBalance, bytesutil.ToBytes32(wc), 0)
+		invalidSigDep := stateTesting.GeneratePendingDeposit(t, sk, params.BeaconConfig().MinActivationBalance, bytesutil.ToBytes32(wc), 0)
+		invalidSigDep.Signature = make([]byte, 96)
+		deps := []*eth.PendingDeposit{validDep, invalidSigDep}
+		require.NoError(t, electra.BatchProcessNewPendingDeposits(t.Context(), st, deps))
+		require.Equal(t, 1, len(st.Validators()))
+		require.Equal(t, 1, len(st.Balances()))
+		require.Equal(t, 2*params.BeaconConfig().MinActivationBalance, st.Balances()[0])
+	})
 }
 
 func TestProcessDeposit_Electra_Simple(t *testing.T) {
@@ -404,7 +390,7 @@ func TestProcessDeposit_Electra_Simple(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	pdSt, err := electra.ProcessDeposits(context.Background(), st, deps)
+	pdSt, err := electra.ProcessDeposits(t.Context(), st, deps)
 	require.NoError(t, err)
 	pbd, err := pdSt.PendingDeposits()
 	require.NoError(t, err)
@@ -495,7 +481,7 @@ func stateWithActiveBalanceETH(t *testing.T, balETH uint64) state.BeaconState {
 
 	vals := make([]*eth.Validator, numVals)
 	bals := make([]uint64, numVals)
-	for i := uint64(0); i < numVals; i++ {
+	for i := range numVals {
 		wc := make([]byte, 32)
 		wc[0] = params.BeaconConfig().ETH1AddressWithdrawalPrefixByte
 		wc[31] = byte(i)
@@ -557,10 +543,9 @@ func TestApplyPendingDeposit_TopUp(t *testing.T) {
 	validators[0].PublicKey = sk.PublicKey().Marshal()
 	validators[0].WithdrawalCredentials = wc
 	dep := stateTesting.GeneratePendingDeposit(t, sk, excessBalance, bytesutil.ToBytes32(wc), 0)
-	dep.Signature = common.InfiniteSignature[:]
 	require.NoError(t, st.SetValidators(validators))
 
-	require.NoError(t, electra.ApplyPendingDeposit(context.Background(), st, dep))
+	require.NoError(t, electra.ApplyPendingDeposit(t.Context(), st, dep))
 
 	b, err := st.BalanceAtIndex(0)
 	require.NoError(t, err)
@@ -576,7 +561,7 @@ func TestApplyPendingDeposit_UnknownKey(t *testing.T) {
 	wc[31] = byte(0)
 	dep := stateTesting.GeneratePendingDeposit(t, sk, params.BeaconConfig().MinActivationBalance, bytesutil.ToBytes32(wc), 0)
 	require.Equal(t, 0, len(st.Validators()))
-	require.NoError(t, electra.ApplyPendingDeposit(context.Background(), st, dep))
+	require.NoError(t, electra.ApplyPendingDeposit(t.Context(), st, dep))
 	// activates new validator
 	require.Equal(t, 1, len(st.Validators()))
 	b, err := st.BalanceAtIndex(0)
@@ -598,7 +583,7 @@ func TestApplyPendingDeposit_InvalidSignature(t *testing.T) {
 		Amount:                100,
 	}
 	require.Equal(t, 0, len(st.Validators()))
-	require.NoError(t, electra.ApplyPendingDeposit(context.Background(), st, dep))
+	require.NoError(t, electra.ApplyPendingDeposit(t.Context(), st, dep))
 	// no validator added
 	require.Equal(t, 0, len(st.Validators()))
 	// no topup either

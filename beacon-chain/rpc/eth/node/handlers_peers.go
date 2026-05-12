@@ -5,16 +5,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers/peerdata"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	"github.com/OffchainLabs/prysm/v7/proto/migration"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers/peerdata"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/proto/migration"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // GetPeer retrieves data about the given peer.
@@ -112,7 +112,12 @@ func (s *Server) GetPeers(w http.ResponseWriter, r *http.Request) {
 			}
 			allPeers = append(allPeers, p)
 		}
-		resp := &structs.GetPeersResponse{Data: allPeers}
+		resp := &structs.GetPeersResponse{
+			Data: allPeers,
+			Meta: structs.Meta{
+				Count: len(allPeers),
+			},
+		}
 		httputil.WriteJson(w, resp)
 		return
 	}
@@ -177,7 +182,12 @@ func (s *Server) GetPeers(w http.ResponseWriter, r *http.Request) {
 		filteredPeers = append(filteredPeers, p)
 	}
 
-	resp := &structs.GetPeersResponse{Data: filteredPeers}
+	resp := &structs.GetPeersResponse{
+		Data: filteredPeers,
+		Meta: structs.Meta{
+			Count: len(filteredPeers),
+		},
+	}
 	httputil.WriteJson(w, resp)
 }
 

@@ -1,12 +1,11 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/proto/dbval"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/proto/dbval"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -24,7 +23,7 @@ func TestBackfillRoundtrip(t *testing.T) {
 	require.DeepEqual(t, b.LowRoot, ub.LowRoot)
 	require.DeepEqual(t, b.LowParentRoot, ub.LowParentRoot)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, db.SaveBackfillStatus(ctx, b))
 	dbub, err := db.BackfillStatus(ctx)
 	require.NoError(t, err)

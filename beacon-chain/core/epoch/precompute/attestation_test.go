@@ -1,19 +1,18 @@
 package precompute_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestUpdateValidator_Works(t *testing.T) {
@@ -206,10 +205,10 @@ func TestProcessAttestations(t *testing.T) {
 	for i := 0; i < len(pVals); i++ {
 		pVals[i] = &precompute.Validator{CurrentEpochEffectiveBalance: 100}
 	}
-	pVals, _, err = precompute.ProcessAttestations(context.Background(), beaconState, pVals, &precompute.Balance{})
+	pVals, _, err = precompute.ProcessAttestations(t.Context(), beaconState, pVals, &precompute.Balance{})
 	require.NoError(t, err)
 
-	committee, err := helpers.BeaconCommitteeFromState(context.Background(), beaconState, att1.Data.Slot, att1.Data.CommitteeIndex)
+	committee, err := helpers.BeaconCommitteeFromState(t.Context(), beaconState, att1.Data.Slot, att1.Data.CommitteeIndex)
 	require.NoError(t, err)
 	indices, err := attestation.AttestingIndices(att1, committee)
 	require.NoError(t, err)
@@ -218,7 +217,7 @@ func TestProcessAttestations(t *testing.T) {
 			t.Error("Not a prev epoch attester")
 		}
 	}
-	committee, err = helpers.BeaconCommitteeFromState(context.Background(), beaconState, att2.Data.Slot, att2.Data.CommitteeIndex)
+	committee, err = helpers.BeaconCommitteeFromState(t.Context(), beaconState, att2.Data.Slot, att2.Data.CommitteeIndex)
 	require.NoError(t, err)
 	indices, err = attestation.AttestingIndices(att2, committee)
 	require.NoError(t, err)

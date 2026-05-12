@@ -1,14 +1,14 @@
 package blocks
 
 import (
+	field_params "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/crypto/hash/htr"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/gohashtree"
-	field_params "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 const (
@@ -25,6 +25,12 @@ var (
 	errInvalidInclusionProof = errors.New("invalid KZG commitment inclusion proof")
 )
 
+// MerkleProofComponents contains pre-computed components for efficient proof generation
+type MerkleProofComponents struct {
+	kzgSubtree    *trie.SparseMerkleTrie
+	topLevelProof [][]byte
+}
+
 // VerifyKZGInclusionProof verifies the Merkle proof in a Blob sidecar against
 // the beacon block body root.
 func VerifyKZGInclusionProof(blob ROBlob) error {
@@ -39,7 +45,7 @@ func VerifyKZGInclusionProof(blob ROBlob) error {
 		return errInvalidBodyRoot
 	}
 	chunks := makeChunk(blob.KzgCommitment)
-	gohashtree.HashChunks(chunks, chunks)
+	htr.HashChunks(chunks, chunks)
 	verified := trie.VerifyMerkleProof(root, chunks[0][:], blob.Index+KZGOffset, blob.CommitmentInclusionProof)
 	if !verified {
 		return errInvalidInclusionProof
@@ -80,12 +86,103 @@ func MerkleProofKZGCommitment(body interfaces.ReadOnlyBeaconBlockBody, index int
 	return proof, nil
 }
 
-// leavesFromCommitments hashes each commitment to construct a slice of roots
-func leavesFromCommitments(commitments [][]byte) [][]byte {
+// PrecomputeMerkleProofComponents pre-computes the expensive parts of Merkle proof generation
+// that are shared across all blob indices for a given block body.
+func PrecomputeMerkleProofComponents(body interfaces.ReadOnlyBeaconBlockBody) (*MerkleProofComponents, error) {
+	bodyVersion := body.Version()
+	if bodyVersion < version.Deneb {
+		return nil, errUnsupportedBeaconBlockBody
+	}
+
+	// Pre-compute KZG subtree
+	commitments, err := body.BlobKzgCommitments()
+	if err != nil {
+		return nil, err
+	}
+
+	// No work needed if there are no commitments
+	if len(commitments) == 0 {
+		return nil, nil
+	}
+
+	leaves := LeavesFromCommitments(commitments)
+	kzgSubtree, err := trie.GenerateTrieFromItems(leaves, field_params.LogMaxBlobCommitments)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pre-compute top-level components
+	membersRoots, err := topLevelRoots(body)
+	if err != nil {
+		return nil, err
+	}
+	topLevelTrie, err := trie.GenerateTrieFromItems(membersRoots, logBodyLength)
+	if err != nil {
+		return nil, err
+	}
+	topLevelProof, err := topLevelTrie.MerkleProof(kzgPosition)
+	if err != nil {
+		return nil, err
+	}
+	// Remove the last element that is not needed in topProof
+	topLevelProof = topLevelProof[:len(topLevelProof)-1]
+
+	return &MerkleProofComponents{
+		kzgSubtree:    kzgSubtree,
+		topLevelProof: topLevelProof,
+	}, nil
+}
+
+// MerkleProofKZGCommitmentFromComponents constructs a Merkle proof for a specific index
+// using pre-computed components, avoiding redundant calculations.
+func MerkleProofKZGCommitmentFromComponents(components *MerkleProofComponents, index int) ([][]byte, error) {
+	// Generate index-specific proof from pre-computed KZG subtree
+	subtreeProof, err := components.kzgSubtree.MerkleProof(index)
+	if err != nil {
+		return nil, err
+	}
+
+	// Combine with pre-computed top-level proof
+	proof := append(subtreeProof, components.topLevelProof...)
+	return proof, nil
+}
+
+// MerkleProofKZGCommitments constructs a Merkle proof of inclusion of the KZG
+// commitments into the Beacon Block with the given `body`
+func MerkleProofKZGCommitments(body interfaces.ReadOnlyBeaconBlockBody) ([][]byte, error) {
+	bodyVersion := body.Version()
+	if bodyVersion < version.Deneb {
+		return nil, errUnsupportedBeaconBlockBody
+	}
+
+	membersRoots, err := topLevelRoots(body)
+	if err != nil {
+		return nil, errors.Wrap(err, "top level roots")
+	}
+
+	sparse, err := trie.GenerateTrieFromItems(membersRoots, logBodyLength)
+	if err != nil {
+		return nil, errors.Wrap(err, "generate trie from items")
+	}
+
+	proof, err := sparse.MerkleProof(kzgPosition)
+	if err != nil {
+		return nil, errors.Wrap(err, "merkle proof")
+	}
+
+	// Remove the last element as it is a mix in with the number of
+	// elements in the trie.
+	proof = proof[:len(proof)-1]
+
+	return proof, nil
+}
+
+// LeavesFromCommitments hashes each commitment to construct a slice of roots
+func LeavesFromCommitments(commitments [][]byte) [][]byte {
 	leaves := make([][]byte, len(commitments))
 	for i, kzg := range commitments {
 		chunk := makeChunk(kzg)
-		gohashtree.HashChunks(chunk, chunk)
+		htr.HashChunks(chunk, chunk)
 		leaves[i] = chunk[0][:]
 	}
 	return leaves
@@ -105,7 +202,7 @@ func bodyProof(commitments [][]byte, index int) ([][]byte, error) {
 	if index < 0 || index >= len(commitments) {
 		return nil, errInvalidIndex
 	}
-	leaves := leavesFromCommitments(commitments)
+	leaves := LeavesFromCommitments(commitments)
 	sparse, err := trie.GenerateTrieFromItems(leaves, field_params.LogMaxBlobCommitments)
 	if err != nil {
 		return nil, err

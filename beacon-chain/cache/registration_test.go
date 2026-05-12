@@ -1,14 +1,13 @@
 package cache
 
 import (
-	"context"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestRegistrationCache(t *testing.T) {
@@ -24,7 +23,7 @@ func TestRegistrationCache(t *testing.T) {
 		Timestamp:    uint64(time.Now().Unix()),
 		Pubkey:       pubkey,
 	}
-	cache.UpdateIndexToRegisteredMap(context.Background(), m)
+	cache.UpdateIndexToRegisteredMap(t.Context(), m)
 	reg, err := cache.RegistrationByIndex(validatorIndex)
 	require.NoError(t, err)
 	require.Equal(t, string(reg.Pubkey), string(pubkey))
@@ -38,7 +37,7 @@ func TestRegistrationCache(t *testing.T) {
 			Timestamp:    uint64(time.Now().Unix()),
 			Pubkey:       pubkey,
 		}
-		cache.UpdateIndexToRegisteredMap(context.Background(), m)
+		cache.UpdateIndexToRegisteredMap(t.Context(), m)
 		reg, err := cache.RegistrationByIndex(validatorIndex2)
 		require.NoError(t, err)
 		require.Equal(t, string(reg.Pubkey), string(pubkey))

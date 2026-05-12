@@ -1,23 +1,22 @@
 package beacon_api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
 func TestGetAttestationData_ValidAttestation(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	expectedSlot := uint64(5)
 	expectedCommitteeIndex := uint64(6)
 	expectedBeaconBlockRoot := "0x0636045df9bdda3ab96592cf5389032c8ec3977f911e2b53509b348dfe164d4d"
@@ -29,10 +28,10 @@ func TestGetAttestationData_ValidAttestation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 	produceAttestationDataResponseJson := structs.GetAttestationDataResponse{}
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		fmt.Sprintf("/eth/v1/validator/attestation_data?committee_index=%d&slot=%d", expectedCommitteeIndex, expectedSlot),
 		&produceAttestationDataResponseJson,
@@ -57,7 +56,7 @@ func TestGetAttestationData_ValidAttestation(t *testing.T) {
 		},
 	).Times(1)
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+	validatorClient := &beaconApiValidatorClient{handler: handler}
 	resp, err := validatorClient.attestationData(ctx, primitives.Slot(expectedSlot), primitives.CommitteeIndex(expectedCommitteeIndex))
 	assert.NoError(t, err)
 
@@ -76,7 +75,7 @@ func TestGetAttestationData_ValidAttestation(t *testing.T) {
 }
 
 func TestGetAttestationData_InvalidData(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	testCases := []struct {
 		name                 string
@@ -108,7 +107,7 @@ func TestGetAttestationData_InvalidData(t *testing.T) {
 				attestation.Data.BeaconBlockRoot = "foo"
 				return attestation
 			},
-			expectedErrorMessage: "invalid beacon block root: foo",
+			expectedErrorMessage: "failed to decode beacon block root: foo",
 		},
 		{
 			name: "invalid slot",
@@ -144,7 +143,7 @@ func TestGetAttestationData_InvalidData(t *testing.T) {
 				attestation.Data.Source.Root = "foo"
 				return attestation
 			},
-			expectedErrorMessage: "invalid attestation source root: foo",
+			expectedErrorMessage: "failed to decode attestation source root: foo",
 		},
 		{
 			name: "nil target",
@@ -171,7 +170,7 @@ func TestGetAttestationData_InvalidData(t *testing.T) {
 				attestation.Data.Target.Root = "foo"
 				return attestation
 			},
-			expectedErrorMessage: "invalid attestation target root: foo",
+			expectedErrorMessage: "failed to decode attestation target root: foo",
 		},
 	}
 
@@ -181,8 +180,8 @@ func TestGetAttestationData_InvalidData(t *testing.T) {
 			defer ctrl.Finish()
 
 			produceAttestationDataResponseJson := structs.GetAttestationDataResponse{}
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-			jsonRestHandler.EXPECT().Get(
+			handler := mock.NewMockJsonRestHandler(ctrl)
+			handler.EXPECT().Get(
 				gomock.Any(),
 				"/eth/v1/validator/attestation_data?committee_index=2&slot=1",
 				&produceAttestationDataResponseJson,
@@ -193,7 +192,7 @@ func TestGetAttestationData_InvalidData(t *testing.T) {
 				testCase.generateData(),
 			).Times(1)
 
-			validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+			validatorClient := &beaconApiValidatorClient{handler: handler}
 			_, err := validatorClient.attestationData(ctx, 1, 2)
 			assert.ErrorContains(t, testCase.expectedErrorMessage, err)
 		})
@@ -204,14 +203,14 @@ func TestGetAttestationData_JsonResponseError(t *testing.T) {
 	const slot = primitives.Slot(1)
 	const committeeIndex = primitives.CommitteeIndex(2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 	produceAttestationDataResponseJson := structs.GetAttestationDataResponse{}
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		fmt.Sprintf("/eth/v1/validator/attestation_data?committee_index=%d&slot=%d", committeeIndex, slot),
 		&produceAttestationDataResponseJson,
@@ -219,7 +218,7 @@ func TestGetAttestationData_JsonResponseError(t *testing.T) {
 		errors.New("some specific json response error"),
 	).Times(1)
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+	validatorClient := &beaconApiValidatorClient{handler: handler}
 	_, err := validatorClient.attestationData(ctx, slot, committeeIndex)
 	assert.ErrorContains(t, "some specific json response error", err)
 }

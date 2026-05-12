@@ -1,15 +1,14 @@
 package precompute_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestNew(t *testing.T) {
@@ -29,7 +28,7 @@ func TestNew(t *testing.T) {
 	})
 	require.NoError(t, err)
 	e := params.BeaconConfig().FarFutureSlot
-	v, b, err := precompute.New(context.Background(), s)
+	v, b, err := precompute.New(t.Context(), s)
 	require.NoError(t, err)
 	assert.DeepEqual(t, &precompute.Validator{
 		IsSlashed:                    true,

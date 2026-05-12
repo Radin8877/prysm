@@ -4,16 +4,16 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/runtime/messagehandler"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/prysmaticlabs/prysm/v5/runtime/messagehandler"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestSafelyHandleMessage(t *testing.T) {
 	hook := logTest.NewGlobal()
 
-	messagehandler.SafelyHandleMessage(context.Background(), func(_ context.Context, _ *pubsub.Message) error {
+	messagehandler.SafelyHandleMessage(t.Context(), func(_ context.Context, _ *pubsub.Message) error {
 		panic("bad!")
 		return nil
 	}, &pubsub.Message{})
@@ -24,7 +24,7 @@ func TestSafelyHandleMessage(t *testing.T) {
 func TestSafelyHandleMessage_NoData(t *testing.T) {
 	hook := logTest.NewGlobal()
 
-	messagehandler.SafelyHandleMessage(context.Background(), func(_ context.Context, _ *pubsub.Message) error {
+	messagehandler.SafelyHandleMessage(t.Context(), func(_ context.Context, _ *pubsub.Message) error {
 		panic("bad!")
 		return nil
 	}, nil)

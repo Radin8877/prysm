@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/helpers"
+	statenative "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/validator"
+	eth "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
+	validatorHelpers "github.com/OffchainLabs/prysm/v7/validator/helpers"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/eth/helpers"
-	statenative "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/validator"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
-	"google.golang.org/grpc"
 )
 
 type grpcPrysmChainClient struct {
@@ -91,6 +91,12 @@ func validatorCountByStatus(validators []*ethpb.Validator, statuses []validator.
 	return resp, nil
 }
 
-func NewGrpcPrysmChainClient(cc grpc.ClientConnInterface) iface.PrysmChainClient {
-	return &grpcPrysmChainClient{chainClient: &grpcChainClient{ethpb.NewBeaconChainClient(cc)}}
+func (c *grpcPrysmChainClient) ValidatorPerformance(ctx context.Context, in *ethpb.ValidatorPerformanceRequest) (*ethpb.ValidatorPerformanceResponse, error) {
+	return c.chainClient.ValidatorPerformance(ctx, in)
+}
+
+// NewGrpcPrysmChainClient creates a new gRPC Prysm chain client that supports
+// dynamic connection switching via the NodeConnection's GrpcConnectionProvider.
+func NewGrpcPrysmChainClient(conn validatorHelpers.NodeConnection) iface.PrysmChainClient {
+	return &grpcPrysmChainClient{chainClient: NewGrpcChainClient(conn)}
 }

@@ -1,18 +1,17 @@
 package transition_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestTrailingSlotState_RoundTrip(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	r := []byte{'a'}
 	s := transition.NextSlotState(r, 0)
 	require.Equal(t, nil, s)
@@ -36,7 +35,7 @@ func TestTrailingSlotState_RoundTrip(t *testing.T) {
 }
 
 func TestTrailingSlotState_StateAdvancedBeyondRequest(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	r := []byte{'a'}
 	s := transition.NextSlotState(r, 0)
 	require.Equal(t, nil, s)

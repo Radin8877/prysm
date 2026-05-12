@@ -1,26 +1,25 @@
 package precompute_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestProcessJustificationAndFinalizationPreCompute_ConsecutiveEpochs(t *testing.T) {
 	e := params.BeaconConfig().FarFutureEpoch
 	a := params.BeaconConfig().MaxEffectiveBalance
 	blockRoots := make([][]byte, params.BeaconConfig().SlotsPerEpoch*2+1)
-	for i := 0; i < len(blockRoots); i++ {
+	for i := range blockRoots {
 		blockRoots[i] = []byte{byte(i)}
 	}
 	base := &ethpb.BeaconState{
@@ -57,7 +56,7 @@ func TestProcessJustificationAndFinalizationPreCompute_JustifyCurrentEpoch(t *te
 	e := params.BeaconConfig().FarFutureEpoch
 	a := params.BeaconConfig().MaxEffectiveBalance
 	blockRoots := make([][]byte, params.BeaconConfig().SlotsPerEpoch*2+1)
-	for i := 0; i < len(blockRoots); i++ {
+	for i := range blockRoots {
 		blockRoots[i] = []byte{byte(i)}
 	}
 	base := &ethpb.BeaconState{
@@ -94,7 +93,7 @@ func TestProcessJustificationAndFinalizationPreCompute_JustifyPrevEpoch(t *testi
 	e := params.BeaconConfig().FarFutureEpoch
 	a := params.BeaconConfig().MaxEffectiveBalance
 	blockRoots := make([][]byte, params.BeaconConfig().SlotsPerEpoch*2+1)
-	for i := 0; i < len(blockRoots); i++ {
+	for i := range blockRoots {
 		blockRoots[i] = []byte{byte(i)}
 	}
 	base := &ethpb.BeaconState{
@@ -129,7 +128,7 @@ func TestProcessJustificationAndFinalizationPreCompute_JustifyPrevEpoch(t *testi
 func TestUnrealizedCheckpoints(t *testing.T) {
 	validators := make([]*ethpb.Validator, params.BeaconConfig().MinGenesisActiveValidatorCount)
 	balances := make([]uint64, len(validators))
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			ExitEpoch:        params.BeaconConfig().FarFutureEpoch,
 			EffectiveBalance: params.BeaconConfig().MaxEffectiveBalance,
@@ -239,7 +238,7 @@ func TestUnrealizedCheckpoints(t *testing.T) {
 			state, err := state_native.InitializeFromProtoAltair(base)
 			require.NoError(t, err)
 
-			_, _, err = altair.InitializePrecomputeValidators(context.Background(), state)
+			_, _, err = altair.InitializePrecomputeValidators(t.Context(), state)
 			require.NoError(t, err)
 
 			jc, fc, err := precompute.UnrealizedCheckpoints(state)

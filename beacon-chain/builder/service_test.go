@@ -1,33 +1,32 @@
 package builder
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	buildertesting "github.com/prysmaticlabs/prysm/v5/api/client/builder/testing"
-	blockchainTesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbtesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	buildertesting "github.com/OffchainLabs/prysm/v7/api/client/builder/testing"
+	blockchainTesting "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbtesting "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func Test_NewServiceWithBuilder(t *testing.T) {
-	s, err := NewService(context.Background(), WithBuilderClient(&buildertesting.MockClient{}))
+	s, err := NewService(t.Context(), WithBuilderClient(&buildertesting.MockClient{}))
 	require.NoError(t, err)
 	assert.Equal(t, true, s.Configured())
 }
 
 func Test_NewServiceWithoutBuilder(t *testing.T) {
-	s, err := NewService(context.Background())
+	s, err := NewService(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, false, s.Configured())
 }
 
 func Test_RegisterValidator(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := dbtesting.SetupDB(t)
 	headFetcher := &blockchainTesting.ChainService{}
 	builder := buildertesting.NewClient()
@@ -40,7 +39,7 @@ func Test_RegisterValidator(t *testing.T) {
 }
 
 func Test_RegisterValidator_WithCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	headFetcher := &blockchainTesting.ChainService{}
 	builder := buildertesting.NewClient()
 	s, err := NewService(ctx, WithRegistrationCache(), WithHeadFetcher(headFetcher), WithBuilderClient(&builder))
@@ -55,16 +54,16 @@ func Test_RegisterValidator_WithCache(t *testing.T) {
 }
 
 func Test_BuilderMethodsWithouClient(t *testing.T) {
-	s, err := NewService(context.Background())
+	s, err := NewService(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, false, s.Configured())
 
-	_, err = s.GetHeader(context.Background(), 0, [32]byte{}, [48]byte{})
+	_, err = s.GetHeader(t.Context(), 0, [32]byte{}, [48]byte{})
 	assert.ErrorContains(t, ErrNoBuilder.Error(), err)
 
-	_, _, err = s.SubmitBlindedBlock(context.Background(), nil)
+	_, _, err = s.SubmitBlindedBlock(t.Context(), nil)
 	assert.ErrorContains(t, ErrNoBuilder.Error(), err)
 
-	err = s.RegisterValidator(context.Background(), nil)
+	err = s.RegisterValidator(t.Context(), nil)
 	assert.ErrorContains(t, ErrNoBuilder.Error(), err)
 }

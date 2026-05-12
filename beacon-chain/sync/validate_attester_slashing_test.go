@@ -8,23 +8,23 @@ import (
 	"testing"
 	"time"
 
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/container/slice"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/container/slice"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func setupValidAttesterSlashing(t *testing.T) (*ethpb.AttesterSlashing, state.BeaconState) {
@@ -77,7 +77,7 @@ func setupValidAttesterSlashing(t *testing.T) (*ethpb.AttesterSlashing, state.Be
 
 func TestValidateAttesterSlashing_ValidSlashing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidAttesterSlashing(t)
 
@@ -98,7 +98,7 @@ func TestValidateAttesterSlashing_ValidSlashing(t *testing.T) {
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.AttesterSlashing]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -118,7 +118,7 @@ func TestValidateAttesterSlashing_ValidSlashing(t *testing.T) {
 
 func TestValidateAttesterSlashing_ValidOldSlashing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidAttesterSlashing(t)
 	vals := s.Validators()
@@ -143,7 +143,7 @@ func TestValidateAttesterSlashing_ValidOldSlashing(t *testing.T) {
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.AttesterSlashing]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -162,7 +162,7 @@ func TestValidateAttesterSlashing_ValidOldSlashing(t *testing.T) {
 
 func TestValidateAttesterSlashing_InvalidSlashing_WithdrawableEpoch(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidAttesterSlashing(t)
 	// Set only one of the  validators as withdrawn
@@ -188,7 +188,7 @@ func TestValidateAttesterSlashing_InvalidSlashing_WithdrawableEpoch(t *testing.T
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.AttesterSlashing]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -220,7 +220,7 @@ func TestValidateAttesterSlashing_InvalidSlashing_WithdrawableEpoch(t *testing.T
 
 func TestValidateAttesterSlashing_CanFilter(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	chain := &mock.ChainService{Genesis: time.Now()}
 	r := &Service{
@@ -237,7 +237,7 @@ func TestValidateAttesterSlashing_CanFilter(t *testing.T) {
 	r.setAttesterSlashingIndicesSeen([]uint64{1, 2, 3, 4}, []uint64{3, 4, 5, 6})
 
 	// The below attestations should be filtered hence bad signature is ok.
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(&ethpb.AttesterSlashing{})]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.AttesterSlashing]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -290,7 +290,7 @@ func TestValidateAttesterSlashing_ContextTimeout(t *testing.T) {
 	slashing, s := setupValidAttesterSlashing(t)
 	slashing.Attestation_1.Data.Target.Epoch = 100000000
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	chain := &mock.ChainService{State: s}
@@ -308,7 +308,7 @@ func TestValidateAttesterSlashing_ContextTimeout(t *testing.T) {
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.AttesterSlashing]()]
 	msg := &pubsub.Message{
 		Message: &pubsubpb.Message{
 			Data:  buf.Bytes(),
@@ -323,7 +323,7 @@ func TestValidateAttesterSlashing_ContextTimeout(t *testing.T) {
 
 func TestValidateAttesterSlashing_Syncing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidAttesterSlashing(t)
 
@@ -339,7 +339,7 @@ func TestValidateAttesterSlashing_Syncing(t *testing.T) {
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.AttesterSlashing]()]
 	msg := &pubsub.Message{
 		Message: &pubsubpb.Message{
 			Data:  buf.Bytes(),

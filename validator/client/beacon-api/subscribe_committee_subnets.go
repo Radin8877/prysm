@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
-func (c *beaconApiValidatorClient) subscribeCommitteeSubnets(ctx context.Context, in *ethpb.CommitteeSubnetsSubscribeRequest, duties []*ethpb.DutiesResponse_Duty) error {
+func (c *beaconApiValidatorClient) subscribeCommitteeSubnets(ctx context.Context, in *ethpb.CommitteeSubnetsSubscribeRequest, duties []*ethpb.ValidatorDuty) error {
 	if in == nil {
 		return errors.New("committee subnets subscribe request is nil")
 	}
@@ -36,7 +36,7 @@ func (c *beaconApiValidatorClient) subscribeCommitteeSubnets(ctx context.Context
 		return errors.Wrap(err, "failed to marshal committees subscriptions")
 	}
 
-	return c.jsonRestHandler.Post(
+	return c.handler.Post(
 		ctx,
 		"/eth/v1/validator/beacon_committee_subscriptions",
 		nil,

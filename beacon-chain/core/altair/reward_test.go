@@ -4,13 +4,13 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func Test_BaseReward(t *testing.T) {
@@ -31,7 +31,7 @@ func Test_BaseReward(t *testing.T) {
 			valIdx:    2,
 			st:        genState(1),
 			want:      0,
-			errString: "validator index 2 does not exist",
+			errString: "index 2 out of bounds",
 		},
 		{
 			name:      "active balance is 32eth",
@@ -57,7 +57,7 @@ func Test_BaseReward(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := altair.BaseReward(tt.st, tt.valIdx)
+			got, err := altair.BaseReward(t.Context(), tt.st, tt.valIdx)
 			if (err != nil) && (tt.errString != "") {
 				require.ErrorContains(t, tt.errString, err)
 				return
@@ -89,7 +89,7 @@ func Test_BaseRewardWithTotalBalance(t *testing.T) {
 			valIdx:        2,
 			activeBalance: 1,
 			want:          0,
-			errString:     "validator index 2 does not exist",
+			errString:     "index 2 out of bounds",
 		},
 		{
 			name:          "active balance is 1",

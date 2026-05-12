@@ -2,23 +2,22 @@ package signing_test
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	fuzz "github.com/google/gofuzz"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestSigningRoot_ComputeSigningRoot(t *testing.T) {
@@ -83,7 +82,7 @@ func TestSigningRoot_ComputeDomainAndSign(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			beaconState, privKeys := tt.genState(t)
-			idx, err := helpers.BeaconProposerIndex(context.Background(), beaconState)
+			idx, err := helpers.BeaconProposerIndex(t.Context(), beaconState)
 			require.NoError(t, err)
 			block := tt.genBlock(t, beaconState, privKeys)
 			got, err := signing.ComputeDomainAndSign(
@@ -120,7 +119,7 @@ func TestFuzzverifySigningRoot_10000(_ *testing.T) {
 	var p []byte
 	var s []byte
 	var d []byte
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		fuzzer.Fuzz(st)
 		fuzzer.Fuzz(&pubkey)
 		fuzzer.Fuzz(&sig)

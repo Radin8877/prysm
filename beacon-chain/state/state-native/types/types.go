@@ -3,8 +3,8 @@ package types
 import (
 	"fmt"
 
+	consensus_types "github.com/OffchainLabs/prysm/v7/consensus-types"
 	"github.com/pkg/errors"
-	consensus_types "github.com/prysmaticlabs/prysm/v5/consensus-types"
 )
 
 // DataType signifies the data type of the field.
@@ -88,6 +88,8 @@ func (f FieldIndex) String() string {
 		return "latestExecutionPayloadHeaderCapella"
 	case LatestExecutionPayloadHeaderDeneb:
 		return "latestExecutionPayloadHeaderDeneb"
+	case LatestExecutionPayloadBid:
+		return "latestExecutionPayloadBid"
 	case NextWithdrawalIndex:
 		return "nextWithdrawalIndex"
 	case NextWithdrawalValidatorIndex:
@@ -112,6 +114,24 @@ func (f FieldIndex) String() string {
 		return "pendingPartialWithdrawals"
 	case PendingConsolidations:
 		return "pendingConsolidations"
+	case ProposerLookahead:
+		return "proposerLookahead"
+	case Builders:
+		return "builders"
+	case NextWithdrawalBuilderIndex:
+		return "nextWithdrawalBuilderIndex"
+	case ExecutionPayloadAvailability:
+		return "executionPayloadAvailability"
+	case BuilderPendingPayments:
+		return "builderPendingPayments"
+	case BuilderPendingWithdrawals:
+		return "builderPendingWithdrawals"
+	case LatestBlockHash:
+		return "latestBlockHash"
+	case PayloadExpectedWithdrawals:
+		return "payloadExpectedWithdrawals"
+	case PTCWindow:
+		return "ptcWindow"
 	default:
 		return fmt.Sprintf("unknown field index number: %d", f)
 	}
@@ -169,7 +189,7 @@ func (f FieldIndex) RealPosition() int {
 		return 22
 	case NextSyncCommittee:
 		return 23
-	case LatestExecutionPayloadHeader, LatestExecutionPayloadHeaderCapella, LatestExecutionPayloadHeaderDeneb:
+	case LatestExecutionPayloadHeader, LatestExecutionPayloadHeaderCapella, LatestExecutionPayloadHeaderDeneb, LatestBlockHash:
 		return 24
 	case NextWithdrawalIndex:
 		return 25
@@ -195,6 +215,24 @@ func (f FieldIndex) RealPosition() int {
 		return 35
 	case PendingConsolidations:
 		return 36
+	case ProposerLookahead:
+		return 37
+	case Builders:
+		return 38
+	case NextWithdrawalBuilderIndex:
+		return 39
+	case ExecutionPayloadAvailability:
+		return 40
+	case BuilderPendingPayments:
+		return 41
+	case BuilderPendingWithdrawals:
+		return 42
+	case LatestExecutionPayloadBid:
+		return 43
+	case PayloadExpectedWithdrawals:
+		return 44
+	case PTCWindow:
+		return 45
 	default:
 		return -1
 	}
@@ -247,6 +285,7 @@ const (
 	LatestExecutionPayloadHeader
 	LatestExecutionPayloadHeaderCapella
 	LatestExecutionPayloadHeaderDeneb
+	LatestExecutionPayloadBid // Gloas: EIP-7732
 	NextWithdrawalIndex
 	NextWithdrawalValidatorIndex
 	HistoricalSummaries
@@ -259,6 +298,15 @@ const (
 	PendingDeposits               // Electra: EIP-7251
 	PendingPartialWithdrawals     // Electra: EIP-7251
 	PendingConsolidations         // Electra: EIP-7251
+	ProposerLookahead             // Fulu: EIP-7917
+	Builders                      // Gloas: EIP-7732
+	NextWithdrawalBuilderIndex    // Gloas: EIP-7732
+	ExecutionPayloadAvailability  // Gloas: EIP-7732
+	BuilderPendingPayments        // Gloas: EIP-7732
+	BuilderPendingWithdrawals     // Gloas: EIP-7732
+	LatestBlockHash               // Gloas: EIP-7732
+	PayloadExpectedWithdrawals    // Gloas: EIP-7732
+	PTCWindow                     // Gloas: EIP-7732
 )
 
 // Enumerator keeps track of the number of states created since the node's start.

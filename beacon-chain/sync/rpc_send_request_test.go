@@ -5,28 +5,34 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	p2pTypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	p2ptypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/verification"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	p2pTypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestSendRequest_SendBeaconBlocksByRangeRequest(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	pcl := fmt.Sprintf("%s/ssz_snappy", p2p.RPCBlocksByRangeTopicV1)
 
@@ -46,7 +52,7 @@ func TestSendRequest_SendBeaconBlocksByRangeRequest(t *testing.T) {
 	genesisBlkRoot, err := genesisBlk.Block.HashTreeRoot()
 	require.NoError(t, err)
 	parentRoot := genesisBlkRoot
-	for i := 0; i < 255; i++ {
+	for i := range 255 {
 		blk := util.NewBeaconBlock()
 		blk.Block.Slot = primitives.Slot(i)
 		blk.Block.ParentRoot = parentRoot[:]
@@ -298,13 +304,13 @@ func TestSendRequest_SendBeaconBlocksByRangeRequest(t *testing.T) {
 }
 
 func TestSendRequest_SendBeaconBlocksByRootRequest(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	pcl := fmt.Sprintf("%s/ssz_snappy", p2p.RPCBlocksByRootTopicV1)
 
 	knownBlocks := make(map[[32]byte]*ethpb.SignedBeaconBlock)
 	knownRoots := make([][32]byte, 0)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		blk := util.NewBeaconBlock()
 		blkRoot, err := blk.Block.HashTreeRoot()
 		require.NoError(t, err)
@@ -608,18 +614,19 @@ func TestBlobValidatorFromRangeReq(t *testing.T) {
 }
 
 func TestSeqBlobValid(t *testing.T) {
-	one, oneBlobs := generateTestBlockWithSidecars(t, [32]byte{}, 0, 3)
+	ds := util.SlotAtEpoch(t, params.BeaconConfig().DenebForkEpoch)
+	one, oneBlobs := generateTestBlockWithSidecars(t, [32]byte{}, ds, 3)
 	r1, err := one.Block.HashTreeRoot()
 	require.NoError(t, err)
-	two, twoBlobs := generateTestBlockWithSidecars(t, r1, 1, 3)
+	two, twoBlobs := generateTestBlockWithSidecars(t, r1, ds+1, 3)
 	r2, err := two.Block.HashTreeRoot()
 	require.NoError(t, err)
-	_, oops := generateTestBlockWithSidecars(t, r2, 0, 4)
+	_, oops := generateTestBlockWithSidecars(t, r2, ds, 4)
 	oops[1].SignedBlockHeader.Header.ParentRoot = bytesutil.PadTo([]byte("derp"), 32)
 	wrongRoot, err := blocks.NewROBlobWithRoot(oops[2].BlobSidecar, bytesutil.ToBytes32([]byte("parentderp")))
 	require.NoError(t, err)
 	oob := oops[3]
-	oob.Index = uint64(params.BeaconConfig().MaxBlobsPerBlock(0))
+	oob.Index = uint64(params.BeaconConfig().MaxBlobsPerBlock(ds))
 
 	cases := []struct {
 		name  string
@@ -629,7 +636,7 @@ func TestSeqBlobValid(t *testing.T) {
 	}{
 		{
 			name: "all valid",
-			seq:  append(append([]blocks.ROBlob{}, oneBlobs...), twoBlobs...),
+			seq:  slices.Concat(oneBlobs, twoBlobs),
 		},
 		{
 			name: "idx out of bounds",
@@ -654,7 +661,7 @@ func TestSeqBlobValid(t *testing.T) {
 		},
 		{
 			name:  "slots not ascending",
-			seq:   append(append([]blocks.ROBlob{}, twoBlobs...), oops...),
+			seq:   slices.Concat(twoBlobs, oops),
 			err:   errChunkResponseSlotNotAsc,
 			errAt: len(twoBlobs),
 		},
@@ -690,4 +697,998 @@ func TestSeqBlobValid(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSendBlobsByRangeRequest(t *testing.T) {
+	topic := fmt.Sprintf("%s/ssz_snappy", p2p.RPCBlobSidecarsByRangeTopicV1)
+	ctx := t.Context()
+
+	t.Run("single blob - Deneb", func(t *testing.T) {
+		// Setup genesis such that we are currently in deneb.
+		s := uint64(util.SlotAtEpoch(t, params.BeaconConfig().DenebForkEpoch)) * params.BeaconConfig().SecondsPerSlot
+		clock := startup.NewClock(time.Now().Add(-time.Second*time.Duration(s)), [32]byte{})
+		ctxByte, err := ContextByteVersionsForValRoot(clock.GenesisValidatorsRoot())
+		require.NoError(t, err)
+		// Setup peers
+		p1 := p2ptest.NewTestP2P(t)
+		p2 := p2ptest.NewTestP2P(t)
+		p1.Connect(p2)
+		// Set current slot to a deneb slot.
+		slot := util.SlotAtEpoch(t, params.BeaconConfig().DenebForkEpoch+1)
+		// Create a simple handler that will return a valid response.
+		p2.SetStreamHandler(topic, func(stream network.Stream) {
+			defer func() {
+				assert.NoError(t, stream.Close())
+			}()
+
+			req := &ethpb.BlobSidecarsByRangeRequest{}
+			assert.NoError(t, p2.Encoding().DecodeWithMaxLength(stream, req))
+			assert.Equal(t, slot, req.StartSlot)
+			assert.Equal(t, uint64(1), req.Count)
+
+			// Create a sequential set of blobs with the appropriate header information.
+			var prevRoot [32]byte
+			for i := req.StartSlot; i < req.StartSlot+primitives.Slot(req.Count); i++ {
+				b := util.HydrateBlobSidecar(&ethpb.BlobSidecar{})
+				b.SignedBlockHeader.Header.Slot = i
+				b.SignedBlockHeader.Header.ParentRoot = prevRoot[:]
+				ro, err := blocks.NewROBlob(b)
+				require.NoError(t, err)
+				vro := blocks.NewVerifiedROBlob(ro)
+				prevRoot = vro.BlockRoot()
+				assert.NoError(t, WriteBlobSidecarChunk(stream, clock, p2.Encoding(), vro))
+			}
+		})
+		req := &ethpb.BlobSidecarsByRangeRequest{
+			StartSlot: slot,
+			Count:     1,
+		}
+
+		blobs, err := SendBlobsByRangeRequest(ctx, clock, p1, p2.PeerID(), ctxByte, req)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blobs))
+	})
+
+	t.Run("Deneb - Electra epoch boundary crossing", func(t *testing.T) {
+		cfg := params.BeaconConfig()
+		cfg.ElectraForkEpoch = cfg.DenebForkEpoch + 1
+		undo, err := params.SetActiveWithUndo(cfg)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, undo())
+		}()
+		// Setup genesis such that we are currently in deneb.
+		s := uint64(util.SlotAtEpoch(t, params.BeaconConfig().DenebForkEpoch)) * params.BeaconConfig().SecondsPerSlot
+		clock := startup.NewClock(time.Now().Add(-time.Second*time.Duration(s)), [32]byte{})
+		ctxByte, err := ContextByteVersionsForValRoot(clock.GenesisValidatorsRoot())
+		require.NoError(t, err)
+		// Setup peers
+		p1 := p2ptest.NewTestP2P(t)
+		p2 := p2ptest.NewTestP2P(t)
+		p1.Connect(p2)
+		// Set current slot to the first slot of the last deneb epoch.
+		slot := util.SlotAtEpoch(t, params.BeaconConfig().DenebForkEpoch)
+		// Create a simple handler that will return a valid response.
+		p2.SetStreamHandler(topic, func(stream network.Stream) {
+			defer func() {
+				assert.NoError(t, stream.Close())
+			}()
+
+			req := &ethpb.BlobSidecarsByRangeRequest{}
+			assert.NoError(t, p2.Encoding().DecodeWithMaxLength(stream, req))
+			assert.Equal(t, slot, req.StartSlot)
+			assert.Equal(t, uint64(params.BeaconConfig().SlotsPerEpoch)*3, req.Count)
+
+			// Create a sequential set of blobs with the appropriate header information.
+			var prevRoot [32]byte
+			for i := req.StartSlot; i < req.StartSlot+primitives.Slot(req.Count); i++ {
+				maxBlobsForSlot := cfg.MaxBlobsPerBlock(i)
+				parentRoot := prevRoot
+				header := util.HydrateSignedBeaconHeader(&ethpb.SignedBeaconBlockHeader{})
+				header.Header.Slot = i
+				header.Header.ParentRoot = parentRoot[:]
+				bRoot, err := header.Header.HashTreeRoot()
+				require.NoError(t, err)
+				prevRoot = bRoot
+				// Send the maximum possible blobs per slot.
+				for j := range maxBlobsForSlot {
+					b := util.HydrateBlobSidecar(&ethpb.BlobSidecar{})
+					b.SignedBlockHeader = header
+					b.Index = uint64(j)
+					ro, err := blocks.NewROBlob(b)
+					require.NoError(t, err)
+					vro := blocks.NewVerifiedROBlob(ro)
+					assert.NoError(t, WriteBlobSidecarChunk(stream, clock, p2.Encoding(), vro))
+				}
+			}
+		})
+		req := &ethpb.BlobSidecarsByRangeRequest{
+			StartSlot: slot,
+			Count:     uint64(params.BeaconConfig().SlotsPerEpoch) * 3,
+		}
+		maxDenebBlobs := cfg.MaxBlobsPerBlockAtEpoch(cfg.DenebForkEpoch)
+		maxElectraBlobs := cfg.MaxBlobsPerBlockAtEpoch(cfg.ElectraForkEpoch)
+		totalDenebBlobs := primitives.Slot(maxDenebBlobs) * params.BeaconConfig().SlotsPerEpoch
+		totalElectraBlobs := primitives.Slot(maxElectraBlobs) * 2 * params.BeaconConfig().SlotsPerEpoch
+		totalExpectedBlobs := totalDenebBlobs + totalElectraBlobs
+
+		blobs, err := SendBlobsByRangeRequest(ctx, clock, p1, p2.PeerID(), ctxByte, req)
+		assert.NoError(t, err)
+		assert.Equal(t, int(totalExpectedBlobs), len(blobs))
+	})
+
+	t.Run("Starting from Electra", func(t *testing.T) {
+		cfg := params.BeaconConfig()
+		cfg.ElectraForkEpoch = cfg.DenebForkEpoch + 1
+		undo, err := params.SetActiveWithUndo(cfg)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, undo())
+		}()
+
+		s := uint64(util.SlotAtEpoch(t, params.BeaconConfig().ElectraForkEpoch)) * params.BeaconConfig().SecondsPerSlot
+		clock := startup.NewClock(time.Now().Add(-time.Second*time.Duration(s)), [32]byte{})
+		ctxByte, err := ContextByteVersionsForValRoot(clock.GenesisValidatorsRoot())
+		require.NoError(t, err)
+		// Setup peers
+		p1 := p2ptest.NewTestP2P(t)
+		p2 := p2ptest.NewTestP2P(t)
+		p1.Connect(p2)
+
+		slot := util.SlotAtEpoch(t, params.BeaconConfig().ElectraForkEpoch)
+		// Create a simple handler that will return a valid response.
+		p2.SetStreamHandler(topic, func(stream network.Stream) {
+			defer func() {
+				assert.NoError(t, stream.Close())
+			}()
+
+			req := &ethpb.BlobSidecarsByRangeRequest{}
+			assert.NoError(t, p2.Encoding().DecodeWithMaxLength(stream, req))
+			assert.Equal(t, slot, req.StartSlot)
+			assert.Equal(t, uint64(params.BeaconConfig().SlotsPerEpoch)*3, req.Count)
+
+			// Create a sequential set of blobs with the appropriate header information.
+			var prevRoot [32]byte
+			for i := req.StartSlot; i < req.StartSlot+primitives.Slot(req.Count); i++ {
+				maxBlobsForSlot := cfg.MaxBlobsPerBlock(i)
+				parentRoot := prevRoot
+				header := util.HydrateSignedBeaconHeader(&ethpb.SignedBeaconBlockHeader{})
+				header.Header.Slot = i
+				header.Header.ParentRoot = parentRoot[:]
+				bRoot, err := header.Header.HashTreeRoot()
+				require.NoError(t, err)
+				prevRoot = bRoot
+				// Send the maximum possible blobs per slot.
+				for j := range maxBlobsForSlot {
+					b := util.HydrateBlobSidecar(&ethpb.BlobSidecar{})
+					b.SignedBlockHeader = header
+					b.Index = uint64(j)
+					ro, err := blocks.NewROBlob(b)
+					require.NoError(t, err)
+					vro := blocks.NewVerifiedROBlob(ro)
+					assert.NoError(t, WriteBlobSidecarChunk(stream, clock, p2.Encoding(), vro))
+				}
+			}
+		})
+		req := &ethpb.BlobSidecarsByRangeRequest{
+			StartSlot: slot,
+			Count:     uint64(params.BeaconConfig().SlotsPerEpoch) * 3,
+		}
+
+		maxElectraBlobs := cfg.MaxBlobsPerBlockAtEpoch(cfg.ElectraForkEpoch)
+		totalElectraBlobs := primitives.Slot(maxElectraBlobs) * 3 * params.BeaconConfig().SlotsPerEpoch
+
+		blobs, err := SendBlobsByRangeRequest(ctx, clock, p1, p2.PeerID(), ctxByte, req)
+		assert.NoError(t, err)
+		assert.Equal(t, int(totalElectraBlobs), len(blobs))
+	})
+}
+
+func TestErrInvalidFetchedDataDistinction(t *testing.T) {
+	require.Equal(t, false, errors.Is(ErrInvalidFetchedData, verification.ErrBlobInvalid))
+}
+
+func TestSendDataColumnSidecarsByRangeRequest(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	cfg := params.BeaconConfig()
+	cfg.FuluForkEpoch = 0
+	params.OverrideBeaconConfig(cfg)
+	params.BeaconConfig().InitializeForkSchedule()
+	ctxMap, err := ContextByteVersionsForValRoot(params.BeaconConfig().GenesisValidatorsRoot)
+	require.NoError(t, err)
+	nilTestCases := []struct {
+		name    string
+		request *ethpb.DataColumnSidecarsByRangeRequest
+	}{
+		{
+			name:    "nil request",
+			request: nil,
+		},
+		{
+			name:    "count is 0",
+			request: &ethpb.DataColumnSidecarsByRangeRequest{},
+		},
+		{
+			name:    "columns is nil",
+			request: &ethpb.DataColumnSidecarsByRangeRequest{Count: 1},
+		},
+	}
+
+	for _, tc := range nilTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, err := SendDataColumnSidecarsByRangeRequest(DataColumnSidecarsParams{Ctx: t.Context()}, "", tc.request)
+			require.NoError(t, err)
+			require.IsNil(t, actual)
+		})
+	}
+
+	t.Run("too many columns in request", func(t *testing.T) {
+		params.SetupTestConfigCleanup(t)
+		cfg := params.BeaconConfig()
+		cfg.MaxRequestDataColumnSidecars = 0
+		params.OverrideBeaconConfig(cfg)
+
+		request := &ethpb.DataColumnSidecarsByRangeRequest{Count: 1, Columns: []uint64{1, 2, 3}}
+		_, err := SendDataColumnSidecarsByRangeRequest(DataColumnSidecarsParams{Ctx: t.Context()}, "", request)
+		require.ErrorContains(t, errMaxRequestDataColumnSidecarsExceeded.Error(), err)
+	})
+
+	type slotIndex struct {
+		Slot  primitives.Slot
+		Index uint64
+	}
+
+	createSidecar := func(slotIndex slotIndex) *ethpb.DataColumnSidecar {
+		const count = 4
+		kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+		for range count {
+			kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+		}
+
+		return &ethpb.DataColumnSidecar{
+			Index: slotIndex.Index,
+			SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+				Header: &ethpb.BeaconBlockHeader{
+					Slot:       slotIndex.Slot,
+					ParentRoot: make([]byte, fieldparams.RootLength),
+					StateRoot:  make([]byte, fieldparams.RootLength),
+					BodyRoot:   make([]byte, fieldparams.RootLength),
+				},
+				Signature: make([]byte, fieldparams.BLSSignatureLength),
+			},
+			KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+		}
+	}
+
+	testCases := []struct {
+		name          string
+		slotIndices   []slotIndex
+		expectedError error
+	}{
+		{
+			name: "too many responses",
+			slotIndices: []slotIndex{
+				{Slot: 0, Index: 1},
+				{Slot: 0, Index: 2},
+				{Slot: 0, Index: 3},
+				{Slot: 1, Index: 1},
+				{Slot: 1, Index: 2},
+				{Slot: 1, Index: 3},
+				{Slot: 0, Index: 3}, // Duplicate
+			},
+			expectedError: errMaxResponseDataColumnSidecarsExceeded,
+		},
+		{
+			name: "perfect match",
+			slotIndices: []slotIndex{
+				{Slot: 0, Index: 1},
+				{Slot: 0, Index: 2},
+				{Slot: 0, Index: 3},
+				{Slot: 1, Index: 1},
+				{Slot: 1, Index: 2},
+				{Slot: 1, Index: 3},
+			},
+		},
+		{
+			name: "few responses than maximum possible",
+			slotIndices: []slotIndex{
+				{Slot: 0, Index: 1},
+				{Slot: 0, Index: 2},
+				{Slot: 0, Index: 3},
+				{Slot: 1, Index: 1},
+				{Slot: 1, Index: 2},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			protocol := fmt.Sprintf("%s/ssz_snappy", p2p.RPCDataColumnSidecarsByRangeTopicV1)
+			clock := startup.NewClock(time.Now(), [fieldparams.RootLength]byte{})
+
+			p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+			p1.Connect(p2)
+
+			expected := make([]*ethpb.DataColumnSidecar, 0, len(tc.slotIndices))
+			for _, slotIndex := range tc.slotIndices {
+				sidecar := createSidecar(slotIndex)
+				expected = append(expected, sidecar)
+			}
+
+			requestSent := &ethpb.DataColumnSidecarsByRangeRequest{
+				StartSlot: 0,
+				Count:     2,
+				Columns:   []uint64{1, 3, 2},
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+
+			p2.SetStreamHandler(protocol, func(stream network.Stream) {
+				wg.Done()
+
+				requestReceived := new(ethpb.DataColumnSidecarsByRangeRequest)
+				err := p2.Encoding().DecodeWithMaxLength(stream, requestReceived)
+				assert.NoError(t, err)
+				assert.DeepSSZEqual(t, requestSent, requestReceived)
+
+				for _, sidecar := range expected {
+					ro, err := blocks.NewRODataColumn(sidecar)
+					assert.NoError(t, err)
+					err = WriteDataColumnSidecarChunk(stream, clock, p2.Encoding(), ro)
+					assert.NoError(t, err)
+				}
+
+				err = stream.CloseWrite()
+				assert.NoError(t, err)
+			})
+
+			parameters := DataColumnSidecarsParams{
+				Ctx:    t.Context(),
+				Tor:    clock,
+				P2P:    p1,
+				CtxMap: ctxMap,
+			}
+
+			actual, err := SendDataColumnSidecarsByRangeRequest(parameters, p2.PeerID(), requestSent)
+			if tc.expectedError != nil {
+				require.ErrorContains(t, tc.expectedError.Error(), err)
+				if util.WaitTimeout(&wg, time.Second) {
+					t.Fatal("Did not receive stream within 1 sec")
+				}
+
+				return
+			}
+
+			require.Equal(t, len(expected), len(actual))
+			for i := range expected {
+				require.DeepSSZEqual(t, expected[i], actual[i].DataColumnSidecar())
+			}
+		})
+	}
+}
+
+func TestIsSidecarSlotWithinBounds(t *testing.T) {
+	request := &ethpb.DataColumnSidecarsByRangeRequest{
+		StartSlot: 10,
+		Count:     10,
+	}
+
+	validator, err := isSidecarSlotRequested(request)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name            string
+		slot            primitives.Slot
+		isErrorExpected bool
+	}{
+		{
+			name:            "too soon",
+			slot:            9,
+			isErrorExpected: true,
+		},
+		{
+			name:            "too late",
+			slot:            20,
+			isErrorExpected: true,
+		},
+		{
+			name:            "within bounds",
+			slot:            15,
+			isErrorExpected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			const count = 4
+			kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+			for range count {
+				kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+			}
+
+			sidecarPb := &ethpb.DataColumnSidecar{
+				SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+					Header: &ethpb.BeaconBlockHeader{
+						Slot:       tc.slot,
+						ParentRoot: make([]byte, fieldparams.RootLength),
+						StateRoot:  make([]byte, fieldparams.RootLength),
+						BodyRoot:   make([]byte, fieldparams.RootLength),
+					},
+					Signature: make([]byte, fieldparams.BLSSignatureLength),
+				},
+				KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+			}
+
+			sidecar, err := blocks.NewRODataColumn(sidecarPb)
+			require.NoError(t, err)
+
+			err = validator(sidecar)
+			if tc.isErrorExpected {
+				require.NotNil(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestIsSidecarIndexRequested(t *testing.T) {
+	request := &ethpb.DataColumnSidecarsByRangeRequest{
+		Columns: []uint64{2, 9, 4},
+	}
+
+	validator := isSidecarIndexRequested(request)
+
+	testCases := []struct {
+		name            string
+		index           uint64
+		isErrorExpected bool
+	}{
+		{
+			name:            "not requested",
+			index:           1,
+			isErrorExpected: true,
+		},
+		{
+			name:            "requested",
+			index:           9,
+			isErrorExpected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			const count = 4
+			kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+			for range count {
+				kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+			}
+
+			sidecarPb := &ethpb.DataColumnSidecar{
+				SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+					Header: &ethpb.BeaconBlockHeader{
+						Slot:       0,
+						ParentRoot: make([]byte, fieldparams.RootLength),
+						StateRoot:  make([]byte, fieldparams.RootLength),
+						BodyRoot:   make([]byte, fieldparams.RootLength),
+					},
+					Signature: make([]byte, fieldparams.BLSSignatureLength),
+				},
+				KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+				Index:                        tc.index,
+			}
+
+			sidecar, err := blocks.NewRODataColumn(sidecarPb)
+			require.NoError(t, err)
+
+			err = validator(sidecar)
+			if tc.isErrorExpected {
+				require.NotNil(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestSendDataColumnSidecarsByRootRequest(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	cfg := params.BeaconConfig()
+	cfg.FuluForkEpoch = 0
+	params.OverrideBeaconConfig(cfg)
+	params.BeaconConfig().InitializeForkSchedule()
+	ctxMap, err := ContextByteVersionsForValRoot(params.BeaconConfig().GenesisValidatorsRoot)
+	require.NoError(t, err)
+	nilTestCases := []struct {
+		name    string
+		request p2ptypes.DataColumnsByRootIdentifiers
+	}{
+		{
+			name:    "nil request",
+			request: nil,
+		},
+		{
+			name:    "count is 0",
+			request: p2ptypes.DataColumnsByRootIdentifiers{{}, {}},
+		},
+	}
+
+	for _, tc := range nilTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, err := SendDataColumnSidecarsByRootRequest(DataColumnSidecarsParams{Ctx: t.Context()}, "", tc.request)
+			require.NoError(t, err)
+			require.IsNil(t, actual)
+		})
+	}
+
+	t.Run("too many columns in request", func(t *testing.T) {
+		params.SetupTestConfigCleanup(t)
+		cfg := params.BeaconConfig()
+		cfg.MaxRequestDataColumnSidecars = 4
+		params.OverrideBeaconConfig(cfg)
+
+		request := p2ptypes.DataColumnsByRootIdentifiers{
+			{Columns: []uint64{1, 2, 3}},
+			{Columns: []uint64{4, 5, 6}},
+		}
+
+		_, err := SendDataColumnSidecarsByRootRequest(DataColumnSidecarsParams{Ctx: t.Context()}, "", request)
+		require.ErrorContains(t, errMaxRequestDataColumnSidecarsExceeded.Error(), err)
+	})
+
+	type slotIndex struct {
+		Slot  primitives.Slot
+		Index uint64
+	}
+
+	createSidecar := func(rootIndex slotIndex) blocks.RODataColumn {
+		const count = 4
+		kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+		for range count {
+			kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+		}
+
+		sidecarPb := &ethpb.DataColumnSidecar{
+			Index: rootIndex.Index,
+			SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+				Header: &ethpb.BeaconBlockHeader{
+					ParentRoot: make([]byte, fieldparams.RootLength),
+					StateRoot:  make([]byte, fieldparams.RootLength),
+					BodyRoot:   make([]byte, fieldparams.RootLength),
+				},
+				Signature: make([]byte, fieldparams.BLSSignatureLength),
+			},
+			KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+		}
+
+		roSidecar, err := blocks.NewRODataColumn(sidecarPb)
+		require.NoError(t, err)
+
+		return roSidecar
+	}
+
+	testCases := []struct {
+		name          string
+		slotIndices   []slotIndex
+		expectedError error
+	}{
+		{
+			name: "too many responses",
+			slotIndices: []slotIndex{
+				{Slot: 1, Index: 1},
+				{Slot: 1, Index: 2},
+				{Slot: 1, Index: 3},
+				{Slot: 2, Index: 1},
+				{Slot: 2, Index: 2},
+				{Slot: 2, Index: 3},
+				{Slot: 1, Index: 3}, // Duplicate
+			},
+			expectedError: errMaxResponseDataColumnSidecarsExceeded,
+		},
+		{
+			name: "perfect match",
+			slotIndices: []slotIndex{
+				{Slot: 1, Index: 1},
+				{Slot: 1, Index: 2},
+				{Slot: 1, Index: 3},
+				{Slot: 2, Index: 1},
+				{Slot: 2, Index: 2},
+				{Slot: 2, Index: 3},
+			},
+		},
+		{
+			name: "few responses than maximum possible",
+			slotIndices: []slotIndex{
+				{Slot: 1, Index: 1},
+				{Slot: 1, Index: 2},
+				{Slot: 1, Index: 3},
+				{Slot: 2, Index: 1},
+				{Slot: 2, Index: 2},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			protocol := fmt.Sprintf("%s/ssz_snappy", p2p.RPCDataColumnSidecarsByRootTopicV1)
+			clock := startup.NewClock(time.Now(), [fieldparams.RootLength]byte{})
+
+			p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+			p1.Connect(p2)
+
+			expected := make([]blocks.RODataColumn, 0, len(tc.slotIndices))
+			for _, slotIndex := range tc.slotIndices {
+				roSidecar := createSidecar(slotIndex)
+				expected = append(expected, roSidecar)
+			}
+
+			blockRoot1, blockRoot2 := expected[0].BlockRoot(), expected[3].BlockRoot()
+
+			sentRequest := p2ptypes.DataColumnsByRootIdentifiers{
+				{BlockRoot: blockRoot1[:], Columns: []uint64{1, 2, 3}},
+				{BlockRoot: blockRoot2[:], Columns: []uint64{1, 2, 3}},
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+
+			p2.SetStreamHandler(protocol, func(stream network.Stream) {
+				wg.Done()
+
+				requestReceived := new(p2ptypes.DataColumnsByRootIdentifiers)
+				err := p2.Encoding().DecodeWithMaxLength(stream, requestReceived)
+				assert.NoError(t, err)
+
+				require.Equal(t, len(sentRequest), len(*requestReceived))
+				for i := range sentRequest {
+					require.DeepSSZEqual(t, (sentRequest)[i], (*requestReceived)[i])
+				}
+
+				for _, sidecar := range expected {
+					err := WriteDataColumnSidecarChunk(stream, clock, p2.Encoding(), sidecar)
+					assert.NoError(t, err)
+				}
+
+				err = stream.CloseWrite()
+				assert.NoError(t, err)
+			})
+
+			parameters := DataColumnSidecarsParams{
+				Ctx:    t.Context(),
+				Tor:    clock,
+				P2P:    p1,
+				CtxMap: ctxMap,
+			}
+			actual, err := SendDataColumnSidecarsByRootRequest(parameters, p2.PeerID(), sentRequest)
+			if tc.expectedError != nil {
+				require.ErrorContains(t, tc.expectedError.Error(), err)
+				if util.WaitTimeout(&wg, time.Second) {
+					t.Fatal("Did not receive stream within 1 sec")
+				}
+
+				return
+			}
+
+			require.Equal(t, len(expected), len(actual))
+			for i := range expected {
+				require.DeepSSZEqual(t, expected[i].DataColumnSidecar(), actual[i].DataColumnSidecar())
+			}
+		})
+	}
+}
+
+func TestIsSidecarIndexRootRequested(t *testing.T) {
+	testCases := []struct {
+		name            string
+		root            [fieldparams.RootLength]byte
+		index           uint64
+		isErrorExpected bool
+	}{
+		{
+			name:            "non requested root",
+			root:            [fieldparams.RootLength]byte{2},
+			isErrorExpected: true,
+		},
+		{
+			name:            "non requested index",
+			root:            [fieldparams.RootLength]byte{1},
+			index:           3,
+			isErrorExpected: true,
+		},
+		{
+			name:            "nominal",
+			root:            [fieldparams.RootLength]byte{1},
+			index:           2,
+			isErrorExpected: false,
+		},
+	}
+
+	request := types.DataColumnsByRootIdentifiers{
+		{BlockRoot: []byte{1}, Columns: []uint64{1, 2}},
+	}
+
+	validator := isSidecarIndexRootRequested(request)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			const count = 4
+			kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+			for range count {
+				kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+			}
+
+			sidecarPb := &ethpb.DataColumnSidecar{
+				SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+					Header: &ethpb.BeaconBlockHeader{
+						ParentRoot: make([]byte, fieldparams.RootLength),
+						StateRoot:  make([]byte, fieldparams.RootLength),
+						BodyRoot:   make([]byte, fieldparams.RootLength),
+					},
+					Signature: make([]byte, fieldparams.BLSSignatureLength),
+				},
+				KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+				Index:                        tc.index,
+			}
+
+			// There is a discrepancy between `tc.root` and the real root,
+			// but we don't care about it here.
+			sidecar, err := blocks.NewRODataColumnWithRoot(sidecarPb, tc.root)
+			require.NoError(t, err)
+
+			err = validator(sidecar)
+			if tc.isErrorExpected {
+				require.NotNil(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestReadChunkedDataColumnSidecar(t *testing.T) {
+	t.Run("non nil status code", func(t *testing.T) {
+		const reason = "a dummy reason"
+
+		p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		p2.SetStreamHandler(p2p.RPCDataColumnSidecarsByRootTopicV1, func(stream network.Stream) {
+			defer wg.Done()
+
+			_, err := readChunkedDataColumnSidecar(stream, p2, nil)
+			require.ErrorContains(t, reason, err)
+		})
+
+		p1.Connect(p2)
+
+		stream, err := p1.BHost.NewStream(t.Context(), p2.PeerID(), p2p.RPCDataColumnSidecarsByRootTopicV1)
+		require.NoError(t, err)
+
+		writeErrorResponseToStream(responseCodeInvalidRequest, reason, stream, p1)
+
+		if util.WaitTimeout(&wg, time.Second) {
+			t.Fatal("Did not receive stream within 1 sec")
+		}
+	})
+
+	t.Run("unrecognized fork digest", func(t *testing.T) {
+		p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		p2.SetStreamHandler(p2p.RPCDataColumnSidecarsByRootTopicV1, func(stream network.Stream) {
+			defer wg.Done()
+
+			_, err := readChunkedDataColumnSidecar(stream, p2, ContextByteVersions{})
+			require.ErrorContains(t, "unrecognized fork digest", err)
+		})
+
+		p1.Connect(p2)
+
+		stream, err := p1.BHost.NewStream(t.Context(), p2.PeerID(), p2p.RPCDataColumnSidecarsByRootTopicV1)
+		require.NoError(t, err)
+
+		_, err = stream.Write([]byte{responseCodeSuccess})
+		require.NoError(t, err)
+
+		err = writeContextToStream([]byte{42, 42, 42, 42}, stream)
+		require.NoError(t, err)
+
+		if util.WaitTimeout(&wg, time.Second) {
+			t.Fatal("Did not receive stream within 1 sec")
+		}
+	})
+
+	t.Run("before fulu", func(t *testing.T) {
+		p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		p2.SetStreamHandler(p2p.RPCDataColumnSidecarsByRootTopicV1, func(stream network.Stream) {
+			defer wg.Done()
+
+			_, err := readChunkedDataColumnSidecar(stream, p2, ContextByteVersions{[4]byte{1, 2, 3, 4}: version.Phase0})
+			require.ErrorContains(t, "unexpected context bytes", err)
+		})
+
+		p1.Connect(p2)
+
+		stream, err := p1.BHost.NewStream(t.Context(), p2.PeerID(), p2p.RPCDataColumnSidecarsByRootTopicV1)
+		require.NoError(t, err)
+
+		_, err = stream.Write([]byte{responseCodeSuccess})
+		require.NoError(t, err)
+
+		err = writeContextToStream([]byte{1, 2, 3, 4}, stream)
+		require.NoError(t, err)
+
+		if util.WaitTimeout(&wg, time.Second) {
+			t.Fatal("Did not receive stream within 1 sec")
+		}
+	})
+
+	t.Run("one validation failed", func(t *testing.T) {
+		const reason = "a dummy reason"
+
+		p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		p2.SetStreamHandler(p2p.RPCDataColumnSidecarsByRootTopicV1, func(stream network.Stream) {
+			defer wg.Done()
+
+			validationOne := func(column blocks.RODataColumn) error {
+				return nil
+			}
+
+			validationTwo := func(column blocks.RODataColumn) error {
+				return errors.New(reason)
+			}
+
+			_, err := readChunkedDataColumnSidecar(
+				stream,
+				p2,
+				ContextByteVersions{[4]byte{1, 2, 3, 4}: version.Fulu},
+				validationOne, // OK
+				validationTwo, // Fail
+			)
+
+			require.ErrorContains(t, reason, err)
+		})
+
+		p1.Connect(p2)
+
+		stream, err := p1.BHost.NewStream(t.Context(), p2.PeerID(), p2p.RPCDataColumnSidecarsByRootTopicV1)
+		require.NoError(t, err)
+
+		const count = 4
+		kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+		for range count {
+			kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+		}
+
+		// Success response code.
+		_, err = stream.Write([]byte{responseCodeSuccess})
+		require.NoError(t, err)
+
+		// Fork digest.
+		err = writeContextToStream([]byte{1, 2, 3, 4}, stream)
+		require.NoError(t, err)
+
+		// Sidecar.
+		_, err = p1.Encoding().EncodeWithMaxLength(stream, &ethpb.DataColumnSidecar{
+			SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+				Header: &ethpb.BeaconBlockHeader{
+					ParentRoot: make([]byte, fieldparams.RootLength),
+					StateRoot:  make([]byte, fieldparams.RootLength),
+					BodyRoot:   make([]byte, fieldparams.RootLength),
+				},
+				Signature: make([]byte, fieldparams.BLSSignatureLength),
+			},
+			KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+		})
+		require.NoError(t, err)
+
+		if util.WaitTimeout(&wg, time.Minute) {
+			t.Fatal("Did not receive stream within 1 sec")
+		}
+	})
+
+	t.Run("nominal", func(t *testing.T) {
+		p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+
+		const count = 4
+		kzgCommitmentsInclusionProof := make([][]byte, 0, count)
+		for range count {
+			kzgCommitmentsInclusionProof = append(kzgCommitmentsInclusionProof, make([]byte, 32))
+		}
+
+		expected := &ethpb.DataColumnSidecar{
+			SignedBlockHeader: &ethpb.SignedBeaconBlockHeader{
+				Header: &ethpb.BeaconBlockHeader{
+					ParentRoot: make([]byte, fieldparams.RootLength),
+					StateRoot:  make([]byte, fieldparams.RootLength),
+					BodyRoot:   make([]byte, fieldparams.RootLength),
+				},
+				Signature: make([]byte, fieldparams.BLSSignatureLength),
+			},
+			KzgCommitmentsInclusionProof: kzgCommitmentsInclusionProof,
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		p2.SetStreamHandler(p2p.RPCDataColumnSidecarsByRootTopicV1, func(stream network.Stream) {
+			defer wg.Done()
+
+			actual, err := readChunkedDataColumnSidecar(stream, p2, ContextByteVersions{[4]byte{1, 2, 3, 4}: version.Fulu})
+			require.NoError(t, err)
+			require.DeepSSZEqual(t, expected, actual.DataColumnSidecar())
+		})
+
+		p1.Connect(p2)
+
+		stream, err := p1.BHost.NewStream(t.Context(), p2.PeerID(), p2p.RPCDataColumnSidecarsByRootTopicV1)
+		require.NoError(t, err)
+
+		// Success response code.
+		_, err = stream.Write([]byte{responseCodeSuccess})
+		require.NoError(t, err)
+
+		// Fork digest.
+		err = writeContextToStream([]byte{1, 2, 3, 4}, stream)
+		require.NoError(t, err)
+
+		// Sidecar.
+		_, err = p1.Encoding().EncodeWithMaxLength(stream, expected)
+		require.NoError(t, err)
+
+		if util.WaitTimeout(&wg, time.Minute) {
+			t.Fatal("Did not receive stream within 1 sec")
+		}
+	})
+
+	t.Run("nominal gloas", func(t *testing.T) {
+		p1, p2 := p2ptest.NewTestP2P(t), p2ptest.NewTestP2P(t)
+
+		expected := &ethpb.DataColumnSidecarGloas{
+			Index:           7,
+			Column:          [][]byte{make([]byte, 2048)},
+			KzgProofs:       [][]byte{make([]byte, 48)},
+			BeaconBlockRoot: make([]byte, fieldparams.RootLength),
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		p2.SetStreamHandler(p2p.RPCDataColumnSidecarsByRootTopicV1, func(stream network.Stream) {
+			defer wg.Done()
+
+			actual, err := readChunkedDataColumnSidecar(stream, p2, ContextByteVersions{[4]byte{1, 2, 3, 4}: version.Gloas})
+			require.NoError(t, err)
+			require.Equal(t, true, actual.IsGloas())
+			require.Equal(t, uint64(7), actual.Index())
+		})
+
+		p1.Connect(p2)
+
+		stream, err := p1.BHost.NewStream(t.Context(), p2.PeerID(), p2p.RPCDataColumnSidecarsByRootTopicV1)
+		require.NoError(t, err)
+
+		_, err = stream.Write([]byte{responseCodeSuccess})
+		require.NoError(t, err)
+
+		err = writeContextToStream([]byte{1, 2, 3, 4}, stream)
+		require.NoError(t, err)
+
+		_, err = p1.Encoding().EncodeWithMaxLength(stream, expected)
+		require.NoError(t, err)
+
+		if util.WaitTimeout(&wg, time.Minute) {
+			t.Fatal("Did not receive stream within 1 sec")
+		}
+	})
 }

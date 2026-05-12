@@ -1,22 +1,21 @@
 package altair_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestProcessDeposits_SameValidatorMultipleDepositsSameBlock(t *testing.T) {
@@ -42,7 +41,7 @@ func TestProcessDeposits_SameValidatorMultipleDepositsSameBlock(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	newState, err := altair.ProcessDeposits(context.Background(), beaconState, []*ethpb.Deposit{dep[0], dep[1], dep[2]})
+	newState, err := altair.ProcessDeposits(t.Context(), beaconState, []*ethpb.Deposit{dep[0], dep[1], dep[2]})
 	require.NoError(t, err, "Expected block deposits to process correctly")
 	require.Equal(t, 2, len(newState.Validators()), "Incorrect validator count")
 }
@@ -70,7 +69,7 @@ func TestProcessDeposits_AddsNewValidatorDeposit(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	newState, err := altair.ProcessDeposits(context.Background(), beaconState, []*ethpb.Deposit{dep[0]})
+	newState, err := altair.ProcessDeposits(t.Context(), beaconState, []*ethpb.Deposit{dep[0]})
 	require.NoError(t, err, "Expected block deposits to process correctly")
 	if newState.Balances()[1] != dep[0].Data.Amount {
 		t.Errorf(
@@ -127,7 +126,7 @@ func TestProcessDeposits_RepeatedDeposit_IncreasesValidatorBalance(t *testing.T)
 		},
 	})
 	require.NoError(t, err)
-	newState, err := altair.ProcessDeposits(context.Background(), beaconState, []*ethpb.Deposit{deposit})
+	newState, err := altair.ProcessDeposits(t.Context(), beaconState, []*ethpb.Deposit{deposit})
 	require.NoError(t, err, "Process deposit failed")
 	require.Equal(t, uint64(1000+50), newState.Balances()[1], "Expected balance at index 1 to be 1050")
 }
@@ -256,7 +255,7 @@ func TestPreGenesisDeposits_SkipInvalidDeposit(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	newState, err := altair.ProcessPreGenesisDeposits(context.Background(), beaconState, dep)
+	newState, err := altair.ProcessPreGenesisDeposits(t.Context(), beaconState, dep)
 	require.NoError(t, err, "Expected invalid block deposit to be ignored without error")
 
 	_, ok := newState.ValidatorIndexByPubkey(bytesutil.ToBytes48(dep[0].Data.PublicKey))
@@ -370,6 +369,6 @@ func TestProcessDeposits_MerkleBranchFailsVerification(t *testing.T) {
 	})
 	require.NoError(t, err)
 	want := "deposit root did not verify"
-	_, err = altair.ProcessDeposits(context.Background(), beaconState, b.Block.Body.Deposits)
+	_, err = altair.ProcessDeposits(t.Context(), beaconState, b.Block.Body.Deposits)
 	assert.ErrorContains(t, want, err)
 }

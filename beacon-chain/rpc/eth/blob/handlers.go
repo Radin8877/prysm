@@ -5,22 +5,26 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/shared"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/options"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	field_params "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 // Blobs is an HTTP handler for Beacon API getBlobs.
+// Deprecated: /eth/v1/beacon/blob_sidecars/{block_id} in favor of /eth/v1/beacon/blobs/{block_id}
+// the endpoint will continue to work post fulu for some time however
 func (s *Server) Blobs(w http.ResponseWriter, r *http.Request) {
 	ctx, span := trace.StartSpan(r.Context(), "beacon.Blobs")
 	defer span.End()
@@ -30,10 +34,9 @@ func (s *Server) Blobs(w http.ResponseWriter, r *http.Request) {
 		httputil.HandleError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	segments := strings.Split(r.URL.Path, "/")
-	blockId := segments[len(segments)-1]
+	blockId := r.PathValue("block_id")
 
-	verifiedBlobs, rpcErr := s.Blocker.Blobs(ctx, blockId, indices)
+	verifiedBlobs, rpcErr := s.Blocker.BlobSidecars(ctx, blockId, options.WithIndices(indices))
 	if rpcErr != nil {
 		code := core.ErrorReasonToHTTP(rpcErr.Reason)
 		switch code {
@@ -52,21 +55,22 @@ func (s *Server) Blobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	blk, err := s.Blocker.Block(ctx, []byte(blockId))
+	if !shared.WriteBlockFetchError(w, blk, err) {
+		return
+	}
+
 	if httputil.RespondWithSsz(r) {
 		sszResp, err := buildSidecarsSSZResponse(verifiedBlobs)
 		if err != nil {
 			httputil.HandleError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		httputil.WriteSsz(w, sszResp, "blob_sidecars.ssz")
+		w.Header().Set(api.VersionHeader, version.String(blk.Version()))
+		httputil.WriteSsz(w, sszResp)
 		return
 	}
 
-	blk, err := s.Blocker.Block(ctx, []byte(blockId))
-	if err != nil {
-		httputil.HandleError(w, "Could not fetch block: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
 	blkRoot, err := blk.Block().HashTreeRoot()
 	if err != nil {
 		httputil.HandleError(w, "Could not hash block: "+err.Error(), http.StatusInternalServerError)
@@ -85,22 +89,24 @@ func (s *Server) Blobs(w http.ResponseWriter, r *http.Request) {
 		ExecutionOptimistic: isOptimistic,
 		Finalized:           s.FinalizationFetcher.IsFinalized(ctx, blkRoot),
 	}
+	w.Header().Set(api.VersionHeader, version.String(blk.Version()))
 	httputil.WriteJson(w, resp)
 }
 
 // parseIndices filters out invalid and duplicate blob indices
-func parseIndices(url *url.URL, s primitives.Slot) ([]uint64, error) {
+func parseIndices(url *url.URL, s primitives.Slot) ([]int, error) {
+	maxBlobsPerBlock := params.BeaconConfig().MaxBlobsPerBlock(s)
 	rawIndices := url.Query()["indices"]
-	indices := make([]uint64, 0, params.BeaconConfig().MaxBlobsPerBlock(s))
+	indices := make([]int, 0, maxBlobsPerBlock)
 	invalidIndices := make([]string, 0)
 loop:
 	for _, raw := range rawIndices {
-		ix, err := strconv.ParseUint(raw, 10, 64)
+		ix, err := strconv.Atoi(raw)
 		if err != nil {
 			invalidIndices = append(invalidIndices, raw)
 			continue
 		}
-		if ix >= uint64(params.BeaconConfig().MaxBlobsPerBlock(s)) {
+		if !(0 <= ix && ix < maxBlobsPerBlock) {
 			invalidIndices = append(invalidIndices, raw)
 			continue
 		}
@@ -116,6 +122,85 @@ loop:
 		return nil, fmt.Errorf("requested blob indices %v are invalid", invalidIndices)
 	}
 	return indices, nil
+}
+
+// GetBlobs retrieves blobs for a given block id. ( this is the new handler that replaces func (s *Server) Blobs )
+func (s *Server) GetBlobs(w http.ResponseWriter, r *http.Request) {
+	ctx, span := trace.StartSpan(r.Context(), "beacon.GetBlobs")
+	defer span.End()
+
+	blockId := r.PathValue("block_id")
+
+	// Check if versioned_hashes parameter is provided
+	versionedHashesStr := r.URL.Query()["versioned_hashes"]
+	versionedHashes := make([][]byte, len(versionedHashesStr))
+	if len(versionedHashesStr) > 0 {
+		for i, hashStr := range versionedHashesStr {
+			hash, ok := shared.ValidateHex(w, fmt.Sprintf("versioned_hashes[%d]", i), hashStr, 32)
+			if !ok {
+				return
+			}
+			versionedHashes[i] = hash
+		}
+	}
+	blobsData, rpcErr := s.Blocker.Blobs(ctx, blockId, options.WithVersionedHashes(versionedHashes))
+	if rpcErr != nil {
+		code := core.ErrorReasonToHTTP(rpcErr.Reason)
+		switch code {
+		case http.StatusBadRequest:
+			httputil.HandleError(w, "Bad Request: "+rpcErr.Err.Error(), code)
+			return
+		case http.StatusNotFound:
+			httputil.HandleError(w, "Not found: "+rpcErr.Err.Error(), code)
+			return
+		case http.StatusInternalServerError:
+			httputil.HandleError(w, "Internal server error: "+rpcErr.Err.Error(), code)
+			return
+		default:
+			httputil.HandleError(w, rpcErr.Err.Error(), code)
+			return
+		}
+	}
+
+	blk, err := s.Blocker.Block(ctx, []byte(blockId))
+	if !shared.WriteBlockFetchError(w, blk, err) {
+		return
+	}
+
+	if httputil.RespondWithSsz(r) {
+		sszLen := fieldparams.BlobSize
+		sszData := make([]byte, len(blobsData)*sszLen)
+		for i := range blobsData {
+			copy(sszData[i*sszLen:(i+1)*sszLen], blobsData[i])
+		}
+
+		w.Header().Set(api.VersionHeader, version.String(blk.Version()))
+		httputil.WriteSsz(w, sszData)
+		return
+	}
+
+	blkRoot, err := blk.Block().HashTreeRoot()
+	if err != nil {
+		httputil.HandleError(w, "Could not hash block: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	isOptimistic, err := s.OptimisticModeFetcher.IsOptimisticForRoot(ctx, blkRoot)
+	if err != nil {
+		httputil.HandleError(w, "Could not check if block is optimistic: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := make([]string, len(blobsData))
+	for i, blob := range blobsData {
+		data[i] = hexutil.Encode(blob)
+	}
+	resp := &structs.GetBlobsResponse{
+		Data:                data,
+		ExecutionOptimistic: isOptimistic,
+		Finalized:           s.FinalizationFetcher.IsFinalized(ctx, blkRoot),
+	}
+	w.Header().Set(api.VersionHeader, version.String(blk.Version()))
+	httputil.WriteJson(w, resp)
 }
 
 func buildSidecarsJsonResponse(verifiedBlobs []*blocks.VerifiedROBlob) []*structs.Sidecar {
@@ -138,13 +223,13 @@ func buildSidecarsJsonResponse(verifiedBlobs []*blocks.VerifiedROBlob) []*struct
 }
 
 func buildSidecarsSSZResponse(verifiedBlobs []*blocks.VerifiedROBlob) ([]byte, error) {
-	ssz := make([]byte, field_params.BlobSidecarSize*len(verifiedBlobs))
+	ssz := make([]byte, fieldparams.BlobSidecarSize*len(verifiedBlobs))
 	for i, sidecar := range verifiedBlobs {
 		sszrep, err := sidecar.MarshalSSZ()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to marshal sidecar ssz")
 		}
-		copy(ssz[i*field_params.BlobSidecarSize:(i+1)*field_params.BlobSidecarSize], sszrep)
+		copy(ssz[i*fieldparams.BlobSidecarSize:(i+1)*fieldparams.BlobSidecarSize], sszrep)
 	}
 	return ssz, nil
 }

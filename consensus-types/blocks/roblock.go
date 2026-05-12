@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sort"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
 )
 
 // ROBlock is a value that embeds a ReadOnlySignedBeaconBlock along with its block root ([32]byte).
@@ -18,6 +18,15 @@ type ROBlock struct {
 // Root returns the block hash_tree_root for the embedded ReadOnlySignedBeaconBlock.Block().
 func (b ROBlock) Root() [32]byte {
 	return b.root
+}
+
+// ParentHash returns the parent hash of a beacon block post-Gloas
+func (b ROBlock) ParentHash() ([32]byte, error) {
+	s, err := b.Block().Body().SignedExecutionPayloadBid()
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return [32]byte(s.Message.ParentBlockHash), nil
 }
 
 // RootSlice returns a slice of the value returned by Root(). This is convenient because slicing the result of a func
@@ -96,16 +105,17 @@ func (s ROBlockSlice) Len() int {
 	return len(s)
 }
 
-// BlockWithROBlobs is a wrapper that collects the block and blob values together.
+// BlockWithROSidecars is a wrapper that collects the block and blob values together.
 // This is helpful because these values are collated from separate RPC requests.
-type BlockWithROBlobs struct {
-	Block ROBlock
-	Blobs []ROBlob
+type BlockWithROSidecars struct {
+	Block   ROBlock
+	Blobs   []ROBlob
+	Columns []VerifiedRODataColumn
 }
 
 // BlockWithROBlobsSlice gives convenient access to getting a slice of just the ROBlocks,
 // and defines sorting helpers.
-type BlockWithROBlobsSlice []BlockWithROBlobs
+type BlockWithROBlobsSlice []BlockWithROSidecars
 
 func (s BlockWithROBlobsSlice) ROBlocks() []ROBlock {
 	r := make([]ROBlock, len(s))

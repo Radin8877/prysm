@@ -1,11 +1,11 @@
 package eth
 
 import (
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -291,6 +291,8 @@ func (a *AttestationElectra) GetCommitteeIndex() primitives.CommitteeIndex {
 	indices := a.CommitteeBits.BitIndices()
 	if len(indices) == 0 {
 		return 0
+	} else if len(indices) != 1 {
+		log.WithField("indices", a.CommitteeBits).Debugf("expected 1 committee bit indice got %d", len(indices))
 	}
 	return primitives.CommitteeIndex(uint64(indices[0]))
 }
@@ -529,21 +531,6 @@ func (a *AggregateAttestationAndProofElectra) AggregateVal() Att {
 }
 
 // Version --
-func (a *AggregateAttestationAndProofSingle) Version() int {
-	return version.Electra
-}
-
-// IsNil --
-func (a *AggregateAttestationAndProofSingle) IsNil() bool {
-	return a == nil || a.Aggregate == nil || a.Aggregate.IsNil()
-}
-
-// AggregateVal --
-func (a *AggregateAttestationAndProofSingle) AggregateVal() Att {
-	return a.Aggregate
-}
-
-// Version --
 func (a *SignedAggregateAttestationAndProof) Version() int {
 	return version.Phase0
 }
@@ -570,20 +557,5 @@ func (a *SignedAggregateAttestationAndProofElectra) IsNil() bool {
 
 // AggregateAttestationAndProof --
 func (a *SignedAggregateAttestationAndProofElectra) AggregateAttestationAndProof() AggregateAttAndProof {
-	return a.Message
-}
-
-// Version --
-func (a *SignedAggregateAttestationAndProofSingle) Version() int {
-	return version.Electra
-}
-
-// IsNil --
-func (a *SignedAggregateAttestationAndProofSingle) IsNil() bool {
-	return a == nil || a.Message == nil || a.Message.IsNil()
-}
-
-// AggregateAttestationAndProof --
-func (a *SignedAggregateAttestationAndProofSingle) AggregateAttestationAndProof() AggregateAttAndProof {
 	return a.Message
 }

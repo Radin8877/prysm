@@ -1,20 +1,19 @@
 package debug
 
 import (
-	"context"
 	"math"
 	"testing"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	pbrpc "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbTest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	pbrpc "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func addDefaultReplayerBuilder(s *Server, h stategen.HistoryAccessor) {
@@ -25,7 +24,7 @@ func addDefaultReplayerBuilder(s *Server, h stategen.HistoryAccessor) {
 
 func TestServer_GetBeaconState(t *testing.T) {
 	db := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := util.NewBeaconState()
 	require.NoError(t, err)
 	slot := primitives.Slot(100)
@@ -103,6 +102,6 @@ func TestServer_GetBeaconState_RequestFutureSlot(t *testing.T) {
 		},
 	}
 	wanted := "Cannot retrieve information about a slot in the future"
-	_, err := ds.GetBeaconState(context.Background(), req)
+	_, err := ds.GetBeaconState(t.Context(), req)
 	assert.ErrorContains(t, wanted, err)
 }

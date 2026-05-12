@@ -7,21 +7,21 @@ import (
 	"math"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 // RandaoReveal returns a signature of the requested epoch using the beacon proposer private key.
@@ -42,7 +42,7 @@ func RandaoReveal(beaconState state.ReadOnlyBeaconState, epoch primitives.Epoch,
 // BlockSignature calculates the post-state root of the block and returns the signature.
 func BlockSignature(
 	bState state.BeaconState,
-	block interface{},
+	block any,
 	privKeys []bls.SecretKey,
 ) (bls.Signature, error) {
 	var wsb interfaces.ReadOnlySignedBeaconBlock
@@ -160,7 +160,7 @@ func Random32Bytes(t *testing.T) []byte {
 // to multiplication overflow.
 // Monkey patching tests with this function is the simplest workaround in these cases.
 func HackForksMaxuint(t *testing.T, forksVersion []int) func() {
-	bc := params.MainnetConfig().Copy()
+	bc := params.MainnetConfig()
 	for _, forkVersion := range forksVersion {
 		switch forkVersion {
 		case version.Electra:

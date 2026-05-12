@@ -5,21 +5,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/async/abool"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/das"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filesystem"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	p2pt "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/container/slice"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/paulbellamy/ratecounter"
-	"github.com/prysmaticlabs/prysm/v5/async/abool"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/das"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	p2pt "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/container/slice"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -290,7 +292,7 @@ func TestService_roundRobinSync(t *testing.T) {
 			genesisRoot := cache.rootCache[0]
 			cache.RUnlock()
 
-			util.SaveBlock(t, context.Background(), beaconDB, util.NewBeaconBlock())
+			util.SaveBlock(t, t.Context(), beaconDB, util.NewBeaconBlock())
 
 			st, err := util.NewBeaconState()
 			require.NoError(t, err)
@@ -308,13 +310,17 @@ func TestService_roundRobinSync(t *testing.T) {
 			} // no-op mock
 			clock := startup.NewClock(gt, vr)
 			s := &Service{
-				ctx:          context.Background(),
+				ctx:          t.Context(),
 				cfg:          &Config{Chain: mc, P2P: p, DB: beaconDB},
 				synced:       abool.New(),
 				chainStarted: abool.NewBool(true),
 				clock:        clock,
 			}
-			assert.NoError(t, s.roundRobinSync(makeGenesisTime(tt.currentSlot)))
+			s.genesisTime = makeGenesisTime(tt.currentSlot)
+			s.blobRetentionChecker = func(primitives.Slot) bool {
+				return true
+			}
+			assert.NoError(t, s.roundRobinSync())
 			if s.cfg.Chain.HeadSlot() < tt.currentSlot {
 				t.Errorf("Head slot (%d) is less than expected currentSlot (%d)", s.cfg.Chain.HeadSlot(), tt.currentSlot)
 			}
@@ -336,10 +342,10 @@ func TestService_processBlock(t *testing.T) {
 	genesisBlk := util.NewBeaconBlock()
 	genesisBlkRoot, err := genesisBlk.Block.HashTreeRoot()
 	require.NoError(t, err)
-	util.SaveBlock(t, context.Background(), beaconDB, genesisBlk)
+	util.SaveBlock(t, t.Context(), beaconDB, genesisBlk)
 	st, err := util.NewBeaconState()
 	require.NoError(t, err)
-	s := NewService(context.Background(), &Config{
+	s := NewService(t.Context(), &Config{
 		P2P: p2pt.NewTestP2P(t),
 		DB:  beaconDB,
 		Chain: &mock.ChainService{
@@ -354,7 +360,7 @@ func TestService_processBlock(t *testing.T) {
 		},
 		StateNotifier: &mock.MockStateNotifier{},
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	genesis := makeGenesisTime(32)
 
 	t.Run("process duplicate block", func(t *testing.T) {
@@ -372,8 +378,8 @@ func TestService_processBlock(t *testing.T) {
 		require.NoError(t, err)
 		rowsb, err := blocks.NewROBlock(wsb)
 		require.NoError(t, err)
-		err = s.processBlock(ctx, genesis, blocks.BlockWithROBlobs{Block: rowsb}, func(
-			ctx context.Context, block interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte, _ das.AvailabilityStore) error {
+		err = s.processBlock(ctx, genesis, blocks.BlockWithROSidecars{Block: rowsb}, func(
+			ctx context.Context, block interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte, _ das.AvailabilityChecker) error {
 			assert.NoError(t, s.cfg.Chain.ReceiveBlock(ctx, block, blockRoot, nil))
 			return nil
 		}, nil)
@@ -384,8 +390,8 @@ func TestService_processBlock(t *testing.T) {
 		require.NoError(t, err)
 		rowsb, err = blocks.NewROBlock(wsb)
 		require.NoError(t, err)
-		err = s.processBlock(ctx, genesis, blocks.BlockWithROBlobs{Block: rowsb}, func(
-			ctx context.Context, block interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte, _ das.AvailabilityStore) error {
+		err = s.processBlock(ctx, genesis, blocks.BlockWithROSidecars{Block: rowsb}, func(
+			ctx context.Context, block interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte, _ das.AvailabilityChecker) error {
 			return nil
 		}, nil)
 		assert.ErrorContains(t, errBlockAlreadyProcessed.Error(), err)
@@ -395,8 +401,8 @@ func TestService_processBlock(t *testing.T) {
 		require.NoError(t, err)
 		rowsb, err = blocks.NewROBlock(wsb)
 		require.NoError(t, err)
-		err = s.processBlock(ctx, genesis, blocks.BlockWithROBlobs{Block: rowsb}, func(
-			ctx context.Context, block interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte, _ das.AvailabilityStore) error {
+		err = s.processBlock(ctx, genesis, blocks.BlockWithROSidecars{Block: rowsb}, func(
+			ctx context.Context, block interfaces.ReadOnlySignedBeaconBlock, blockRoot [32]byte, _ das.AvailabilityChecker) error {
 			assert.NoError(t, s.cfg.Chain.ReceiveBlock(ctx, block, blockRoot, nil))
 			return nil
 		}, nil)
@@ -410,10 +416,10 @@ func TestService_processBlockBatch(t *testing.T) {
 	genesisBlk := util.NewBeaconBlock()
 	genesisBlkRoot, err := genesisBlk.Block.HashTreeRoot()
 	require.NoError(t, err)
-	util.SaveBlock(t, context.Background(), beaconDB, genesisBlk)
+	util.SaveBlock(t, t.Context(), beaconDB, genesisBlk)
 	st, err := util.NewBeaconState()
 	require.NoError(t, err)
-	s := NewService(context.Background(), &Config{
+	s := NewService(t.Context(), &Config{
 		P2P: p2pt.NewTestP2P(t),
 		DB:  beaconDB,
 		Chain: &mock.ChainService{
@@ -426,11 +432,12 @@ func TestService_processBlockBatch(t *testing.T) {
 		},
 		StateNotifier: &mock.MockStateNotifier{},
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	genesis := makeGenesisTime(32)
+	s.genesisTime = genesis
 
 	t.Run("process non-linear batch", func(t *testing.T) {
-		var batch []blocks.BlockWithROBlobs
+		var batch []blocks.BlockWithROSidecars
 		currBlockRoot := genesisBlkRoot
 		for i := primitives.Slot(1); i < 10; i++ {
 			parentRoot := currBlockRoot
@@ -439,16 +446,16 @@ func TestService_processBlockBatch(t *testing.T) {
 			blk1.Block.ParentRoot = parentRoot[:]
 			blk1Root, err := blk1.Block.HashTreeRoot()
 			require.NoError(t, err)
-			util.SaveBlock(t, context.Background(), beaconDB, blk1)
+			util.SaveBlock(t, t.Context(), beaconDB, blk1)
 			wsb, err := blocks.NewSignedBeaconBlock(blk1)
 			require.NoError(t, err)
 			rowsb, err := blocks.NewROBlock(wsb)
 			require.NoError(t, err)
-			batch = append(batch, blocks.BlockWithROBlobs{Block: rowsb})
+			batch = append(batch, blocks.BlockWithROSidecars{Block: rowsb})
 			currBlockRoot = blk1Root
 		}
 
-		var batch2 []blocks.BlockWithROBlobs
+		var batch2 []blocks.BlockWithROSidecars
 		for i := primitives.Slot(10); i < 20; i++ {
 			parentRoot := currBlockRoot
 			blk1 := util.NewBeaconBlock()
@@ -456,32 +463,34 @@ func TestService_processBlockBatch(t *testing.T) {
 			blk1.Block.ParentRoot = parentRoot[:]
 			blk1Root, err := blk1.Block.HashTreeRoot()
 			require.NoError(t, err)
-			util.SaveBlock(t, context.Background(), beaconDB, blk1)
+			util.SaveBlock(t, t.Context(), beaconDB, blk1)
 			wsb, err := blocks.NewSignedBeaconBlock(blk1)
 			require.NoError(t, err)
 			rowsb, err := blocks.NewROBlock(wsb)
 			require.NoError(t, err)
-			batch2 = append(batch2, blocks.BlockWithROBlobs{Block: rowsb})
+			batch2 = append(batch2, blocks.BlockWithROSidecars{Block: rowsb})
 			currBlockRoot = blk1Root
 		}
 
-		cbnormal := func(ctx context.Context, blks []blocks.ROBlock, avs das.AvailabilityStore) error {
-			assert.NoError(t, s.cfg.Chain.ReceiveBlockBatch(ctx, blks, avs))
+		cbnormal := func(ctx context.Context, blks []blocks.ROBlock, _ []interfaces.ROSignedExecutionPayloadEnvelope, avs das.AvailabilityChecker) error {
+			assert.NoError(t, s.cfg.Chain.ReceiveBlockBatch(ctx, blks, nil, avs))
 			return nil
 		}
 		// Process block normally.
-		err = s.processBatchedBlocks(ctx, genesis, batch, cbnormal)
+		count, err := s.processBatchedBlocks(ctx, batch, nil, cbnormal)
 		assert.NoError(t, err)
+		require.Equal(t, uint64(len(batch)), count)
 
-		cbnil := func(ctx context.Context, blocks []blocks.ROBlock, _ das.AvailabilityStore) error {
+		cbnil := func(ctx context.Context, blocks []blocks.ROBlock, _ []interfaces.ROSignedExecutionPayloadEnvelope, _ das.AvailabilityChecker) error {
 			return nil
 		}
 
 		// Duplicate processing should trigger error.
-		err = s.processBatchedBlocks(ctx, genesis, batch, cbnil)
+		count, err = s.processBatchedBlocks(ctx, batch, nil, cbnil)
 		assert.ErrorContains(t, "block is already processed", err)
+		require.Equal(t, uint64(0), count)
 
-		var badBatch2 []blocks.BlockWithROBlobs
+		var badBatch2 []blocks.BlockWithROSidecars
 		for i, b := range batch2 {
 			// create a non-linear batch
 			if i%3 == 0 && i != 0 {
@@ -491,15 +500,75 @@ func TestService_processBlockBatch(t *testing.T) {
 		}
 
 		// Bad batch should fail because it is non linear
-		err = s.processBatchedBlocks(ctx, genesis, badBatch2, cbnil)
+		count, err = s.processBatchedBlocks(ctx, badBatch2, nil, cbnil)
 		expectedSubErr := "expected linear block list"
 		assert.ErrorContains(t, expectedSubErr, err)
+		require.Equal(t, uint64(0), count)
 
 		// Continue normal processing, should proceed w/o errors.
-		err = s.processBatchedBlocks(ctx, genesis, batch2, cbnormal)
+		count, err = s.processBatchedBlocks(ctx, batch2, nil, cbnormal)
 		assert.NoError(t, err)
 		assert.Equal(t, primitives.Slot(19), s.cfg.Chain.HeadSlot(), "Unexpected head slot")
+		require.Equal(t, uint64(len(batch2)), count)
 	})
+}
+
+func TestService_processBatchedBlocksReturnsFilteredCount(t *testing.T) {
+	beaconDB := dbtest.SetupDB(t)
+	genesisBlk := util.NewBeaconBlock()
+	genesisBlkRoot, err := genesisBlk.Block.HashTreeRoot()
+	require.NoError(t, err)
+	util.SaveBlock(t, t.Context(), beaconDB, genesisBlk)
+	st, err := util.NewBeaconState()
+	require.NoError(t, err)
+	s := NewService(t.Context(), &Config{
+		P2P: p2pt.NewTestP2P(t),
+		DB:  beaconDB,
+		Chain: &mock.ChainService{
+			State: st,
+			Root:  genesisBlkRoot[:],
+			DB:    beaconDB,
+			FinalizedCheckPoint: &eth.Checkpoint{
+				Epoch: 0,
+			},
+		},
+		StateNotifier: &mock.MockStateNotifier{},
+	})
+	s.genesisTime = makeGenesisTime(32)
+	ctx := t.Context()
+
+	// Build a linear chain of 9 blocks (slots 1–9).
+	var allBlocks []blocks.BlockWithROSidecars
+	currRoot := genesisBlkRoot
+	for i := primitives.Slot(1); i <= 9; i++ {
+		blk := util.NewBeaconBlock()
+		blk.Block.Slot = i
+		blk.Block.ParentRoot = currRoot[:]
+		root, err := blk.Block.HashTreeRoot()
+		require.NoError(t, err)
+		util.SaveBlock(t, ctx, beaconDB, blk)
+		wsb, err := blocks.NewSignedBeaconBlock(blk)
+		require.NoError(t, err)
+		rob, err := blocks.NewROBlock(wsb)
+		require.NoError(t, err)
+		allBlocks = append(allBlocks, blocks.BlockWithROSidecars{Block: rob})
+		currRoot = root
+	}
+
+	// Process slots 1–5 so they are in the DB and head advances to slot 5.
+	cb := func(ctx context.Context, blks []blocks.ROBlock, _ []interfaces.ROSignedExecutionPayloadEnvelope, avs das.AvailabilityChecker) error {
+		return s.cfg.Chain.ReceiveBlockBatch(ctx, blks, nil, avs)
+	}
+	count, err := s.processBatchedBlocks(ctx, allBlocks[:5], nil, cb)
+	require.NoError(t, err)
+	require.Equal(t, uint64(5), count)
+	require.Equal(t, primitives.Slot(5), s.cfg.Chain.HeadSlot())
+
+	// Now process the full batch (slots 1–9). Slots 1–5 are already processed,
+	// so only slots 6–9 should be counted.
+	count, err = s.processBatchedBlocks(ctx, allBlocks, nil, cb)
+	require.NoError(t, err)
+	require.Equal(t, uint64(4), count, "count should reflect only unprocessed blocks, not the entire batch")
 }
 
 func TestService_blockProviderScoring(t *testing.T) {
@@ -542,7 +611,7 @@ func TestService_blockProviderScoring(t *testing.T) {
 	genesisRoot := cache.rootCache[0]
 	cache.RUnlock()
 
-	util.SaveBlock(t, context.Background(), beaconDB, util.NewBeaconBlock())
+	util.SaveBlock(t, t.Context(), beaconDB, util.NewBeaconBlock())
 
 	st, err := util.NewBeaconState()
 	require.NoError(t, err)
@@ -562,7 +631,7 @@ func TestService_blockProviderScoring(t *testing.T) {
 	} // no-op mock
 	clock := startup.NewClock(gt, vr)
 	s := &Service{
-		ctx:          context.Background(),
+		ctx:          t.Context(),
 		cfg:          &Config{Chain: mc, P2P: p, DB: beaconDB},
 		synced:       abool.New(),
 		chainStarted: abool.NewBool(true),
@@ -576,7 +645,8 @@ func TestService_blockProviderScoring(t *testing.T) {
 	assert.Equal(t, scorer.MaxScore(), scorer.Score(peer2))
 	assert.Equal(t, scorer.MaxScore(), scorer.Score(peer3))
 
-	assert.NoError(t, s.roundRobinSync(makeGenesisTime(currentSlot)))
+	s.genesisTime = makeGenesisTime(currentSlot)
+	assert.NoError(t, s.roundRobinSync())
 	if s.cfg.Chain.HeadSlot() < currentSlot {
 		t.Errorf("Head slot (%d) is less than expected currentSlot (%d)", s.cfg.Chain.HeadSlot(), currentSlot)
 	}
@@ -611,7 +681,7 @@ func TestService_syncToFinalizedEpoch(t *testing.T) {
 	genesisRoot := cache.rootCache[0]
 	cache.RUnlock()
 
-	util.SaveBlock(t, context.Background(), beaconDB, util.NewBeaconBlock())
+	util.SaveBlock(t, t.Context(), beaconDB, util.NewBeaconBlock())
 
 	st, err := util.NewBeaconState()
 	require.NoError(t, err)
@@ -630,7 +700,7 @@ func TestService_syncToFinalizedEpoch(t *testing.T) {
 		ValidatorsRoot: vr,
 	}
 	s := &Service{
-		ctx:          context.Background(),
+		ctx:          t.Context(),
 		cfg:          &Config{Chain: mc, P2P: p, DB: beaconDB},
 		synced:       abool.New(),
 		chainStarted: abool.NewBool(true),
@@ -648,7 +718,8 @@ func TestService_syncToFinalizedEpoch(t *testing.T) {
 		headSlot:       195,
 	}, p.Peers())
 	genesis := makeGenesisTime(currentSlot)
-	assert.NoError(t, s.syncToFinalizedEpoch(context.Background(), genesis))
+	s.genesisTime = genesis
+	assert.NoError(t, s.syncToFinalizedEpoch(t.Context()))
 	if s.cfg.Chain.HeadSlot() < currentSlot {
 		t.Errorf("Head slot (%d) is less than expected currentSlot (%d)", s.cfg.Chain.HeadSlot(), currentSlot)
 	}
@@ -665,7 +736,8 @@ func TestService_syncToFinalizedEpoch(t *testing.T) {
 
 	// Try to re-sync, should be exited immediately (node is already synced to finalized epoch).
 	hook.Reset()
-	assert.NoError(t, s.syncToFinalizedEpoch(context.Background(), genesis))
+	s.genesisTime = genesis
+	assert.NoError(t, s.syncToFinalizedEpoch(t.Context()))
 	assert.LogsContain(t, hook, "Already synced to finalized epoch")
 }
 
@@ -674,9 +746,9 @@ func TestService_ValidUnprocessed(t *testing.T) {
 	genesisBlk := util.NewBeaconBlock()
 	genesisBlkRoot, err := genesisBlk.Block.HashTreeRoot()
 	require.NoError(t, err)
-	util.SaveBlock(t, context.Background(), beaconDB, genesisBlk)
+	util.SaveBlock(t, t.Context(), beaconDB, genesisBlk)
 
-	var batch []blocks.BlockWithROBlobs
+	var batch []blocks.BlockWithROSidecars
 	currBlockRoot := genesisBlkRoot
 	for i := primitives.Slot(1); i < 10; i++ {
 		parentRoot := currBlockRoot
@@ -685,21 +757,175 @@ func TestService_ValidUnprocessed(t *testing.T) {
 		blk1.Block.ParentRoot = parentRoot[:]
 		blk1Root, err := blk1.Block.HashTreeRoot()
 		require.NoError(t, err)
-		util.SaveBlock(t, context.Background(), beaconDB, blk1)
+		util.SaveBlock(t, t.Context(), beaconDB, blk1)
 		wsb, err := blocks.NewSignedBeaconBlock(blk1)
 		require.NoError(t, err)
 		rowsb, err := blocks.NewROBlock(wsb)
 		require.NoError(t, err)
-		batch = append(batch, blocks.BlockWithROBlobs{Block: rowsb})
+		batch = append(batch, blocks.BlockWithROSidecars{Block: rowsb})
 		currBlockRoot = blk1Root
 	}
 
-	retBlocks, err := validUnprocessed(context.Background(), batch, 2, func(ctx context.Context, block blocks.ROBlock) bool {
+	retBlocks, _, err := validUnprocessed(t.Context(), batch, nil, 2, func(ctx context.Context, block blocks.ROBlock) bool {
 		// Ignore first 2 blocks in the batch.
 		return block.Block().Slot() <= 2
+	}, func(_ context.Context, _ interfaces.ROSignedExecutionPayloadEnvelope) bool {
+		return false
 	})
 	require.NoError(t, err)
 
 	// Ensure that the unprocessed batch is returned correctly.
 	assert.Equal(t, len(retBlocks), len(batch)-2)
+}
+
+func TestService_PropcessFetchedDataRegSync(t *testing.T) {
+	ctx := t.Context()
+
+	// Create a data columns storage.
+	dir := t.TempDir()
+	dataColumnStorage, err := filesystem.NewDataColumnStorage(ctx, filesystem.WithDataColumnBasePath(dir))
+	require.NoError(t, err)
+
+	// Create Fulu blocks.
+	fuluBlock1 := util.NewBeaconBlockFulu()
+	signedFuluBlock1, err := blocks.NewSignedBeaconBlock(fuluBlock1)
+	require.NoError(t, err)
+	roFuluBlock1, err := blocks.NewROBlock(signedFuluBlock1)
+	require.NoError(t, err)
+	block1Root := roFuluBlock1.Root()
+
+	fuluBlock2 := util.NewBeaconBlockFulu()
+	fuluBlock2.Block.Body.BlobKzgCommitments = [][]byte{make([]byte, fieldparams.KzgCommitmentSize)} // Dummy commitment.
+	fuluBlock2.Block.Slot = 1
+	fuluBlock2.Block.ParentRoot = block1Root[:]
+	signedFuluBlock2, err := blocks.NewSignedBeaconBlock(fuluBlock2)
+	require.NoError(t, err)
+
+	roFuluBlock2, err := blocks.NewROBlock(signedFuluBlock2)
+	require.NoError(t, err)
+	block2Root := roFuluBlock2.Root()
+	parentRoot2 := roFuluBlock2.Block().ParentRoot()
+	bodyRoot2, err := roFuluBlock2.Block().Body().HashTreeRoot()
+	require.NoError(t, err)
+
+	// Create a mock chain service.
+	const validatorCount = uint64(64)
+	state, _ := util.DeterministicGenesisState(t, validatorCount)
+	chain := &mock.ChainService{
+		FinalizedCheckPoint: &eth.Checkpoint{},
+		DB:                  dbtest.SetupDB(t),
+		State:               state,
+		Root:                block1Root[:],
+	}
+
+	// Create a new service instance.
+	service := &Service{
+		cfg: &Config{
+			Chain:             chain,
+			DataColumnStorage: dataColumnStorage,
+		},
+		counter: ratecounter.NewRateCounter(counterSeconds * time.Second),
+	}
+
+	// Save the parent block in the database.
+	err = chain.DB.SaveBlock(ctx, roFuluBlock1)
+	require.NoError(t, err)
+
+	// Create data column sidecars.
+	const count = uint64(3)
+	params := make([]util.DataColumnParam, 0, count)
+	for i := range count {
+		param := util.DataColumnParam{Index: i, BodyRoot: bodyRoot2[:], ParentRoot: parentRoot2[:], Slot: roFuluBlock2.Block().Slot()}
+		params = append(params, param)
+	}
+	_, verifiedRoDataColumnSidecars := util.CreateTestVerifiedRoDataColumnSidecars(t, params)
+
+	blocksWithSidecars := []blocks.BlockWithROSidecars{
+		{Block: roFuluBlock2, Columns: verifiedRoDataColumnSidecars},
+	}
+
+	data := &blocksQueueFetchedData{
+		bwb: blocksWithSidecars,
+	}
+
+	actual, err := service.processFetchedDataRegSync(ctx, data)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), actual)
+
+	// Check block and data column sidecars were saved correctly.
+	require.Equal(t, true, chain.DB.HasBlock(ctx, block2Root))
+
+	summary := dataColumnStorage.Summary(block2Root)
+	for i := range count {
+		require.Equal(t, true, summary.HasIndex(i))
+	}
+}
+
+func TestService_processBlocksWithDataColumns(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("no blocks", func(t *testing.T) {
+		fuluBlock := util.NewBeaconBlockFulu()
+
+		signedFuluBlock, err := blocks.NewSignedBeaconBlock(fuluBlock)
+		require.NoError(t, err)
+		roFuluBlock, err := blocks.NewROBlock(signedFuluBlock)
+		require.NoError(t, err)
+
+		service := new(Service)
+		err = service.processBlocksWithDataColumns(ctx, nil, nil, nil, roFuluBlock)
+		require.NoError(t, err)
+	})
+
+	t.Run("nominal", func(t *testing.T) {
+		fuluBlock := util.NewBeaconBlockFulu()
+		fuluBlock.Block.Body.BlobKzgCommitments = [][]byte{make([]byte, fieldparams.KzgCommitmentSize)} // Dummy commitment.
+		signedFuluBlock, err := blocks.NewSignedBeaconBlock(fuluBlock)
+		require.NoError(t, err)
+		roFuluBlock, err := blocks.NewROBlock(signedFuluBlock)
+		require.NoError(t, err)
+		bodyRoot, err := roFuluBlock.Block().Body().HashTreeRoot()
+		require.NoError(t, err)
+
+		// Create data column sidecars.
+		const count = uint64(3)
+		params := make([]util.DataColumnParam, 0, count)
+		for i := range count {
+			param := util.DataColumnParam{Index: i, BodyRoot: bodyRoot[:]}
+			params = append(params, param)
+		}
+		_, verifiedRoDataColumnSidecars := util.CreateTestVerifiedRoDataColumnSidecars(t, params)
+
+		blocksWithSidecars := []blocks.BlockWithROSidecars{
+			{Block: roFuluBlock, Columns: verifiedRoDataColumnSidecars},
+		}
+
+		// Create a data columns storage.
+		dir := t.TempDir()
+		dataColumnStorage, err := filesystem.NewDataColumnStorage(ctx, filesystem.WithDataColumnBasePath(dir))
+		require.NoError(t, err)
+
+		// Create a service.
+		service := &Service{
+			cfg: &Config{
+				P2P:               p2pt.NewTestP2P(t),
+				DataColumnStorage: dataColumnStorage,
+			},
+			counter: ratecounter.NewRateCounter(counterSeconds * time.Second),
+		}
+
+		receiverFunc := func(ctx context.Context, blks []blocks.ROBlock, _ []interfaces.ROSignedExecutionPayloadEnvelope, avs das.AvailabilityChecker) error {
+			require.Equal(t, 1, len(blks))
+			return nil
+		}
+
+		err = service.processBlocksWithDataColumns(ctx, blocksWithSidecars, nil, receiverFunc, roFuluBlock)
+		require.NoError(t, err)
+
+		// Verify that the data columns were saved correctly.
+		summary := dataColumnStorage.Summary(roFuluBlock.Root())
+		for i := range count {
+			require.Equal(t, true, summary.HasIndex(i))
+		}
+	})
 }

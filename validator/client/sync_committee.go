@@ -3,24 +3,21 @@ package client
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	emptypb "github.com/golang/protobuf/ptypes/empty"
-	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,7 +27,7 @@ func (v *validator) SubmitSyncCommitteeMessage(ctx context.Context, slot primiti
 	defer span.End()
 	span.SetAttributes(trace.StringAttribute("validator", fmt.Sprintf("%#x", pubKey)))
 
-	v.waitOneThirdOrValidBlock(ctx, slot)
+	v.waitUntilAttestationDueOrValidBlock(ctx, slot)
 
 	res, err := v.validatorClient.SyncMessageBlockRoot(ctx, &emptypb.Empty{})
 	if err != nil {
@@ -83,7 +80,10 @@ func (v *validator) SubmitSyncCommitteeMessage(ctx context.Context, slot primiti
 	}
 
 	msgSlot := msg.Slot
-	slotTime := time.Unix(int64(v.genesisTime+uint64(msgSlot)*params.BeaconConfig().SecondsPerSlot), 0)
+	slotTime, err := slots.StartTime(v.genesisTime, msgSlot)
+	if err != nil {
+		log.WithError(err).Error("Failed to determine slot start time")
+	}
 	log.WithFields(logrus.Fields{
 		"slot":               msg.Slot,
 		"slotStartTime":      slotTime,
@@ -91,7 +91,7 @@ func (v *validator) SubmitSyncCommitteeMessage(ctx context.Context, slot primiti
 		"blockRoot":          fmt.Sprintf("%#x", bytesutil.Trunc(msg.BlockRoot)),
 		"validatorIndex":     msg.ValidatorIndex,
 	}).Info("Submitted new sync message")
-	atomic.AddUint64(&v.syncCommitteeStats.totalMessagesSubmitted, 1)
+	v.syncCommitteeStats.totalMessagesSubmitted.Add(1)
 }
 
 // SubmitSignedContributionAndProof submits the signed sync committee contribution and proof to the beacon chain.
@@ -119,14 +119,20 @@ func (v *validator) SubmitSignedContributionAndProof(ctx context.Context, slot p
 		return
 	}
 
-	selectionProofs, err := v.selectionProofs(ctx, slot, pubKey, indexRes, duty.ValidatorIndex)
+	selectionProofs, err := v.aggSelector.SyncCommitteeSelectionProofs(ctx, slot, pubKey, indexRes)
 	if err != nil {
 		log.WithError(err).Error("Could not get selection proofs")
 		return
 	}
 
-	v.waitToSlotTwoThirds(ctx, slot)
+	cfg := params.BeaconConfig()
+	component := cfg.ContributionDueBPS
+	if slots.ToEpoch(slot) >= cfg.GloasForkEpoch {
+		component = cfg.ContributionDueBPSGloas
+	}
+	v.waitUntilSlotComponent(ctx, slot, component)
 
+	coveredSubnets := make(map[uint64]bool)
 	for i, comIdx := range indexRes.Indices {
 		isAggregator, err := altair.IsSyncCommitteeAggregator(selectionProofs[i])
 		if err != nil {
@@ -138,6 +144,10 @@ func (v *validator) SubmitSignedContributionAndProof(ctx context.Context, slot p
 		}
 		subCommitteeSize := params.BeaconConfig().SyncCommitteeSize / params.BeaconConfig().SyncCommitteeSubnetCount
 		subnet := uint64(comIdx) / subCommitteeSize
+		if coveredSubnets[subnet] {
+			// Don't submit a message for the same subnet multiple times
+			continue
+		}
 		contribution, err := v.validatorClient.SyncCommitteeContribution(ctx, &ethpb.SyncCommitteeContributionRequest{
 			Slot:      slot,
 			PublicKey: pubKey[:],
@@ -175,8 +185,13 @@ func (v *validator) SubmitSignedContributionAndProof(ctx context.Context, slot p
 			return
 		}
 
+		coveredSubnets[subnet] = true
+
 		contributionSlot := contributionAndProof.Contribution.Slot
-		slotTime := time.Unix(int64(v.genesisTime+uint64(contributionSlot)*params.BeaconConfig().SecondsPerSlot), 0)
+		slotTime, err := slots.StartTime(v.genesisTime, contributionSlot)
+		if err != nil {
+			log.WithError(err).Error("Failed to determine slot start time")
+		}
 		log.WithFields(logrus.Fields{
 			"slot":               contributionAndProof.Contribution.Slot,
 			"slotStartTime":      slotTime,
@@ -187,48 +202,6 @@ func (v *validator) SubmitSignedContributionAndProof(ctx context.Context, slot p
 			"bitsCount":          contributionAndProof.Contribution.AggregationBits.Count(),
 		}).Info("Submitted new sync contribution and proof")
 	}
-}
-
-// Signs and returns selection proofs per validator for slot and pub key.
-func (v *validator) selectionProofs(ctx context.Context, slot primitives.Slot, pubKey [fieldparams.BLSPubkeyLength]byte, indexRes *ethpb.SyncSubcommitteeIndexResponse, validatorIndex primitives.ValidatorIndex) ([][]byte, error) {
-	ctx, span := trace.StartSpan(ctx, "validator.selectionProofs")
-	defer span.End()
-
-	selectionProofs := make([][]byte, len(indexRes.Indices))
-	cfg := params.BeaconConfig()
-	size := cfg.SyncCommitteeSize
-	subCount := cfg.SyncCommitteeSubnetCount
-	selections := make([]iface.SyncCommitteeSelection, len(indexRes.Indices))
-	for i, index := range indexRes.Indices {
-		subSize := size / subCount
-		subnet := uint64(index) / subSize
-		selectionProof, err := v.signSyncSelectionData(ctx, pubKey, subnet, slot)
-		if err != nil {
-			return nil, err
-		}
-		selectionProofs[i] = selectionProof
-		selections[i] = iface.SyncCommitteeSelection{
-			SelectionProof:    selectionProof,
-			Slot:              slot,
-			SubcommitteeIndex: primitives.CommitteeIndex(subnet),
-			ValidatorIndex:    validatorIndex,
-		}
-	}
-
-	// Override selection proofs with aggregated ones if the node is part of a Distributed Validator.
-	if v.distributed && len(selections) > 0 {
-		var err error
-		selections, err := v.validatorClient.AggregatedSyncSelections(ctx, selections)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get aggregated sync selections")
-		}
-
-		for i, s := range selections {
-			selectionProofs[i] = s.SelectionProof
-		}
-	}
-
-	return selectionProofs, nil
 }
 
 // Signs input slot with domain sync committee selection proof. This is used to create the signature for sync committee selection.

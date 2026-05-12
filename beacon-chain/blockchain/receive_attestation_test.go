@@ -1,22 +1,21 @@
 package blockchain
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	forkchoicetypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/types"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -32,7 +31,7 @@ func TestAttestationCheckPtState_FarFutureSlot(t *testing.T) {
 	service.genesisTime = time.Now()
 
 	e := primitives.Epoch(slots.MaxSlotBuffer/uint64(params.BeaconConfig().SlotsPerEpoch) + 1)
-	_, err := service.AttestationTargetState(context.Background(), &ethpb.Checkpoint{Epoch: e})
+	_, err := service.AttestationTargetState(t.Context(), &ethpb.Checkpoint{Epoch: e})
 	require.ErrorContains(t, "exceeds max allowed value relative to the local clock", err)
 }
 
@@ -56,11 +55,11 @@ func TestVerifyLMDFFGConsistent(t *testing.T) {
 	a.Data.Target.Root = []byte{'c'}
 	r33Root := r33.Root()
 	a.Data.BeaconBlockRoot = r33Root[:]
-	require.ErrorContains(t, wanted, service.VerifyLmdFfgConsistency(context.Background(), a))
+	require.ErrorContains(t, wanted, service.VerifyLmdFfgConsistency(t.Context(), a))
 
 	r32Root := r32.Root()
 	a.Data.Target.Root = r32Root[:]
-	err = service.VerifyLmdFfgConsistency(context.Background(), a)
+	err = service.VerifyLmdFfgConsistency(t.Context(), a)
 	require.NoError(t, err, "Could not verify LMD and FFG votes to be consistent")
 }
 
@@ -71,7 +70,7 @@ func TestProcessAttestations_Ok(t *testing.T) {
 
 	service.genesisTime = prysmTime.Now().Add(-1 * time.Duration(params.BeaconConfig().SecondsPerSlot) * time.Second)
 	genesisState, pks := util.DeterministicGenesisState(t, 64)
-	require.NoError(t, genesisState.SetGenesisTime(uint64(prysmTime.Now().Unix())-params.BeaconConfig().SecondsPerSlot))
+	require.NoError(t, genesisState.SetGenesisTime(time.Now().Add(-1*time.Duration(params.BeaconConfig().SecondsPerSlot)*time.Second)))
 	require.NoError(t, service.saveGenesisData(ctx, genesisState))
 	atts, err := util.GenerateAttestations(genesisState, pks, 1, 0, false)
 	require.NoError(t, err)
@@ -111,14 +110,16 @@ func TestService_ProcessAttestationsAndUpdateHead(t *testing.T) {
 	wsb, err := blocks.NewSignedBeaconBlock(blk)
 	require.NoError(t, err)
 
-	preState, err := service.getBlockPreState(ctx, wsb.Block())
+	roblock, err := blocks.NewROBlockWithRoot(wsb, tRoot)
+	require.NoError(t, err)
+	preState, err := service.GetBlockPreState(ctx, roblock)
 	require.NoError(t, err)
 	postState, err := service.validateStateTransition(ctx, preState, wsb)
 	require.NoError(t, err)
 	require.NoError(t, service.savePostStateInfo(ctx, tRoot, wsb, postState))
-	roblock, err := blocks.NewROBlockWithRoot(wsb, tRoot)
-	require.NoError(t, err)
+	service.cfg.ForkChoiceStore.Lock()
 	require.NoError(t, service.postBlockProcess(&postBlockProcessConfig{ctx, roblock, [32]byte{}, postState, false}))
+	service.cfg.ForkChoiceStore.Unlock()
 	copied, err = service.cfg.StateGen.StateByRoot(ctx, tRoot)
 	require.NoError(t, err)
 	require.Equal(t, 2, fcs.NodeCount())
@@ -171,14 +172,16 @@ func TestService_UpdateHead_NoAtts(t *testing.T) {
 	wsb, err := blocks.NewSignedBeaconBlock(blk)
 	require.NoError(t, err)
 
-	preState, err := service.getBlockPreState(ctx, wsb.Block())
+	roblock, err := blocks.NewROBlockWithRoot(wsb, tRoot)
+	require.NoError(t, err)
+	preState, err := service.GetBlockPreState(ctx, roblock)
 	require.NoError(t, err)
 	postState, err := service.validateStateTransition(ctx, preState, wsb)
 	require.NoError(t, err)
 	require.NoError(t, service.savePostStateInfo(ctx, tRoot, wsb, postState))
-	roblock, err := blocks.NewROBlockWithRoot(wsb, tRoot)
-	require.NoError(t, err)
+	service.cfg.ForkChoiceStore.Lock()
 	require.NoError(t, service.postBlockProcess(&postBlockProcessConfig{ctx, roblock, [32]byte{}, postState, false}))
+	service.cfg.ForkChoiceStore.Unlock()
 	require.Equal(t, 2, fcs.NodeCount())
 	require.NoError(t, service.cfg.BeaconDB.SaveBlock(ctx, wsb))
 	require.Equal(t, tRoot, service.head.root)

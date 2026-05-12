@@ -4,21 +4,21 @@ import (
 	"context"
 	"testing"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	slashingsmock "github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/slashings/mock"
-	slashertypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/slasher/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	slashingsmock "github.com/OffchainLabs/prysm/v7/beacon-chain/operations/slashings/mock"
+	slashertypes "github.com/OffchainLabs/prysm/v7/beacon-chain/slasher/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -71,7 +71,7 @@ func Test_processQueuedBlocks_DetectsDoubleProposals(t *testing.T) {
 			hook := logTest.NewGlobal()
 			beaconDB := dbtest.SetupDB(t)
 			slasherDB := dbtest.SetupSlasherDB(t)
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 
 			beaconState, err := util.NewBeaconState()
 			require.NoError(t, err)
@@ -160,7 +160,7 @@ func Test_processQueuedBlocks_DetectsDoubleProposals(t *testing.T) {
 func Test_processQueuedBlocks_NotSlashable(t *testing.T) {
 	hook := logTest.NewGlobal()
 	slasherDB := dbtest.SetupSlasherDB(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	beaconState, err := util.NewBeaconState()
 	require.NoError(t, err)

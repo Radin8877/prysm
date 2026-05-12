@@ -5,12 +5,13 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/prysmaticlabs/gohashtree"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/crypto/hash/htr"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func Test_MerkleProofKZGCommitment_Altair(t *testing.T) {
@@ -32,7 +33,7 @@ func Test_MerkleProofKZGCommitment_Altair(t *testing.T) {
 	require.ErrorIs(t, errUnsupportedBeaconBlockBody, err)
 }
 
-func Test_MerkleProofKZGCommitment(t *testing.T) {
+func buildTestKzgsAndBody(t *testing.T) ([][]byte, interfaces.ReadOnlyBeaconBlockBody) {
 	kzgs := make([][]byte, 3)
 	kzgs[0] = make([]byte, 48)
 	_, err := rand.Read(kzgs[0])
@@ -69,8 +70,15 @@ func Test_MerkleProofKZGCommitment(t *testing.T) {
 
 	body, err := NewBeaconBlockBody(pbBody)
 	require.NoError(t, err)
-	index := 1
-	_, err = MerkleProofKZGCommitment(body, 10)
+
+	return kzgs, body
+}
+
+func Test_MerkleProofKZGCommitment(t *testing.T) {
+	const index = 1
+
+	kzgs, body := buildTestKzgsAndBody(t)
+	_, err := MerkleProofKZGCommitment(body, 10)
 	require.ErrorIs(t, errInvalidIndex, err)
 	proof, err := MerkleProofKZGCommitment(body, index)
 	require.NoError(t, err)
@@ -100,8 +108,42 @@ func Test_MerkleProofKZGCommitment(t *testing.T) {
 	require.Equal(t, true, trie.VerifyMerkleProof(root[:], commitmentsRoot[:], kzgPosition, topProof[:len(topProof)-1]))
 
 	chunk := makeChunk(kzgs[index])
-	gohashtree.HashChunks(chunk, chunk)
+	htr.HashChunks(chunk, chunk)
 	require.Equal(t, true, trie.VerifyMerkleProof(root[:], chunk[0][:], uint64(index+KZGOffset), proof))
+}
+
+func TestMerkleProofKZGCommitments(t *testing.T) {
+	t.Run("invalid version", func(t *testing.T) {
+		pbBody := &ethpb.BeaconBlockBodyAltair{}
+
+		body, err := NewBeaconBlockBody(pbBody)
+		require.NoError(t, err)
+		_, err = MerkleProofKZGCommitments(body)
+		require.ErrorIs(t, errUnsupportedBeaconBlockBody, err)
+	})
+
+	t.Run("nominal", func(t *testing.T) {
+		kzgs, body := buildTestKzgsAndBody(t)
+
+		proof, err := MerkleProofKZGCommitments(body)
+		require.NoError(t, err)
+
+		commitmentsRoot, err := getBlobKzgCommitmentsRoot(kzgs)
+		require.NoError(t, err)
+
+		bodyMembersRoots, err := topLevelRoots(body)
+		require.NoError(t, err, "Failed to get top level roots")
+
+		bodySparse, err := trie.GenerateTrieFromItems(bodyMembersRoots, logBodyLength)
+		require.NoError(t, err, "Failed to generate trie from member roots")
+
+		require.Equal(t, bodyLength, bodySparse.NumOfItems())
+
+		root, err := body.HashTreeRoot()
+		require.NoError(t, err)
+
+		require.Equal(t, true, trie.VerifyMerkleProof(root[:], commitmentsRoot[:], kzgPosition, proof))
+	})
 }
 
 // This test explains the calculation of the KZG commitment root's Merkle index
@@ -139,7 +181,7 @@ func ceilLog2(x uint32) (uint32, error) {
 }
 
 func getBlobKzgCommitmentsRoot(commitments [][]byte) ([32]byte, error) {
-	commitmentsLeaves := leavesFromCommitments(commitments)
+	commitmentsLeaves := LeavesFromCommitments(commitments)
 	commitmentsSparse, err := trie.GenerateTrieFromItems(
 		commitmentsLeaves,
 		fieldparams.LogMaxBlobCommitments,
@@ -188,8 +230,8 @@ func Benchmark_MerkleProofKZGCommitment(b *testing.B) {
 	body, err := NewBeaconBlockBody(pbBody)
 	require.NoError(b, err)
 	index := 1
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, err := MerkleProofKZGCommitment(body, index)
 		require.NoError(b, err)
 	}

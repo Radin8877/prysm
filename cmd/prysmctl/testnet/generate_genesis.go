@@ -10,19 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/cmd/flags"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/cmd/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -43,7 +43,6 @@ var (
 		GethGenesisJsonIn  string
 		GethGenesisJsonOut string
 	}{}
-	log           = logrus.WithField("prefix", "genesis")
 	outputSSZFlag = &cli.StringFlag{
 		Name:        "output-ssz",
 		Destination: &generateGenesisStateFlags.OutputSSZ,
@@ -188,7 +187,7 @@ func cliActionGenerateGenesisState(cliCtx *cli.Context) error {
 		type MinimumSSZMarshal interface {
 			MarshalSSZ() ([]byte, error)
 		}
-		marshalFn := func(o interface{}) ([]byte, error) {
+		marshalFn := func(o any) ([]byte, error) {
 			marshaler, ok := o.(MinimumSSZMarshal)
 			if !ok {
 				return nil, errors.New("not a marshaler")
@@ -214,13 +213,6 @@ func setGlobalParams() error {
 
 func generateGenesis(ctx context.Context) (state.BeaconState, error) {
 	f := &generateGenesisStateFlags
-	if f.GenesisTime == 0 {
-		f.GenesisTime = uint64(time.Now().Unix())
-		log.Info("No genesis time specified, defaulting to now()")
-	}
-	log.Infof("Delaying genesis %v by %v seconds", f.GenesisTime, f.GenesisTimeDelay)
-	f.GenesisTime += f.GenesisTimeDelay
-	log.Infof("Genesis is now %v", f.GenesisTime)
 
 	v, err := version.FromString(f.ForkName)
 	if err != nil {
@@ -233,7 +225,7 @@ func generateGenesis(ctx context.Context) (state.BeaconState, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("reading deposits from JSON at %s", expanded)
+		log.Printf("Reading deposits from JSON at %s", expanded)
 		b, err := os.ReadFile(expanded) // #nosec G304
 		if err != nil {
 			return nil, err
@@ -258,11 +250,34 @@ func generateGenesis(ctx context.Context) (state.BeaconState, error) {
 		if err := json.Unmarshal(gbytes, gen); err != nil {
 			return nil, err
 		}
-		// set timestamps for genesis and shanghai fork
+		// Use input file's timestamp (if `--genesis-time` is NOT explicitly provided)
+		if f.GenesisTime == 0 {
+			f.GenesisTime = gen.Timestamp
+			log.Infof("Using genesis time from input file: %d", f.GenesisTime)
+		}
+	}
+
+	// If still unset (no `--genesis-time` and no input file), default to `now()`
+	if f.GenesisTime == 0 {
+		f.GenesisTime = uint64(time.Now().Unix())
+		log.Info("No genesis time specified, defaulting to now()")
+	}
+
+	// Apply delay (if any) and expose used genesis time
+	if f.GenesisTimeDelay > 0 {
+		log.Infof("Delaying genesis %d by %d seconds", f.GenesisTime, f.GenesisTimeDelay)
+		f.GenesisTime += f.GenesisTimeDelay
+	}
+	log.Infof("Genesis time is %d", f.GenesisTime)
+
+	// Set the timestamps for genesis and forks
+	if f.GethGenesisJsonIn != "" {
 		gen.Timestamp = f.GenesisTime
-		gen.Config.ShanghaiTime = interop.GethShanghaiTime(f.GenesisTime, params.BeaconConfig())
-		gen.Config.CancunTime = interop.GethCancunTime(f.GenesisTime, params.BeaconConfig())
-		gen.Config.PragueTime = interop.GethPragueTime(f.GenesisTime, params.BeaconConfig())
+		genesis := time.Unix(int64(f.GenesisTime), 0)
+		gen.Config.ShanghaiTime = interop.GethShanghaiTime(genesis, params.BeaconConfig())
+		gen.Config.CancunTime = interop.GethCancunTime(genesis, params.BeaconConfig())
+		gen.Config.PragueTime = interop.GethPragueTime(genesis, params.BeaconConfig())
+		gen.Config.OsakaTime = interop.GethOsakaTime(genesis, params.BeaconConfig())
 
 		fields := logrus.Fields{}
 		if gen.Config.ShanghaiTime != nil {
@@ -274,13 +289,24 @@ func generateGenesis(ctx context.Context) (state.BeaconState, error) {
 		if gen.Config.PragueTime != nil {
 			fields["prague"] = fmt.Sprintf("%d", *gen.Config.PragueTime)
 		}
+		if gen.Config.OsakaTime != nil {
+			fields["osaka"] = fmt.Sprintf("%d", *gen.Config.OsakaTime)
+		}
 		log.WithFields(fields).Info("Setting fork geth times")
 		if v > version.Altair {
 			// set ttd to zero so EL goes post-merge immediately
 			gen.Config.TerminalTotalDifficulty = big.NewInt(0)
+			if gen.BaseFee == nil {
+				return nil, errors.New("baseFeePerGas must be set in genesis.json for Post-Merge networks (after Altair)")
+			}
+		} else {
+			if gen.BaseFee == nil {
+				gen.BaseFee = big.NewInt(1000000000) // 1 Gwei default
+				log.WithField("baseFeePerGas", "1000000000").Warn("BaseFeePerGas not specified in genesis.json, using default value of 1 Gwei")
+			}
 		}
 	} else {
-		gen = interop.GethTestnetGenesis(f.GenesisTime, params.BeaconConfig())
+		gen = interop.GethTestnetGenesis(time.Unix(int64(f.GenesisTime), 0), params.BeaconConfig())
 	}
 
 	if f.GethGenesisJsonOut != "" {
@@ -288,7 +314,7 @@ func generateGenesis(ctx context.Context) (state.BeaconState, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(f.GethGenesisJsonOut, gbytes, os.ModePerm); err != nil {
+		if err := os.WriteFile(f.GethGenesisJsonOut, gbytes, 0o600); err != nil {
 			return nil, errors.Wrapf(err, "failed to write %s", f.GethGenesisJsonOut)
 		}
 	}
@@ -296,7 +322,7 @@ func generateGenesis(ctx context.Context) (state.BeaconState, error) {
 	gb := gen.ToBlock()
 
 	// TODO: expose the PregenesisCreds option with a cli flag - for now defaulting to no withdrawal credentials at genesis
-	genesisState, err := interop.NewPreminedGenesis(ctx, f.GenesisTime, nv, 0, v, gb, opts...)
+	genesisState, err := interop.NewPreminedGenesis(ctx, time.Unix(int64(f.GenesisTime), 0), nv, 0, v, gb, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -384,8 +410,8 @@ func depositJSONToDepositData(input *depositDataJSON) ([]byte, *ethpb.Deposit_Da
 
 func writeToOutputFile(
 	fPath string,
-	data interface{},
-	marshalFn func(o interface{}) ([]byte, error),
+	data any,
+	marshalFn func(o any) ([]byte, error),
 ) error {
 	encoded, err := marshalFn(data)
 	if err != nil {

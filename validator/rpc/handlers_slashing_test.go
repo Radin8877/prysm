@@ -2,28 +2,27 @@ package rpc
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/common"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/filesystem"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
-	mocks "github.com/prysmaticlabs/prysm/v5/validator/testing"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/db/common"
+	"github.com/OffchainLabs/prysm/v7/validator/db/filesystem"
+	"github.com/OffchainLabs/prysm/v7/validator/db/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
+	mocks "github.com/OffchainLabs/prysm/v7/validator/testing"
 )
 
 func TestImportSlashingProtection_Preconditions(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range []bool{false, true} {
 		t.Run(fmt.Sprintf("slashing protection minimal: %v", isSlashingProtectionMinimal), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			localWalletDir := setupWalletDir(t)
 			defaultWalletPath = localWalletDir
 
@@ -94,7 +93,7 @@ func TestImportSlashingProtection_Preconditions(t *testing.T) {
 			// Generate mock slashing history.
 			attestingHistory := make([][]*common.AttestationRecord, 0)
 			proposalHistory := make([]common.ProposalHistoryForPubkey, len(pubKeys))
-			for i := 0; i < len(pubKeys); i++ {
+			for i := range pubKeys {
 				proposalHistory[i].Proposals = make([]common.Proposal, 0)
 			}
 			mockJSON, err := mocks.MockSlashingProtectionJSON(pubKeys, attestingHistory, proposalHistory)
@@ -119,7 +118,7 @@ func TestImportSlashingProtection_Preconditions(t *testing.T) {
 func TestExportSlashingProtection_Preconditions(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range []bool{false, true} {
 		t.Run(fmt.Sprintf("slashing protection minimal: %v", isSlashingProtectionMinimal), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			localWalletDir := setupWalletDir(t)
 			defaultWalletPath = localWalletDir
 
@@ -146,7 +145,7 @@ func TestExportSlashingProtection_Preconditions(t *testing.T) {
 					PubKeys: pubKeys,
 				})
 			} else {
-				validatorDB, err = kv.NewKVStore(context.Background(), t.TempDir(), &kv.Config{
+				validatorDB, err = kv.NewKVStore(t.Context(), t.TempDir(), &kv.Config{
 					PubKeys: pubKeys,
 				})
 			}
@@ -171,7 +170,7 @@ func TestExportSlashingProtection_Preconditions(t *testing.T) {
 func TestImportExportSlashingProtection_RoundTrip(t *testing.T) {
 	// Round trip is only suitable with complete slashing protection, since
 	// minimal slashing protections only keep latest attestation and proposal.
-	ctx := context.Background()
+	ctx := t.Context()
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
 
@@ -199,7 +198,7 @@ func TestImportExportSlashingProtection_RoundTrip(t *testing.T) {
 	// Generate mock slashing history.
 	attestingHistory := make([][]*common.AttestationRecord, 0)
 	proposalHistory := make([]common.ProposalHistoryForPubkey, len(pubKeys))
-	for i := 0; i < len(pubKeys); i++ {
+	for i := range pubKeys {
 		proposalHistory[i].Proposals = make([]common.Proposal, 0)
 	}
 	mockJSON, err := mocks.MockSlashingProtectionJSON(pubKeys, attestingHistory, proposalHistory)

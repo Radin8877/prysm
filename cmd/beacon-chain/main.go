@@ -4,38 +4,41 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	runtimeDebug "runtime/debug"
-	"time"
+	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/builder"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/node"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	blockchaincmd "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/blockchain"
+	das "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/das"
+	dasFlags "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/das/flags"
+	dbcommands "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/execution"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/genesis"
+	jwtcommands "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/jwt"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/storage"
+	backfill "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/sync/backfill"
+	bflags "github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/sync/backfill/flags"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/sync/checkpoint"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/io/logs"
+	"github.com/OffchainLabs/prysm/v7/monitoring/journald"
+	"github.com/OffchainLabs/prysm/v7/runtime/debug"
+	"github.com/OffchainLabs/prysm/v7/runtime/fdlimits"
+	prefixed "github.com/OffchainLabs/prysm/v7/runtime/logging/logrus-prefixed-formatter"
+	_ "github.com/OffchainLabs/prysm/v7/runtime/maxprocs"
+	"github.com/OffchainLabs/prysm/v7/runtime/tos"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	gethlog "github.com/ethereum/go-ethereum/log"
 	golog "github.com/ipfs/go-log/v2"
 	joonix "github.com/joonix/log"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/builder"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/node"
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	blockchaincmd "github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/blockchain"
-	dbcommands "github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/execution"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	jwtcommands "github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/jwt"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/storage"
-	backfill "github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/sync/backfill"
-	bflags "github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/sync/backfill/flags"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/sync/checkpoint"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/sync/genesis"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/io/logs"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/journald"
-	"github.com/prysmaticlabs/prysm/v5/runtime/debug"
-	"github.com/prysmaticlabs/prysm/v5/runtime/fdlimits"
-	prefixed "github.com/prysmaticlabs/prysm/v5/runtime/logging/logrus-prefixed-formatter"
-	_ "github.com/prysmaticlabs/prysm/v5/runtime/maxprocs"
-	"github.com/prysmaticlabs/prysm/v5/runtime/tos"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -60,10 +63,14 @@ var appFlags = []cli.Flag{
 	flags.BlockBatchLimitBurstFactor,
 	flags.BlobBatchLimit,
 	flags.BlobBatchLimitBurstFactor,
+	flags.DataColumnBatchLimit,
+	flags.DataColumnBatchLimitBurstFactor,
 	flags.InteropMockEth1DataVotesFlag,
 	flags.SlotsPerArchivedPoint,
 	flags.DisableDebugRPCEndpoints,
 	flags.SubscribeToAllSubnets,
+	flags.Supernode,
+	flags.SemiSupernode,
 	flags.HistoricalSlasherNode,
 	flags.ChainID,
 	flags.NetworkID,
@@ -82,7 +89,9 @@ var appFlags = []cli.Flag{
 	flags.LocalBlockValueBoost,
 	flags.MinBuilderBid,
 	flags.MinBuilderDiff,
-	cmd.BackupWebhookOutputDir,
+	flags.BeaconDBPruning,
+	flags.PrunerRetentionEpochs,
+	flags.EnableBuilderSSZ,
 	cmd.MinimalConfigFlag,
 	cmd.E2EConfigFlag,
 	cmd.RPCMaxPageSizeFlag,
@@ -99,12 +108,13 @@ var appFlags = []cli.Flag{
 	cmd.P2PMaxPeers,
 	cmd.P2PPrivKey,
 	cmd.P2PStaticID,
-	cmd.P2PMetadata,
 	cmd.P2PAllowList,
 	cmd.P2PDenyList,
+	cmd.P2PColocationWhitelist,
 	cmd.PubsubQueueSize,
 	cmd.DataDirFlag,
 	cmd.VerbosityFlag,
+	cmd.LogVModuleFlag,
 	cmd.EnableTracingFlag,
 	cmd.TracingProcessNameFlag,
 	cmd.TracingEndpointFlag,
@@ -115,13 +125,12 @@ var appFlags = []cli.Flag{
 	cmd.ClearDB,
 	cmd.ForceClearDB,
 	cmd.LogFormat,
+	cmd.DisableLogColor,
 	cmd.MaxGoroutines,
 	debug.PProfFlag,
 	debug.PProfAddrFlag,
 	debug.PProfPortFlag,
 	debug.MemProfileRateFlag,
-	debug.CPUProfileFlag,
-	debug.TraceFlag,
 	debug.BlockProfileRateFlag,
 	debug.MutexProfileFractionFlag,
 	cmd.LogFileName,
@@ -140,13 +149,20 @@ var appFlags = []cli.Flag{
 	genesis.StatePath,
 	genesis.BeaconAPIURL,
 	flags.SlasherDirFlag,
+	flags.SlasherFlag,
 	flags.JwtId,
+	flags.DisableGetBlobsV2,
 	storage.BlobStoragePathFlag,
-	storage.BlobRetentionEpochFlag,
+	storage.DataColumnStoragePathFlag,
+	storage.BlobStorageLayout,
 	bflags.EnableExperimentalBackfill,
 	bflags.BackfillBatchSize,
 	bflags.BackfillWorkerCount,
-	bflags.BackfillOldestSlot,
+	dasFlags.BackfillOldestSlot,
+	dasFlags.BlobRetentionEpochFlag,
+	flags.BatchVerifierLimit,
+	flags.StateDiffExponents,
+	flags.DisableEphemeralLogFile,
 }
 
 func init() {
@@ -159,30 +175,73 @@ func before(ctx *cli.Context) error {
 		return errors.Wrap(err, "failed to load flags from config file")
 	}
 
-	format := ctx.String(cmd.LogFormat.Name)
+	// determine default log verbosity
+	verbosity := ctx.String(cmd.VerbosityFlag.Name)
+	verbosityLevel, err := logrus.ParseLevel(verbosity)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse log verbosity")
+	}
 
+	// determine per package verbosity. if not set, maxLevel will be 0.
+	vmoduleInput := strings.Join(ctx.StringSlice(cmd.LogVModuleFlag.Name), ",")
+	vmodule, maxLevel, err := cmd.ParseVModule(vmoduleInput)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse log vmodule")
+	}
+
+	// set the global logging level and data
+	logs.SetLoggingLevelAndData(verbosityLevel, vmodule, maxLevel, ctx.Bool(flags.DisableEphemeralLogFile.Name))
+
+	format := ctx.String(cmd.LogFormat.Name)
 	switch format {
 	case "text":
+		// disabling logrus default output so we can control it via different hooks
+		logrus.SetOutput(io.Discard)
+
+		// create a custom formatter and hook for terminal output
 		formatter := new(prefixed.TextFormatter)
-		formatter.TimestampFormat = time.DateTime
+		formatter.TimestampFormat = "2006-01-02 15:04:05.00"
 		formatter.FullTimestamp = true
+		formatter.ForceFormatting = true
+		formatter.ForceColors = true
+		formatter.DisableColors = ctx.Bool(cmd.DisableLogColor.Name)
+		formatter.VModule = vmodule
+		formatter.BaseVerbosity = verbosityLevel
 
-		// If persistent log files are written - we disable the log messages coloring because
-		// the colors are ANSI codes and seen as gibberish in the log files.
-		formatter.DisableColors = ctx.String(cmd.LogFileName.Name) != ""
-		logrus.SetFormatter(formatter)
+		logrus.AddHook(&logs.WriterHook{
+			Formatter:     formatter,
+			Writer:        os.Stderr,
+			AllowedLevels: logrus.AllLevels[:max(verbosityLevel, maxLevel)+1],
+			Identifier:    logs.LogTargetUser,
+		})
 	case "fluentd":
-		f := joonix.NewFormatter()
+		// disabling logrus default output so we can control it via hooks
+		logrus.SetOutput(io.Discard)
 
+		f := joonix.NewFormatter()
 		if err := joonix.DisableTimestampFormat(f); err != nil {
-			panic(err)
+			panic(err) // lint:nopanic -- This shouldn't happen, but crashing immediately at startup is OK.
 		}
 
-		logrus.SetFormatter(f)
+		logrus.AddHook(&logs.WriterHook{
+			Formatter:     f,
+			Writer:        os.Stderr,
+			AllowedLevels: logrus.AllLevels[:verbosityLevel+1],
+			Identifier:    logs.LogTargetUser,
+		})
 	case "json":
-		logrus.SetFormatter(&logrus.JSONFormatter{})
+		// disabling logrus default output so we can control it via hooks
+		logrus.SetOutput(io.Discard)
+		logrus.AddHook(&logs.WriterHook{
+			Formatter: &logrus.JSONFormatter{
+				TimestampFormat: "2006-01-02 15:04:05.00",
+			},
+			Writer:        os.Stderr,
+			AllowedLevels: logrus.AllLevels[:verbosityLevel+1],
+			Identifier:    logs.LogTargetUser,
+		})
 	case "journald":
-		if err := journald.Enable(); err != nil {
+		if err := journald.Enable(verbosityLevel); err != nil {
 			return err
 		}
 	default:
@@ -191,10 +250,21 @@ func before(ctx *cli.Context) error {
 
 	logFileName := ctx.String(cmd.LogFileName.Name)
 	if logFileName != "" {
-		if err := logs.ConfigurePersistentLogging(logFileName); err != nil {
+		if err := logs.ConfigurePersistentLogging(logFileName, format, verbosityLevel, vmodule); err != nil {
 			log.WithError(err).Error("Failed to configuring logging to disk.")
 		}
 	}
+
+	if !ctx.Bool(flags.DisableEphemeralLogFile.Name) {
+		if err := logs.ConfigureEphemeralLogFile(ctx.String(cmd.DataDirFlag.Name), ctx.App.Name); err != nil {
+			log.WithError(err).Error("Failed to configure debug log file")
+		}
+	}
+
+	// Log Prysm version on startup. After initializing log-file and ephemeral log-file.
+	log.WithFields(logrus.Fields{
+		"version": version.Version(),
+	}).Info("Prysm Beacon Chain started")
 
 	if err := cmd.ExpandSingleEndpointIfFile(ctx, flags.ExecutionEngineEndpoint); err != nil {
 		return errors.Wrap(err, "failed to expand single endpoint")
@@ -237,15 +307,17 @@ func main() {
 		Commands: []*cli.Command{
 			dbcommands.Commands,
 			jwtcommands.Commands,
+			cmd.CompletionCommand("beacon-chain"),
 		},
-		Flags:  appFlags,
-		Before: before,
+		Flags:                appFlags,
+		Before:               before,
+		EnableBashCompletion: true,
 	}
 
 	defer func() {
 		if x := recover(); x != nil {
 			log.Errorf("Runtime panic: %v\n%v", x, string(runtimeDebug.Stack()))
-			panic(x)
+			panic(x) // lint:nopanic -- This is just resurfacing the original panic.
 		}
 	}()
 
@@ -272,7 +344,7 @@ func startNode(ctx *cli.Context, cancel context.CancelFunc) error {
 	if err != nil {
 		return err
 	}
-	logrus.SetLevel(level)
+
 	// Set libp2p logger to only panic logs for the info level.
 	golog.SetAllLoggers(golog.LevelPanic)
 
@@ -310,18 +382,10 @@ func startNode(ctx *cli.Context, cancel context.CancelFunc) error {
 		checkpoint.BeaconNodeOptions,
 		storage.BeaconNodeOptions,
 		backfill.BeaconNodeOptions,
-	}
-	for _, of := range optFuncs {
-		ofo, err := of(ctx)
-		if err != nil {
-			return err
-		}
-		if ofo != nil {
-			opts = append(opts, ofo...)
-		}
+		das.BeaconNodeOptions,
 	}
 
-	beacon, err := node.New(ctx, cancel, opts...)
+	beacon, err := node.New(ctx, cancel, optFuncs, opts...)
 	if err != nil {
 		return fmt.Errorf("unable to start beacon node: %w", err)
 	}

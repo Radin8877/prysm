@@ -5,11 +5,11 @@ import (
 	"path"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/io/prompt"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/io/prompt"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
 	"github.com/urfave/cli/v2"
 )
 

@@ -1,13 +1,12 @@
 package kv
 
 import (
-	"context"
 	"io"
 	"os"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,7 +19,7 @@ func TestMain(m *testing.M) {
 
 // setupDB instantiates and returns a DB instance for the validator client.
 func setupDB(t testing.TB, pubkeys [][fieldparams.BLSPubkeyLength]byte) *Store {
-	db, err := NewKVStore(context.Background(), t.TempDir(), &Config{
+	db, err := NewKVStore(t.Context(), t.TempDir(), &Config{
 		PubKeys: pubkeys,
 	})
 	require.NoError(t, err, "Failed to instantiate DB")

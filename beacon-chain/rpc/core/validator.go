@@ -4,55 +4,39 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/api/server"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	opfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	coreTime "github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/validators"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	beaconState "github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/validator"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	opfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	coreTime "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/validators"
-	forkchoicetypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/types"
-	beaconState "github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/validator"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
 var errOptimisticMode = errors.New("the node is currently optimistic and cannot serve validators")
-
-// AggregateBroadcastFailedError represents an error scenario where
-// broadcasting an aggregate selection proof failed.
-type AggregateBroadcastFailedError struct {
-	err error
-}
-
-// NewAggregateBroadcastFailedError creates a new error instance.
-func NewAggregateBroadcastFailedError(err error) AggregateBroadcastFailedError {
-	return AggregateBroadcastFailedError{
-		err: err,
-	}
-}
-
-// Error returns the underlying error message.
-func (e *AggregateBroadcastFailedError) Error() string {
-	return fmt.Sprintf("could not broadcast signed aggregated attestation: %s", e.err.Error())
-}
 
 // ComputeValidatorPerformance reports the validator's latest balance along with other important metrics on
 // rewards and penalties throughout its lifecycle in the beacon chain.
@@ -150,9 +134,7 @@ func (s *Service) ComputeValidatorPerformance(
 		}
 	}
 	// Depending on the indices and public keys given, results might not be sorted.
-	sort.Slice(validatorIndices, func(i, j int) bool {
-		return validatorIndices[i] < validatorIndices[j]
-	})
+	slices.Sort(validatorIndices)
 
 	currentEpoch := coreTime.CurrentEpoch(headState)
 	responseCap = len(validatorIndices)
@@ -256,9 +238,7 @@ func (s *Service) IndividualVotes(
 			filteredIndices = append(filteredIndices, index)
 		}
 	}
-	sort.Slice(filteredIndices, func(i, j int) bool {
-		return filteredIndices[i] < filteredIndices[j]
-	})
+	slices.Sort(filteredIndices)
 
 	var v []*precompute.Validator
 	var bal *precompute.Balance
@@ -360,7 +340,8 @@ func (s *Service) SubmitSignedContributionAndProof(
 	// Wait for p2p broadcast to complete and return the first error (if any)
 	err := errs.Wait()
 	if err != nil {
-		return &RpcError{Err: err, Reason: Internal}
+		log.WithError(err).Debug("Could not broadcast signed contribution and proof")
+		return &RpcError{Err: server.NewBroadcastFailedError("SignedContributionAndProof", err), Reason: Internal}
 	}
 
 	s.OperationNotifier.OperationFeed().Send(&feed.Event{
@@ -384,6 +365,15 @@ func (s *Service) SubmitSignedAggregateSelectionProof(
 	if agg == nil || agg.IsNil() {
 		return &RpcError{Err: errors.New("signed aggregate request can't be nil"), Reason: BadRequest}
 	}
+
+	currentEpoch := slots.ToEpoch(s.GenesisTimeFetcher.CurrentSlot())
+	if agg.Version() < version.Electra && currentEpoch >= params.BeaconConfig().ElectraForkEpoch {
+		return &RpcError{Err: errors.New("old aggregate and proof, only electra aggregate and proof should be sent"), Reason: BadRequest}
+	}
+	if agg.Version() >= version.Electra && currentEpoch < params.BeaconConfig().ElectraForkEpoch {
+		return &RpcError{Err: errors.Errorf("electra aggregate and proof not supported yet. The current epoch is %d supported starting epoch is %d", currentEpoch, params.BeaconConfig().ElectraForkEpoch), Reason: BadRequest}
+	}
+
 	attAndProof := agg.AggregateAttestationAndProof()
 	att := attAndProof.AggregateVal()
 	data := att.GetData()
@@ -402,7 +392,8 @@ func (s *Service) SubmitSignedAggregateSelectionProof(
 	}
 
 	if err := s.Broadcaster.Broadcast(ctx, agg); err != nil {
-		return &RpcError{Err: &AggregateBroadcastFailedError{err: err}, Reason: Internal}
+		log.WithError(err).Debug("Could not broadcast signed aggregate att and proof")
+		return &RpcError{Err: server.NewBroadcastFailedError("SignedAggregateAttAndProof", err), Reason: Internal}
 	}
 
 	if logrus.GetLevel() >= logrus.DebugLevel {
@@ -485,18 +476,13 @@ func (s *Service) GetAttestationData(
 		return nil, &RpcError{Reason: BadRequest, Err: errors.Errorf("invalid request: %v", err)}
 	}
 
-	committeeIndex := primitives.CommitteeIndex(0)
-	if slots.ToEpoch(req.Slot) < params.BeaconConfig().ElectraForkEpoch {
-		committeeIndex = req.CommitteeIndex
-	}
-
 	s.AttestationCache.RLock()
 	res := s.AttestationCache.Get()
 	if res != nil && res.Slot == req.Slot {
 		s.AttestationCache.RUnlock()
 		return &ethpb.AttestationData{
 			Slot:            res.Slot,
-			CommitteeIndex:  committeeIndex,
+			CommitteeIndex:  attestationDataIndex(req, res.IsPayloadFull),
 			BeaconBlockRoot: res.HeadRoot,
 			Source: &ethpb.Checkpoint{
 				Epoch: res.Source.Epoch,
@@ -520,7 +506,7 @@ func (s *Service) GetAttestationData(
 	if res != nil && res.Slot == req.Slot {
 		return &ethpb.AttestationData{
 			Slot:            res.Slot,
-			CommitteeIndex:  committeeIndex,
+			CommitteeIndex:  attestationDataIndex(req, res.IsPayloadFull),
 			BeaconBlockRoot: res.HeadRoot,
 			Source: &ethpb.Checkpoint{
 				Epoch: res.Source.Epoch,
@@ -562,10 +548,22 @@ func (s *Service) GetAttestationData(
 		}
 	}
 	justifiedCheckpoint := headState.CurrentJustifiedCheckpoint()
+	var isPayloadFull bool
+	if slots.ToEpoch(req.Slot) >= params.BeaconConfig().GloasForkEpoch {
+		fcRoot, full := s.ChainInfoFetcher.CanonicalNodeAtSlot(req.Slot)
+		if fcRoot != bytesutil.ToBytes32(headRoot) {
+			log.WithFields(logrus.Fields{
+				"fcRoot":   hexutil.Encode(fcRoot[:]),
+				"headRoot": hexutil.Encode(headRoot),
+			}).Error("Forkchoice head root does not match head root")
+		}
+		isPayloadFull = full
+	}
 
 	if err = s.AttestationCache.Put(&cache.AttestationConsensusData{
-		Slot:     req.Slot,
-		HeadRoot: headRoot,
+		Slot:          req.Slot,
+		HeadRoot:      headRoot,
+		IsPayloadFull: isPayloadFull,
 		Target: forkchoicetypes.Checkpoint{
 			Epoch: targetEpoch,
 			Root:  targetRoot,
@@ -580,7 +578,7 @@ func (s *Service) GetAttestationData(
 
 	return &ethpb.AttestationData{
 		Slot:            req.Slot,
-		CommitteeIndex:  committeeIndex,
+		CommitteeIndex:  attestationDataIndex(req, isPayloadFull),
 		BeaconBlockRoot: headRoot,
 		Source: &ethpb.Checkpoint{
 			Epoch: justifiedCheckpoint.Epoch,
@@ -591,6 +589,25 @@ func (s *Service) GetAttestationData(
 			Root:  targetRoot[:],
 		},
 	}, nil
+}
+
+// attestationDataIndex returns the index for attestation data.
+// Pre-Electra: uses the requested committee index.
+// Electra to Gloas: always 0.
+// Post-Gloas: signals payload status of the attested head block.
+func attestationDataIndex(req *ethpb.AttestationDataRequest, isPayloadFull bool) primitives.CommitteeIndex {
+	epoch := slots.ToEpoch(req.Slot)
+	if epoch < params.BeaconConfig().ElectraForkEpoch {
+		return req.CommitteeIndex
+	}
+	if epoch < params.BeaconConfig().GloasForkEpoch {
+		// eip-7549 moves index outside
+		return 0
+	}
+	if isPayloadFull {
+		return 1
+	}
+	return 0
 }
 
 // SubmitSyncMessage submits the sync committee message to the network.

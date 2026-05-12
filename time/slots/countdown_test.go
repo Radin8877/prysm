@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
 	"github.com/sirupsen/logrus"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
@@ -27,7 +27,7 @@ func TestCountdownToGenesis(t *testing.T) {
 		firstStringResult := "1s until chain genesis"
 		genesisReached := "Chain genesis time reached"
 		CountdownToGenesis(
-			context.Background(),
+			t.Context(),
 			prysmTime.Now().Add(2*time.Second),
 			params.BeaconConfig().MinGenesisActiveValidatorCount,
 			[32]byte{},
@@ -38,7 +38,7 @@ func TestCountdownToGenesis(t *testing.T) {
 
 	t.Run("close context", func(t *testing.T) {
 		defer hook.Reset()
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		go func() {
 			time.AfterFunc(1500*time.Millisecond, func() {
 				cancel()

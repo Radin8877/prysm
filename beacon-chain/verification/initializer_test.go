@@ -2,24 +2,23 @@ package verification
 
 import (
 	"bytes"
-	"context"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestInitializerWaiter(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	vr := bytesutil.ToBytes32([]byte{0, 1, 1, 2, 3, 5})
 	gen := time.Now()
 	c := startup.NewClock(gen, vr)
 	cs := startup.NewClockSynchronizer()
 	require.NoError(t, cs.SetClock(c))
 
-	w := NewInitializerWaiter(cs, &mockForkchoicer{}, &mockStateByRooter{})
+	w := NewInitializerWaiter(cs, &mockForkchoicer{}, &mockStateByRooter{}, &mockHeadStateProvider{})
 	ini, err := w.WaitForInitializer(ctx)
 	require.NoError(t, err)
 	csc, ok := ini.shared.sc.(*sigCache)

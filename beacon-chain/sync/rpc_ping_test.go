@@ -1,27 +1,26 @@
 package sync
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
 
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	db "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	p2ptypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/wrapper"
+	leakybucket "github.com/OffchainLabs/prysm/v7/container/leaky-bucket"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	db "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	p2ptypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/wrapper"
-	leakybucket "github.com/prysmaticlabs/prysm/v5/container/leaky-bucket"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestPingRPCHandler_ReceivesPing(t *testing.T) {
@@ -65,11 +64,11 @@ func TestPingRPCHandler_ReceivesPing(t *testing.T) {
 		assert.NoError(t, r.cfg.p2p.Encoding().DecodeWithMaxLength(stream, out))
 		assert.Equal(t, uint64(2), uint64(*out))
 	})
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
 	seqNumber := primitives.SSZUint64(2)
 
-	assert.NoError(t, r.pingHandler(context.Background(), &seqNumber, stream1))
+	assert.NoError(t, r.pingHandler(t.Context(), &seqNumber, stream1))
 
 	if util.WaitTimeout(&wg, 1*time.Second) {
 		t.Fatal("Did not receive stream within 1 sec")
@@ -137,10 +136,10 @@ func TestPingRPCHandler_SendsPing(t *testing.T) {
 		out := new(primitives.SSZUint64)
 		assert.NoError(t, r2.cfg.p2p.Encoding().DecodeWithMaxLength(stream, out))
 		assert.Equal(t, uint64(2), uint64(*out))
-		assert.NoError(t, r2.pingHandler(context.Background(), out, stream))
+		assert.NoError(t, r2.pingHandler(t.Context(), out, stream))
 	})
 
-	assert.NoError(t, r.sendPingRequest(context.Background(), p2.BHost.ID()))
+	assert.NoError(t, r.sendPingRequest(t.Context(), p2.BHost.ID()))
 
 	if util.WaitTimeout(&wg, 1*time.Second) {
 		t.Fatal("Did not receive stream within 1 sec")
@@ -196,11 +195,11 @@ func TestPingRPCHandler_BadSequenceNumber(t *testing.T) {
 		expectFailure(t, responseCodeInvalidRequest, p2ptypes.ErrInvalidSequenceNum.Error(), stream)
 
 	})
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
 
 	wantedSeq := primitives.SSZUint64(p2.LocalMetadata.SequenceNumber())
-	err = r.pingHandler(context.Background(), &wantedSeq, stream1)
+	err = r.pingHandler(t.Context(), &wantedSeq, stream1)
 	assert.ErrorContains(t, p2ptypes.ErrInvalidSequenceNum.Error(), err)
 
 	if util.WaitTimeout(&wg, 1*time.Second) {

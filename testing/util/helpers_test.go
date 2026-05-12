@@ -2,19 +2,18 @@ package util
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 func TestBlockSignature(t *testing.T) {
@@ -23,7 +22,7 @@ func TestBlockSignature(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, beaconState.SetSlot(beaconState.Slot()+1))
-	proposerIdx, err := helpers.BeaconProposerIndex(context.Background(), beaconState)
+	proposerIdx, err := helpers.BeaconProposerIndex(t.Context(), beaconState)
 	assert.NoError(t, err)
 
 	assert.NoError(t, beaconState.SetSlot(slots.PrevSlot(beaconState.Slot())))
@@ -46,7 +45,7 @@ func TestRandaoReveal(t *testing.T) {
 	randaoReveal, err := RandaoReveal(beaconState, epoch, privKeys)
 	assert.NoError(t, err)
 
-	proposerIdx, err := helpers.BeaconProposerIndex(context.Background(), beaconState)
+	proposerIdx, err := helpers.BeaconProposerIndex(t.Context(), beaconState)
 	assert.NoError(t, err)
 	buf := make([]byte, fieldparams.RootLength)
 	binary.LittleEndian.PutUint64(buf, uint64(epoch))

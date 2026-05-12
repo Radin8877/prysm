@@ -3,6 +3,15 @@ package testing
 import (
 	"context"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/encoder"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/metadata"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/control"
@@ -10,10 +19,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/metadata"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -55,14 +60,19 @@ func (*FakeP2P) ENR() *enr.Record {
 	return new(enr.Record)
 }
 
+// NodeID returns the node id of the local peer.
+func (*FakeP2P) NodeID() enode.ID {
+	return enode.ID{}
+}
+
 // DiscoveryAddresses -- fake
 func (*FakeP2P) DiscoveryAddresses() ([]multiaddr.Multiaddr, error) {
 	return nil, nil
 }
 
-// FindPeersWithSubnet mocks the p2p func.
-func (*FakeP2P) FindPeersWithSubnet(_ context.Context, _ string, _ uint64, _ int) (bool, error) {
-	return false, nil
+// FindAndDialPeersWithSubnets mocks the p2p func.
+func (*FakeP2P) FindAndDialPeersWithSubnets(ctx context.Context, topicFormat string, digest [fieldparams.VersionLength]byte, minimumPeersPerSubnet int, subnets map[uint64]bool) error {
+	return nil
 }
 
 // RefreshPersistentSubnets mocks the p2p func.
@@ -89,7 +99,7 @@ func (*FakeP2P) PublishToTopic(_ context.Context, _ string, _ []byte, _ ...pubsu
 }
 
 // Send -- fake.
-func (*FakeP2P) Send(_ context.Context, _ interface{}, _ string, _ peer.ID) (network.Stream, error) {
+func (*FakeP2P) Send(_ context.Context, _ any, _ string, _ peer.ID) (network.Stream, error) {
 	return nil, nil
 }
 
@@ -128,6 +138,11 @@ func (*FakeP2P) Disconnect(_ peer.ID) error {
 	return nil
 }
 
+// BroadcastForEpoch -- fake.
+func (*FakeP2P) BroadcastForEpoch(_ context.Context, _ proto.Message, _ primitives.Epoch) error {
+	return nil
+}
+
 // Broadcast -- fake.
 func (*FakeP2P) Broadcast(_ context.Context, _ proto.Message) error {
 	return nil
@@ -145,6 +160,21 @@ func (*FakeP2P) BroadcastSyncCommitteeMessage(_ context.Context, _ uint64, _ *et
 
 // BroadcastBlob -- fake.
 func (*FakeP2P) BroadcastBlob(_ context.Context, _ uint64, _ *ethpb.BlobSidecar) error {
+	return nil
+}
+
+// BroadcastLightClientOptimisticUpdate -- fake.
+func (*FakeP2P) BroadcastLightClientOptimisticUpdate(_ context.Context, _ interfaces.LightClientOptimisticUpdate) error {
+	return nil
+}
+
+// BroadcastLightClientFinalityUpdate -- fake.
+func (*FakeP2P) BroadcastLightClientFinalityUpdate(_ context.Context, _ interfaces.LightClientFinalityUpdate) error {
+	return nil
+}
+
+// BroadcastDataColumnSidecar -- fake.
+func (*FakeP2P) BroadcastDataColumnSidecars(_ context.Context, _ []blocks.VerifiedRODataColumn) error {
 	return nil
 }
 
@@ -171,4 +201,29 @@ func (*FakeP2P) InterceptSecured(network.Direction, peer.ID, network.ConnMultiad
 // InterceptUpgraded -- fake.
 func (*FakeP2P) InterceptUpgraded(network.Conn) (allow bool, reason control.DisconnectReason) {
 	return true, 0
+}
+
+// EarliestAvailableSlot -- fake.
+func (*FakeP2P) EarliestAvailableSlot(context.Context) (primitives.Slot, error) {
+	return 0, nil
+}
+
+// CustodyGroupCount -- fake.
+func (*FakeP2P) CustodyGroupCount(context.Context) (uint64, error) {
+	return 0, nil
+}
+
+// UpdateCustodyInfo -- fake.
+func (s *FakeP2P) UpdateCustodyInfo(earliestAvailableSlot primitives.Slot, custodyGroupCount uint64) (primitives.Slot, uint64, error) {
+	return earliestAvailableSlot, custodyGroupCount, nil
+}
+
+// UpdateEarliestAvailableSlot -- fake.
+func (*FakeP2P) UpdateEarliestAvailableSlot(earliestAvailableSlot primitives.Slot) error {
+	return nil
+}
+
+// CustodyGroupCountFromPeer -- fake.
+func (*FakeP2P) CustodyGroupCountFromPeer(peer.ID) uint64 {
+	return 0
 }

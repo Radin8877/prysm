@@ -1,14 +1,12 @@
 package blockchain
 
 import (
-	"context"
 	"io"
 	"testing"
 
-	testDB "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/sirupsen/logrus"
 )
 
@@ -18,15 +16,12 @@ func init() {
 }
 
 func TestChainService_SaveHead_DataRace(t *testing.T) {
-	beaconDB := testDB.SetupDB(t)
-	s := &Service{
-		cfg: &config{BeaconDB: beaconDB},
-	}
+	s := testServiceWithDB(t)
 	b, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlock())
 	st, _ := util.DeterministicGenesisState(t, 1)
 	require.NoError(t, err)
 	go func() {
-		require.NoError(t, s.saveHead(context.Background(), [32]byte{}, b, st))
+		require.NoError(t, s.saveHead(t.Context(), [32]byte{}, b, st, false))
 	}()
-	require.NoError(t, s.saveHead(context.Background(), [32]byte{}, b, st))
+	require.NoError(t, s.saveHead(t.Context(), [32]byte{}, b, st, false))
 }

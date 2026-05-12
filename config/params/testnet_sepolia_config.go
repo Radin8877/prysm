@@ -1,8 +1,6 @@
 package params
 
 import (
-	"math"
-
 	eth1Params "github.com/ethereum/go-ethereum/params"
 )
 
@@ -26,7 +24,7 @@ func UseSepoliaNetworkConfig() {
 
 // SepoliaConfig defines the config for the Sepolia beacon chain testnet.
 func SepoliaConfig() *BeaconChainConfig {
-	cfg := MainnetConfig().Copy()
+	cfg := MainnetConfig()
 	cfg.MinGenesisTime = 1655647200
 	cfg.GenesisDelay = 86400
 	cfg.MinGenesisActiveValidatorCount = 1300
@@ -44,12 +42,24 @@ func SepoliaConfig() *BeaconChainConfig {
 	cfg.CapellaForkVersion = []byte{0x90, 0x00, 0x00, 0x72}
 	cfg.DenebForkEpoch = 132608
 	cfg.DenebForkVersion = []byte{0x90, 0x00, 0x00, 0x73}
-	cfg.ElectraForkEpoch = math.MaxUint64
-	cfg.ElectraForkVersion = []byte{0x90, 0x00, 0x00, 0x74} // TODO: Define sepolia fork version for electra. This is a placeholder value.
-	cfg.FuluForkEpoch = math.MaxUint64
-	cfg.FuluForkVersion = []byte{0x90, 0x00, 0x00, 0x75} // TODO: Define sepolia fork version for fulu. This is a placeholder value.
+	cfg.ElectraForkEpoch = 222464 // Wed, Mar 5 at 07:29:36 UTC
+	cfg.ElectraForkVersion = []byte{0x90, 0x00, 0x00, 0x74}
+	cfg.FuluForkEpoch = 272640 // 2025-10-14 07:36:00 UTC
+	cfg.FuluForkVersion = []byte{0x90, 0x00, 0x00, 0x75}
+	cfg.GloasForkVersion = []byte{0x90, 0x00, 0x00, 0x76}
 	cfg.TerminalTotalDifficulty = "17000000000000000"
 	cfg.DepositContractAddress = "0x7f02C3E3c98b133055B8B348B2Ac625669Ed295D"
+	cfg.DefaultBuilderGasLimit = uint64(60000000)
+	cfg.BlobSchedule = []BlobScheduleEntry{
+		{
+			MaxBlobsPerBlock: 15,
+			Epoch:            274176, // 2025-10-21 03:26:24 UTC
+		},
+		{
+			MaxBlobsPerBlock: 21,
+			Epoch:            275712, // 2025-10-27 23:16:48 UTC
+		},
+	}
 	cfg.InitializeForkSchedule()
 	return cfg
 }

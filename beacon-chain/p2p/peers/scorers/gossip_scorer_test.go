@@ -1,18 +1,16 @@
 package scorers_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers/scorers"
-	pbrpc "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers/scorers"
+	pbrpc "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
 )
 
 func TestScorers_Gossip_Score(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	tests := []struct {
 		name   string
@@ -44,7 +42,7 @@ func TestScorers_Gossip_Score(t *testing.T) {
 			},
 			check: func(scorer *scorers.GossipScorer) {
 				assert.Equal(t, 10.0, scorer.Score("peer1"), "Unexpected score")
-				assert.Equal(t, nil, scorer.IsBadPeer("peer1"), "Unexpected bad peer")
+				assert.NoError(t, scorer.IsBadPeer("peer1"), "Unexpected bad peer")
 				_, _, topicMap, err := scorer.GossipData("peer1")
 				assert.NoError(t, err)
 				assert.Equal(t, uint64(100), topicMap["a"].TimeInMesh, "incorrect time in mesh")

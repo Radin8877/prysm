@@ -1,15 +1,14 @@
 package kv
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -24,7 +23,7 @@ func TestPruneAttestations_NoPruning(t *testing.T) {
 	require.NoError(t, err)
 
 	// Next, attempt to prune and realize that we still have all epochs intact
-	err = validatorDB.PruneAttestations(context.Background())
+	err = validatorDB.PruneAttestations(t.Context())
 	require.NoError(t, err)
 
 	startEpoch := primitives.Epoch(0)
@@ -42,7 +41,7 @@ func TestPruneAttestations_NoPruning(t *testing.T) {
 func TestPruneAttestations_OK(t *testing.T) {
 	numKeys := uint64(64)
 	pks := make([][fieldparams.BLSPubkeyLength]byte, 0, numKeys)
-	for i := uint64(0); i < numKeys; i++ {
+	for i := range numKeys {
 		pks = append(pks, bytesutil.ToBytes48(bytesutil.ToBytes(i, 48)))
 	}
 	validatorDB := setupDB(t, pks)
@@ -54,7 +53,7 @@ func TestPruneAttestations_OK(t *testing.T) {
 		require.NoError(t, setupAttestationsForEveryEpoch(validatorDB, pk, numEpochs))
 	}
 
-	require.NoError(t, validatorDB.PruneAttestations(context.Background()))
+	require.NoError(t, validatorDB.PruneAttestations(t.Context()))
 
 	// Next, verify that we pruned every epoch
 	// from genesis to SLASHING_PROTECTION_PRUNING_EPOCHS - 1.
@@ -91,7 +90,7 @@ func TestPruneAttestations_OK(t *testing.T) {
 func BenchmarkPruneAttestations(b *testing.B) {
 	numKeys := uint64(8)
 	pks := make([][fieldparams.BLSPubkeyLength]byte, 0, numKeys)
-	for i := uint64(0); i < numKeys; i++ {
+	for i := range numKeys {
 		pks = append(pks, bytesutil.ToBytes48(bytesutil.ToBytes(i, 48)))
 	}
 	validatorDB := setupDB(b, pks)
@@ -100,15 +99,14 @@ func BenchmarkPruneAttestations(b *testing.B) {
 	// since genesis to SLASHING_PROTECTION_PRUNING_EPOCHS * 20.
 	numEpochs := params.BeaconConfig().SlashingProtectionPruningEpochs * 20
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		for _, pk := range pks {
 			require.NoError(b, setupAttestationsForEveryEpoch(validatorDB, pk, numEpochs))
 		}
 		b.StartTimer()
 
-		require.NoError(b, validatorDB.PruneAttestations(context.Background()))
+		require.NoError(b, validatorDB.PruneAttestations(b.Context()))
 	}
 }
 
@@ -129,7 +127,7 @@ func setupAttestationsForEveryEpoch(validatorDB *Store, pubKey [48]byte, numEpoc
 		if err != nil {
 			return err
 		}
-		for sourceEpoch := primitives.Epoch(0); sourceEpoch < numEpochs; sourceEpoch++ {
+		for sourceEpoch := range numEpochs {
 			targetEpoch := sourceEpoch + 1
 			targetEpochBytes := bytesutil.EpochToBytesBigEndian(targetEpoch)
 			sourceEpochBytes := bytesutil.EpochToBytesBigEndian(sourceEpoch)

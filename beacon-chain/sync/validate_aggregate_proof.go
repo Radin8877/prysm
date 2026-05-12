@@ -3,28 +3,28 @@ package sync
 import (
 	"context"
 	"fmt"
+	"slices"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 // validateAggregateAndProof verifies the aggregated signature and the selection proof is valid before forwarding to the
@@ -69,18 +69,12 @@ func (s *Service) validateAggregateAndProof(ctx context.Context, pid peer.ID, ms
 
 	// Broadcast the aggregated attestation on a feed to notify other services in the beacon node
 	// of a received aggregated attestation.
-	// TODO: this will be extended to Electra in a later PR
-	if m.Version() == version.Phase0 {
-		phase0Att, ok := m.(*ethpb.SignedAggregateAttestationAndProof)
-		if ok {
-			s.cfg.attestationNotifier.OperationFeed().Send(&feed.Event{
-				Type: operation.AggregatedAttReceived,
-				Data: &operation.AggregatedAttReceivedData{
-					Attestation: phase0Att.Message,
-				},
-			})
-		}
-	}
+	s.cfg.attestationNotifier.OperationFeed().Send(&feed.Event{
+		Type: operation.AggregatedAttReceived,
+		Data: &operation.AggregatedAttReceivedData{
+			Attestation: m.AggregateAttestationAndProof(),
+		},
+	})
 
 	if err := helpers.ValidateSlotTargetEpoch(data); err != nil {
 		return pubsub.ValidationReject, err
@@ -143,7 +137,9 @@ func (s *Service) validateAggregateAndProof(ctx context.Context, pid peer.ID, ms
 		return validationRes, err
 	}
 
-	s.setAggregatorIndexEpochSeen(data.Target.Epoch, m.AggregateAttestationAndProof().GetAggregatorIndex())
+	if first := s.setAggregatorIndexEpochSeen(data.Target.Epoch, m.AggregateAttestationAndProof().GetAggregatorIndex()); !first {
+		return pubsub.ValidationIgnore, nil
+	}
 
 	msg.ValidatorData = m
 
@@ -253,7 +249,7 @@ func (s *Service) validateBlockInAttestation(ctx context.Context, satt ethpb.Sig
 	blockRoot := bytesutil.ToBytes32(satt.AggregateAttestationAndProof().AggregateVal().GetData().BeaconBlockRoot)
 	if !s.hasBlockAndState(ctx, blockRoot) {
 		// A node doesn't have the block, it'll request from peer while saving the pending attestation to a queue.
-		s.savePendingAtt(satt)
+		s.savePendingAggregate(satt)
 		return false
 	}
 	return true
@@ -261,19 +257,29 @@ func (s *Service) validateBlockInAttestation(ctx context.Context, satt ethpb.Sig
 
 // Returns true if the node has received aggregate for the aggregator with index and target epoch.
 func (s *Service) hasSeenAggregatorIndexEpoch(epoch primitives.Epoch, aggregatorIndex primitives.ValidatorIndex) bool {
+	b := append(bytesutil.Bytes32(uint64(epoch)), bytesutil.Bytes32(uint64(aggregatorIndex))...)
+
 	s.seenAggregatedAttestationLock.RLock()
 	defer s.seenAggregatedAttestationLock.RUnlock()
-	b := append(bytesutil.Bytes32(uint64(epoch)), bytesutil.Bytes32(uint64(aggregatorIndex))...)
+
 	_, seen := s.seenAggregatedAttestationCache.Get(string(b))
 	return seen
 }
 
 // Set aggregate's aggregator index target epoch as seen.
-func (s *Service) setAggregatorIndexEpochSeen(epoch primitives.Epoch, aggregatorIndex primitives.ValidatorIndex) {
+// Returns true if this is the first time seeing this aggregator index and epoch.
+func (s *Service) setAggregatorIndexEpochSeen(epoch primitives.Epoch, aggregatorIndex primitives.ValidatorIndex) bool {
+	b := append(bytesutil.Bytes32(uint64(epoch)), bytesutil.Bytes32(uint64(aggregatorIndex))...)
+
 	s.seenAggregatedAttestationLock.Lock()
 	defer s.seenAggregatedAttestationLock.Unlock()
-	b := append(bytesutil.Bytes32(uint64(epoch)), bytesutil.Bytes32(uint64(aggregatorIndex))...)
+
+	_, seen := s.seenAggregatedAttestationCache.Get(string(b))
+	if seen {
+		return false
+	}
 	s.seenAggregatedAttestationCache.Add(string(b), true)
+	return true
 }
 
 // This validates the bitfield is correct and aggregator's index in state is within the beacon committee.
@@ -293,11 +299,8 @@ func (s *Service) validateIndexInCommittee(ctx context.Context, a ethpb.Att, val
 	}
 
 	var withinCommittee bool
-	for _, i := range committee {
-		if validatorIndex == i {
-			withinCommittee = true
-			break
-		}
+	if slices.Contains(committee, validatorIndex) {
+		withinCommittee = true
 	}
 	if !withinCommittee {
 		return pubsub.ValidationReject, fmt.Errorf("validator index %d is not within the committee: %v",

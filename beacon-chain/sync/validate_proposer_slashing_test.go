@@ -8,30 +8,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/go-bitfield"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	coreTime "github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	lruwrpr "github.com/OffchainLabs/prysm/v7/cache/lru"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
-	"github.com/prysmaticlabs/go-bitfield"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	coreTime "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	lruwrpr "github.com/prysmaticlabs/prysm/v5/cache/lru"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func setupValidProposerSlashing(t *testing.T) (*ethpb.ProposerSlashing, state.BeaconState) {
 	validators := make([]*ethpb.Validator, 100)
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			EffectiveBalance:  params.BeaconConfig().MaxEffectiveBalance,
 			Slashed:           false,
@@ -41,7 +41,7 @@ func setupValidProposerSlashing(t *testing.T) (*ethpb.ProposerSlashing, state.Be
 		}
 	}
 	validatorBalances := make([]uint64, len(validators))
-	for i := 0; i < len(validatorBalances); i++ {
+	for i := range validatorBalances {
 		validatorBalances[i] = params.BeaconConfig().MaxEffectiveBalance
 	}
 
@@ -110,7 +110,7 @@ func setupValidProposerSlashing(t *testing.T) (*ethpb.ProposerSlashing, state.Be
 
 func TestValidateProposerSlashing_ValidSlashing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidProposerSlashing(t)
 
@@ -129,7 +129,7 @@ func TestValidateProposerSlashing_ValidSlashing(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.ProposerSlashing]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -149,7 +149,7 @@ func TestValidateProposerSlashing_ValidSlashing(t *testing.T) {
 
 func TestValidateProposerSlashing_ValidOldSlashing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidProposerSlashing(t)
 	val, err := s.ValidatorAtIndex(slashing.Header_2.Header.ProposerIndex)
@@ -172,7 +172,7 @@ func TestValidateProposerSlashing_ValidOldSlashing(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err = p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.ProposerSlashing]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -198,7 +198,7 @@ func TestValidateProposerSlashing_ContextTimeout(t *testing.T) {
 	require.NoError(t, err)
 	err = st.SetPreviousJustifiedCheckpoint(&ethpb.Checkpoint{Epoch: 0, Root: []byte{}})
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	r := &Service{
@@ -213,7 +213,7 @@ func TestValidateProposerSlashing_ContextTimeout(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err = p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.ProposerSlashing]()]
 	m := &pubsub.Message{
 		Message: &pubsubpb.Message{
 			Data:  buf.Bytes(),
@@ -228,7 +228,7 @@ func TestValidateProposerSlashing_ContextTimeout(t *testing.T) {
 
 func TestValidateProposerSlashing_Syncing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	slashing, s := setupValidProposerSlashing(t)
 
@@ -243,7 +243,7 @@ func TestValidateProposerSlashing_Syncing(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err := p.Encoding().EncodeGossip(buf, slashing)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(slashing)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.ProposerSlashing]()]
 	m := &pubsub.Message{
 		Message: &pubsubpb.Message{
 			Data:  buf.Bytes(),

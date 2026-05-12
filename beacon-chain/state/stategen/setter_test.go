@@ -1,21 +1,20 @@
 package stategen
 
 import (
-	"context"
 	"testing"
 
-	testDB "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	testDB "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestSaveState_HotStateCanBeSaved(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 
 	service := New(beaconDB, doublylinkedtree.New())
@@ -36,7 +35,7 @@ func TestSaveState_HotStateCanBeSaved(t *testing.T) {
 
 func TestSaveState_HotStateCached(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 
 	service := New(beaconDB, doublylinkedtree.New())
@@ -56,7 +55,7 @@ func TestSaveState_HotStateCached(t *testing.T) {
 }
 
 func TestState_ForceCheckpoint_SavesStateToDatabase(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 
 	svc := New(beaconDB, doublylinkedtree.New())
@@ -76,7 +75,7 @@ func TestState_ForceCheckpoint_SavesStateToDatabase(t *testing.T) {
 
 func TestSaveState_Alreadyhas(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 
@@ -95,7 +94,7 @@ func TestSaveState_Alreadyhas(t *testing.T) {
 }
 
 func TestSaveState_CanSaveOnEpochBoundary(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 
@@ -116,7 +115,7 @@ func TestSaveState_CanSaveOnEpochBoundary(t *testing.T) {
 
 func TestSaveState_NoSaveNotEpochBoundary(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 
@@ -139,7 +138,7 @@ func TestSaveState_NoSaveNotEpochBoundary(t *testing.T) {
 }
 
 func TestSaveState_RecoverForEpochBoundary(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 
@@ -168,7 +167,7 @@ func TestSaveState_RecoverForEpochBoundary(t *testing.T) {
 
 func TestSaveState_CanSaveHotStateToDB(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 	service.EnableSaveHotStateToDB(ctx)
@@ -185,7 +184,7 @@ func TestSaveState_CanSaveHotStateToDB(t *testing.T) {
 
 func TestEnableSaveHotStateToDB_Enabled(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 
@@ -196,7 +195,7 @@ func TestEnableSaveHotStateToDB_Enabled(t *testing.T) {
 
 func TestEnableSaveHotStateToDB_AlreadyEnabled(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 	service.saveHotStateDB.enabled = true
@@ -207,7 +206,7 @@ func TestEnableSaveHotStateToDB_AlreadyEnabled(t *testing.T) {
 
 func TestEnableSaveHotStateToDB_Disabled(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 	service.saveHotStateDB.enabled = true
@@ -224,7 +223,7 @@ func TestEnableSaveHotStateToDB_Disabled(t *testing.T) {
 
 func TestEnableSaveHotStateToDB_AlreadyDisabled(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconDB := testDB.SetupDB(t)
 	service := New(beaconDB, doublylinkedtree.New())
 	require.NoError(t, service.DisableSaveHotStateToDB(ctx))

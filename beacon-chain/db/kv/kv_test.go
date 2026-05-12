@@ -3,29 +3,136 @@ package kv
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	bolt "go.etcd.io/bbolt"
 )
 
 // setupDB instantiates and returns a Store instance.
 func setupDB(t testing.TB) *Store {
-	db, err := NewKVStore(context.Background(), t.TempDir())
+	db, err := NewKVStore(t.Context(), t.TempDir())
 	require.NoError(t, err, "Failed to instantiate DB")
 	t.Cleanup(func() {
-		require.NoError(t, db.Close(), "Failed to close database")
+		err := db.Close()
+		if err != context.Canceled {
+			require.NoError(t, err, "Failed to close database")
+		}
 	})
 	return db
 }
 
+func TestStartStateDiff_ExponentMismatch(t *testing.T) {
+	resetCfg := features.InitWithReset(&features.Flags{EnableStateDiff: true})
+	defer resetCfg()
+	setDefaultStateDiffExponents()
+
+	store := setupDB(t)
+	require.NoError(t, store.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(stateDiffBucket)
+		if bucket == nil {
+			return bolt.ErrBucketNotFound
+		}
+		offsetBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(offsetBytes, 0)
+		if err := bucket.Put(offsetKey, offsetBytes); err != nil {
+			return err
+		}
+		encoded, err := encodeStateDiffExponents([]int{20, 10})
+		if err != nil {
+			return err
+		}
+		return bucket.Put(exponentsKey, encoded)
+	}))
+
+	ctx := t.Context()
+	err := store.startStateDiff(ctx)
+	require.ErrorContains(t, "state-diff exponents changed", err)
+}
+
+func TestStartStateDiff_MissingOffsetSnapshot(t *testing.T) {
+	resetCfg := features.InitWithReset(&features.Flags{EnableStateDiff: true})
+	defer resetCfg()
+	setDefaultStateDiffExponents()
+
+	store := setupDB(t)
+	require.NoError(t, store.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(stateDiffBucket)
+		if bucket == nil {
+			return bolt.ErrBucketNotFound
+		}
+		offsetBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(offsetBytes, 0)
+		if err := bucket.Put(offsetKey, offsetBytes); err != nil {
+			return err
+		}
+		encoded, err := encodeStateDiffExponents(flags.Get().StateDiffExponents)
+		if err != nil {
+			return err
+		}
+		return bucket.Put(exponentsKey, encoded)
+	}))
+
+	ctx := t.Context()
+	err := store.startStateDiff(ctx)
+	require.ErrorContains(t, "offset snapshot", err)
+}
+
+func TestStartStateDiff_ValidateOnStartup(t *testing.T) {
+	resetCfg := features.InitWithReset(&features.Flags{EnableStateDiff: true})
+	defer resetCfg()
+	setDefaultStateDiffExponents()
+
+	globalFlags := flags.GlobalFlags{
+		StateDiffExponents: flags.Get().StateDiffExponents,
+	}
+	flags.Init(&globalFlags)
+
+	store := setupDB(t)
+	require.NoError(t, store.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(stateDiffBucket)
+		if bucket == nil {
+			return bolt.ErrBucketNotFound
+		}
+		st, _ := createState(t, 0, version.Phase0)
+		stateBytes, err := st.MarshalSSZ()
+		if err != nil {
+			return err
+		}
+		enc, err := addKey(st.Version(), stateBytes)
+		if err != nil {
+			return err
+		}
+		offsetBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(offsetBytes, 0)
+		if err := bucket.Put(offsetKey, offsetBytes); err != nil {
+			return err
+		}
+		encoded, err := encodeStateDiffExponents(flags.Get().StateDiffExponents)
+		if err != nil {
+			return err
+		}
+		if err := bucket.Put(exponentsKey, encoded); err != nil {
+			return err
+		}
+		key := makeKeyForStateDiffTree(0, 0)
+		return bucket.Put(key, enc)
+	}))
+
+	err := store.startStateDiff(t.Context())
+	require.NoError(t, err)
+}
+
 func Test_setupBlockStorageType(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	t.Run("fresh database with feature enabled to store full blocks should store full blocks", func(t *testing.T) {
 		resetFn := features.InitWithReset(&features.Flags{
 			SaveFullExecutionPayloads: true,

@@ -4,13 +4,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 // OnAttestation is called whenever an attestation is received, verifies the attestation is valid and saves
@@ -59,10 +60,8 @@ func (s *Service) OnAttestation(ctx context.Context, a ethpb.Att, disparity time
 		return err
 	}
 
-	genesisTime := uint64(s.genesisTime.Unix())
-
 	// Verify attestation target is from current epoch or previous epoch.
-	if err := verifyAttTargetEpoch(ctx, genesisTime, uint64(time.Now().Add(disparity).Unix()), tgt); err != nil {
+	if err := verifyAttTargetEpoch(ctx, s.genesisTime, time.Now().Add(disparity), tgt); err != nil {
 		return err
 	}
 
@@ -75,12 +74,12 @@ func (s *Service) OnAttestation(ctx context.Context, a ethpb.Att, disparity time
 	// validate_aggregate_proof.go and validate_beacon_attestation.go
 
 	// Verify attestations can only affect the fork choice of subsequent slots.
-	if err := slots.VerifyTime(genesisTime, a.GetData().Slot+1, disparity); err != nil {
+	if err := slots.VerifyTime(s.genesisTime, a.GetData().Slot+1, disparity); err != nil {
 		return err
 	}
 
 	// Use the target state to verify attesting indices are valid.
-	committees, err := helpers.AttestationCommittees(ctx, baseState, a)
+	committees, err := helpers.AttestationCommitteesFromState(ctx, baseState, a)
 	if err != nil {
 		return err
 	}
@@ -88,7 +87,7 @@ func (s *Service) OnAttestation(ctx context.Context, a ethpb.Att, disparity time
 	if err != nil {
 		return err
 	}
-	if err := attestation.IsValidAttestationIndices(ctx, indexedAtt); err != nil {
+	if err := attestation.IsValidAttestationIndices(ctx, indexedAtt, params.BeaconConfig().MaxValidatorsPerCommittee, params.BeaconConfig().MaxCommitteesPerSlot); err != nil {
 		return err
 	}
 
@@ -97,7 +96,11 @@ func (s *Service) OnAttestation(ctx context.Context, a ethpb.Att, disparity time
 	// We assume trusted attestation in this function has verified signature.
 
 	// Update forkchoice store with the new attestation for updating weight.
-	s.cfg.ForkChoiceStore.ProcessAttestation(ctx, indexedAtt.GetAttestingIndices(), bytesutil.ToBytes32(a.GetData().BeaconBlockRoot), a.GetData().Target.Epoch)
-
+	attData := a.GetData()
+	payloadStatus := true
+	if attData.Target.Epoch >= params.BeaconConfig().GloasForkEpoch {
+		payloadStatus = attData.CommitteeIndex == 1
+	}
+	s.cfg.ForkChoiceStore.ProcessAttestation(ctx, indexedAtt.GetAttestingIndices(), bytesutil.ToBytes32(attData.BeaconBlockRoot), attData.Slot, payloadStatus)
 	return nil
 }

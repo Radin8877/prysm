@@ -2,21 +2,20 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/validator/helpers"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/validator/helpers"
 )
 
 type eip3076TestCase struct {
@@ -98,7 +97,7 @@ func TestEIP3076SpecTests(t *testing.T) {
 				for _, step := range tt.Steps {
 					if tt.GenesisValidatorsRoot != "" {
 						r, err := helpers.RootFromHex(tt.GenesisValidatorsRoot)
-						require.NoError(t, validator.db.SaveGenesisValidatorsRoot(context.Background(), r[:]))
+						require.NoError(t, validator.db.SaveGenesisValidatorsRoot(t.Context(), r[:]))
 						require.NoError(t, err)
 					}
 
@@ -109,7 +108,7 @@ func TestEIP3076SpecTests(t *testing.T) {
 						t.Fatal(err)
 					}
 					b := bytes.NewBuffer(interchangeBytes)
-					if err := validator.db.ImportStandardProtectionJSON(context.Background(), b); err != nil {
+					if err := validator.db.ImportStandardProtectionJSON(t.Context(), b); err != nil {
 						if step.ShouldSucceed {
 							t.Fatal(err)
 						}
@@ -140,7 +139,7 @@ func TestEIP3076SpecTests(t *testing.T) {
 
 						wsb, err := blocks.NewSignedBeaconBlock(b)
 						require.NoError(t, err)
-						err = validator.db.SlashableProposalCheck(context.Background(), pk, wsb, signingRoot, validator.emitAccountMetrics, ValidatorProposeFailVec)
+						err = validator.db.SlashableProposalCheck(t.Context(), pk, wsb, signingRoot, validator.emitAccountMetrics, ValidatorProposeFailVec)
 						if shouldSucceed {
 							require.NoError(t, err)
 						} else {
@@ -177,7 +176,7 @@ func TestEIP3076SpecTests(t *testing.T) {
 							copy(signingRoot[:], signingRootBytes)
 						}
 
-						err = validator.db.SlashableAttestationCheck(context.Background(), ia, pk, signingRoot, false, nil)
+						err = validator.db.SlashableAttestationCheck(t.Context(), ia, pk, signingRoot, false, nil)
 						if shouldSucceed {
 							require.NoError(t, err)
 						} else {

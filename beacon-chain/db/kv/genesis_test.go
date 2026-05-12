@@ -1,22 +1,22 @@
 package kv
 
 import (
-	"context"
 	"encoding/hex"
 	"os"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/iface"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/genesis"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestStore_SaveGenesisData(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := setupDB(t)
 
 	gs, err := util.NewBeaconState()
@@ -28,7 +28,7 @@ func TestStore_SaveGenesisData(t *testing.T) {
 }
 
 func testGenesisDataSaved(t *testing.T, db iface.Database) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	gb, err := db.GenesisBlock(ctx)
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestLoadCapellaFromFile(t *testing.T) {
 	require.NoError(t, err)
 
 	db := setupDB(t)
-	require.NoError(t, db.LoadGenesis(context.Background(), sb))
+	require.NoError(t, db.LoadGenesis(t.Context(), sb))
 	testGenesisDataSaved(t, db)
 }
 
@@ -119,12 +119,12 @@ func TestLoadGenesisFromFile(t *testing.T) {
 	require.NoError(t, err)
 
 	db := setupDB(t)
-	require.NoError(t, db.LoadGenesis(context.Background(), sb))
+	require.NoError(t, db.LoadGenesis(t.Context(), sb))
 	testGenesisDataSaved(t, db)
 
 	// Loading the same genesis again should not throw an error
 	require.NoError(t, err)
-	require.NoError(t, db.LoadGenesis(context.Background(), sb))
+	require.NoError(t, db.LoadGenesis(t.Context(), sb))
 	testGenesisDataSaved(t, db)
 }
 
@@ -139,21 +139,22 @@ func TestLoadGenesisFromFile_mismatchedForkVersion(t *testing.T) {
 
 	// Loading a genesis with the wrong fork version as beacon config should throw an error.
 	db := setupDB(t)
-	assert.ErrorContains(t, "not found in any known fork choice schedule", db.LoadGenesis(context.Background(), sb))
+	assert.ErrorContains(t, "not found in any known fork choice schedule", db.LoadGenesis(t.Context(), sb))
 }
 
 func TestEnsureEmbeddedGenesis(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	// Embedded Genesis works with Mainnet config
-	cfg := params.MainnetConfig().Copy()
-	cfg.SecondsPerSlot = 1
+	cfg := params.MainnetConfig()
+	cfg.SlotDurationMilliseconds = 1000
 	undo, err := params.SetActiveWithUndo(cfg)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, undo())
 	}()
 
-	ctx := context.Background()
+	genesis.StoreEmbeddedDuringTest(t, params.BeaconConfig().ConfigName)
+	ctx := t.Context()
 	db := setupDB(t)
 
 	gb, err := db.GenesisBlock(ctx)

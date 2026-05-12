@@ -9,23 +9,30 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/sync/backfill/coverage"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/backfill/coverage"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 var defaultHotStateDBInterval primitives.Slot = 128
 
 var populatePubkeyCacheOnce sync.Once
+
+// NilCheckableReadOnlyBalances adds the IsNil method to ReadOnlyBalances
+// to allow checking if the underlying state value is nil.
+type NilCheckableReadOnlyBalances interface {
+	state.ReadOnlyBalances
+	IsNil() bool
+}
 
 // StateManager represents a management object that handles the internal
 // logic of maintaining both hot and cold states in DB.
@@ -40,9 +47,11 @@ type StateManager interface {
 	SaveFinalizedState(fSlot primitives.Slot, fRoot [32]byte, fState state.BeaconState)
 	MigrateToCold(ctx context.Context, fRoot [32]byte) error
 	StateByRoot(ctx context.Context, blockRoot [32]byte) (state.BeaconState, error)
+	StateByRootNoCopy(ctx context.Context, blockRoot [32]byte) (state.ReadOnlyBeaconState, error)
 	ActiveNonSlashedBalancesByRoot(context.Context, [32]byte) ([]uint64, error)
-	StateByRootIfCachedNoCopy(blockRoot [32]byte) state.BeaconState
+	StateByRootIfCachedNoCopy(blockRoot [32]byte) state.ReadOnlyBeaconState
 	StateByRootInitialSync(ctx context.Context, blockRoot [32]byte) (state.BeaconState, error)
+	FinalizedReadOnlyBalances() NilCheckableReadOnlyBalances
 }
 
 // State is a concrete implementation of StateManager.
@@ -121,9 +130,10 @@ func (s *State) Resume(ctx context.Context, fState state.BeaconState) (state.Bea
 		return nil, err
 	}
 	fRoot := bytesutil.ToBytes32(c.Root)
+	st := fState
 	// Resume as genesis state if last finalized root is zero hashes.
 	if fRoot == params.BeaconConfig().ZeroHash {
-		st, err := s.beaconDB.GenesisState(ctx)
+		st, err = s.beaconDB.GenesisState(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "could not get genesis state")
 		}
@@ -132,10 +142,13 @@ func (s *State) Resume(ctx context.Context, fState state.BeaconState) (state.Bea
 		if err != nil {
 			return nil, stderrors.Join(ErrNoGenesisBlock, err)
 		}
-		return st, s.SaveState(ctx, gbr, st)
+		fRoot = gbr
+		if err := s.SaveState(ctx, gbr, st); err != nil {
+			return nil, errors.Wrap(err, "could not save genesis state")
+		}
 	}
 
-	if fState == nil || fState.IsNil() {
+	if st == nil || st.IsNil() {
 		return nil, errors.New("finalized state is nil")
 	}
 
@@ -145,20 +158,22 @@ func (s *State) Resume(ctx context.Context, fState state.BeaconState) (state.Bea
 		}
 	}()
 
-	s.finalizedInfo = &finalizedInfo{slot: fState.Slot(), root: fRoot, state: fState.Copy()}
-	fEpoch := slots.ToEpoch(fState.Slot())
+	s.finalizedInfo = &finalizedInfo{slot: st.Slot(), root: fRoot, state: st.Copy()}
+	populatePubkeyCache(ctx, st)
+	return st, nil
+}
 
-	// Pre-populate the pubkey cache with the validator public keys from the finalized state.
-	// This process takes about 30 seconds on mainnet with 450,000 validators.
+func populatePubkeyCache(ctx context.Context, st state.ReadOnlyBeaconState) {
+	epoch := slots.ToEpoch(st.Slot())
 	go populatePubkeyCacheOnce.Do(func() {
 		log.Debug("Populating pubkey cache")
 		start := time.Now()
-		if err := fState.ReadFromEveryValidator(func(_ int, val state.ReadOnlyValidator) error {
+		if err := st.ReadFromEveryValidator(func(_ int, val state.ReadOnlyValidator) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			// Do not cache for non-active validators.
-			if !helpers.IsActiveValidatorUsingTrie(val, fEpoch) {
+			if !helpers.IsActiveValidatorUsingTrie(val, epoch) {
 				return nil
 			}
 			pub := val.PublicKey()
@@ -169,8 +184,6 @@ func (s *State) Resume(ctx context.Context, fState state.BeaconState) (state.Bea
 		}
 		log.WithField("duration", time.Since(start)).Debug("Done populating pubkey cache")
 	})
-
-	return fState, nil
 }
 
 // SaveFinalizedState saves the finalized slot, root and state into memory to be used by state gen service.
@@ -192,8 +205,13 @@ func (s *State) isFinalizedRoot(r [32]byte) bool {
 }
 
 // Returns the cached and copied finalized state.
-func (s *State) finalizedState() state.BeaconState {
+func (s *State) FinalizedState() state.BeaconState {
 	s.finalizedInfo.lock.RLock()
 	defer s.finalizedInfo.lock.RUnlock()
 	return s.finalizedInfo.state.Copy()
+}
+
+// Returns the finalized state as a ReadOnlyBalances so that it can be used read-only without copying.
+func (s *State) FinalizedReadOnlyBalances() NilCheckableReadOnlyBalances {
+	return s.finalizedInfo.state
 }

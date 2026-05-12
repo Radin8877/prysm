@@ -6,8 +6,8 @@ package state
 import (
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 )
 
 const (
@@ -33,6 +33,8 @@ const (
 	LightClientOptimisticUpdate
 	// PayloadAttributes events are fired upon a missed slot or new head.
 	PayloadAttributes
+	// PayloadProcessed is sent after a payload envelope has been processed.
+	PayloadProcessed
 )
 
 // BlockProcessedData is the data sent with BlockProcessed events.
@@ -43,6 +45,10 @@ type BlockProcessedData struct {
 	BlockRoot [32]byte
 	// SignedBlock is the physical processed block.
 	SignedBlock interfaces.ReadOnlySignedBeaconBlock
+	// CurrDependentRoot is the current dependent root
+	CurrDependentRoot [32]byte
+	// PrevDependentRoot is the previous dependent root
+	PrevDependentRoot [32]byte
 	// Verified is true if the block's BLS contents have been verified.
 	Verified bool
 	// Optimistic is true if the block is optimistic.
@@ -67,4 +73,10 @@ type InitializedData struct {
 	StartTime time.Time
 	// GenesisValidatorsRoot represents state.validators.HashTreeRoot().
 	GenesisValidatorsRoot []byte
+}
+
+// PayloadProcessedData is the data sent with PayloadProcessed events.
+type PayloadProcessedData struct {
+	Slot      primitives.Slot
+	BlockRoot [32]byte
 }

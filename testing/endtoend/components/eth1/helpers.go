@@ -3,13 +3,14 @@ package eth1
 import (
 	"context"
 	"math/big"
+	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/testing/endtoend/params"
+	e2etypes "github.com/OffchainLabs/prysm/v7/testing/endtoend/types"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/prysmaticlabs/prysm/v5/testing/endtoend/params"
-	e2etypes "github.com/prysmaticlabs/prysm/v5/testing/endtoend/types"
 )
 
 // NetworkId is the ID of the ETH1 chain.
@@ -30,37 +31,53 @@ var _ e2etypes.ComponentRunner = (*Node)(nil)
 var _ e2etypes.EngineProxy = (*Proxy)(nil)
 
 // WaitForBlocks waits for a certain amount of blocks to be mined by the ETH1 chain before returning.
-func WaitForBlocks(web3 *ethclient.Client, key *keystore.Key, blocksToWait uint64) error {
-	nonce, err := web3.PendingNonceAt(context.Background(), key.Address)
+func WaitForBlocks(ctx context.Context, web3 *ethclient.Client, key *keystore.Key, blocksToWait uint64) error {
+	chainID, err := web3.NetworkID(ctx)
 	if err != nil {
 		return err
 	}
-	chainID, err := web3.NetworkID(context.Background())
-	if err != nil {
-		return err
-	}
-	block, err := web3.BlockByNumber(context.Background(), nil)
+	block, err := web3.BlockByNumber(ctx, nil)
 	if err != nil {
 		return err
 	}
 	finishBlock := block.NumberU64() + blocksToWait
 
 	for block.NumberU64() <= finishBlock {
-		gasPrice, err := web3.SuggestGasPrice(context.Background())
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Get fresh nonce each iteration to handle any pending transactions
+		nonce, err := web3.PendingNonceAt(ctx, key.Address)
 		if err != nil {
 			return err
 		}
+		gasPrice, err := web3.SuggestGasPrice(ctx)
+		if err != nil {
+			return err
+		}
+		// Bump gas price by 20% to ensure we can replace any pending transactions
+		gasPrice = new(big.Int).Mul(gasPrice, big.NewInt(120))
+		gasPrice = new(big.Int).Div(gasPrice, big.NewInt(100))
+
 		spamTX := types.NewTransaction(nonce, key.Address, big.NewInt(0), params.SpamTxGasLimit, gasPrice, []byte{})
 		signed, err := types.SignTx(spamTX, types.NewEIP155Signer(chainID), key.PrivateKey)
 		if err != nil {
 			return err
 		}
-		if err = web3.SendTransaction(context.Background(), signed); err != nil {
+		if err = web3.SendTransaction(ctx, signed); err != nil {
+			// If replacement error, try again with next iteration which will get fresh nonce
+			if strings.Contains(err.Error(), "replacement transaction underpriced") {
+				time.Sleep(timeGapPerMiningTX)
+				block, err = web3.BlockByNumber(ctx, nil)
+				if err != nil {
+					return err
+				}
+				continue
+			}
 			return err
 		}
-		nonce++
 		time.Sleep(timeGapPerMiningTX)
-		block, err = web3.BlockByNumber(context.Background(), nil)
+		block, err = web3.BlockByNumber(ctx, nil)
 		if err != nil {
 			return err
 		}

@@ -1,25 +1,24 @@
 package epoch_test
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stateutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stateutil"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -32,7 +31,7 @@ func TestProcessSlashings_NotSlashed(t *testing.T) {
 	}
 	s, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
-	require.NoError(t, epoch.ProcessSlashings(s))
+	require.NoError(t, epoch.ProcessSlashings(t.Context(), s))
 	wanted := params.BeaconConfig().MaxEffectiveBalance
 	assert.Equal(t, wanted, s.Balances()[0], "Unexpected slashed balance")
 }
@@ -110,7 +109,7 @@ func TestProcessSlashings_SlashedLess(t *testing.T) {
 			s, err := state_native.InitializeFromProtoPhase0(tt.state)
 			require.NoError(t, err)
 			helpers.ClearCache()
-			require.NoError(t, epoch.ProcessSlashings(s))
+			require.NoError(t, epoch.ProcessSlashings(t.Context(), s))
 			assert.Equal(t, tt.want, s.Balances()[0], "ProcessSlashings({%v}) = newState; newState.Balances[0] = %d", original, s.Balances()[0])
 		})
 	}
@@ -148,8 +147,7 @@ func TestProcessFinalUpdates_CanProcess(t *testing.T) {
 	assert.DeepNotEqual(t, params.BeaconConfig().ZeroHash[:], mix, "latest RANDAO still zero hashes")
 
 	// Verify historical root accumulator was appended.
-	roots, err := newS.HistoricalRoots()
-	require.NoError(t, err)
+	roots := newS.HistoricalRoots()
 	assert.Equal(t, 1, len(roots), "Unexpected slashed balance")
 	currAtt, err := newS.CurrentEpochAttestations()
 	require.NoError(t, err)
@@ -171,7 +169,7 @@ func TestProcessRegistryUpdates_NoRotation(t *testing.T) {
 	}
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
-	newState, err := epoch.ProcessRegistryUpdates(context.Background(), beaconState)
+	newState, err := epoch.ProcessRegistryUpdates(t.Context(), beaconState)
 	require.NoError(t, err)
 	for i, validator := range newState.Validators() {
 		assert.Equal(t, params.BeaconConfig().MaxSeedLookahead, validator.ExitEpoch, "Could not update registry %d", i)
@@ -195,7 +193,7 @@ func TestProcessRegistryUpdates_EligibleToActivate(t *testing.T) {
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
 	currentEpoch := time.CurrentEpoch(beaconState)
-	newState, err := epoch.ProcessRegistryUpdates(context.Background(), beaconState)
+	newState, err := epoch.ProcessRegistryUpdates(t.Context(), beaconState)
 	require.NoError(t, err)
 	for i, validator := range newState.Validators() {
 		if uint64(i) < limit && validator.ActivationEpoch != helpers.ActivationExitEpoch(currentEpoch) {
@@ -220,7 +218,7 @@ func TestProcessRegistryUpdates_EligibleToActivate_Cancun(t *testing.T) {
 	cfg.ChurnLimitQuotient = 1
 	params.OverrideBeaconConfig(cfg)
 
-	for i := uint64(0); i < 10; i++ {
+	for range uint64(10) {
 		base.Validators = append(base.Validators, &ethpb.Validator{
 			ActivationEligibilityEpoch: finalizedEpoch,
 			EffectiveBalance:           params.BeaconConfig().MaxEffectiveBalance,
@@ -230,7 +228,7 @@ func TestProcessRegistryUpdates_EligibleToActivate_Cancun(t *testing.T) {
 	beaconState, err := state_native.InitializeFromProtoDeneb(base)
 	require.NoError(t, err)
 	currentEpoch := time.CurrentEpoch(beaconState)
-	newState, err := epoch.ProcessRegistryUpdates(context.Background(), beaconState)
+	newState, err := epoch.ProcessRegistryUpdates(t.Context(), beaconState)
 	require.NoError(t, err)
 	for i, validator := range newState.Validators() {
 		// Note: In Deneb, only validators indices before `MaxPerEpochActivationChurnLimit` should be activated.
@@ -258,7 +256,7 @@ func TestProcessRegistryUpdates_ActivationCompletes(t *testing.T) {
 	}
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
-	newState, err := epoch.ProcessRegistryUpdates(context.Background(), beaconState)
+	newState, err := epoch.ProcessRegistryUpdates(t.Context(), beaconState)
 	require.NoError(t, err)
 	for i, validator := range newState.Validators() {
 		assert.Equal(t, params.BeaconConfig().MaxSeedLookahead, validator.ExitEpoch, "Could not update registry %d, unexpected exit slot", i)
@@ -282,7 +280,7 @@ func TestProcessRegistryUpdates_ValidatorsEjected(t *testing.T) {
 	}
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
-	newState, err := epoch.ProcessRegistryUpdates(context.Background(), beaconState)
+	newState, err := epoch.ProcessRegistryUpdates(t.Context(), beaconState)
 	require.NoError(t, err)
 	for i, validator := range newState.Validators() {
 		assert.Equal(t, params.BeaconConfig().MaxSeedLookahead+1, validator.ExitEpoch, "Could not update registry %d, unexpected exit slot", i)
@@ -307,7 +305,7 @@ func TestProcessRegistryUpdates_CanExits(t *testing.T) {
 	}
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
-	newState, err := epoch.ProcessRegistryUpdates(context.Background(), beaconState)
+	newState, err := epoch.ProcessRegistryUpdates(t.Context(), beaconState)
 	require.NoError(t, err)
 	for i, validator := range newState.Validators() {
 		assert.Equal(t, exitEpoch, validator.ExitEpoch, "Could not update registry %d, unexpected exit slot", i)
@@ -316,28 +314,28 @@ func TestProcessRegistryUpdates_CanExits(t *testing.T) {
 
 func buildState(t testing.TB, slot primitives.Slot, validatorCount uint64) state.BeaconState {
 	validators := make([]*ethpb.Validator, validatorCount)
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			ExitEpoch:        params.BeaconConfig().FarFutureEpoch,
 			EffectiveBalance: params.BeaconConfig().MaxEffectiveBalance,
 		}
 	}
 	validatorBalances := make([]uint64, len(validators))
-	for i := 0; i < len(validatorBalances); i++ {
+	for i := range validatorBalances {
 		validatorBalances[i] = params.BeaconConfig().MaxEffectiveBalance
 	}
 	latestActiveIndexRoots := make(
 		[][]byte,
 		params.BeaconConfig().EpochsPerHistoricalVector,
 	)
-	for i := 0; i < len(latestActiveIndexRoots); i++ {
+	for i := range latestActiveIndexRoots {
 		latestActiveIndexRoots[i] = params.BeaconConfig().ZeroHash[:]
 	}
 	latestRandaoMixes := make(
 		[][]byte,
 		params.BeaconConfig().EpochsPerHistoricalVector,
 	)
-	for i := 0; i < len(latestRandaoMixes); i++ {
+	for i := range latestRandaoMixes {
 		latestRandaoMixes[i] = params.BeaconConfig().ZeroHash[:]
 	}
 	s, err := util.NewBeaconState()
@@ -363,7 +361,7 @@ func TestProcessSlashings_BadValue(t *testing.T) {
 	}
 	s, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
-	require.ErrorContains(t, "addition overflows", epoch.ProcessSlashings(s))
+	require.ErrorContains(t, "addition overflows", epoch.ProcessSlashings(t.Context(), s))
 }
 
 func TestProcessHistoricalDataUpdate(t *testing.T) {
@@ -379,8 +377,7 @@ func TestProcessHistoricalDataUpdate(t *testing.T) {
 				return st
 			},
 			verifier: func(st state.BeaconState) {
-				roots, err := st.HistoricalRoots()
-				require.NoError(t, err)
+				roots := st.HistoricalRoots()
 				require.Equal(t, 0, len(roots))
 			},
 		},
@@ -388,13 +385,12 @@ func TestProcessHistoricalDataUpdate(t *testing.T) {
 			name: "before capella can process and get historical root",
 			st: func() state.BeaconState {
 				st, _ := util.DeterministicGenesisState(t, 1)
-				st, err := transition.ProcessSlots(context.Background(), st, params.BeaconConfig().SlotsPerHistoricalRoot-1)
+				st, err := transition.ProcessSlots(t.Context(), st, params.BeaconConfig().SlotsPerHistoricalRoot-1)
 				require.NoError(t, err)
 				return st
 			},
 			verifier: func(st state.BeaconState) {
-				roots, err := st.HistoricalRoots()
-				require.NoError(t, err)
+				roots := st.HistoricalRoots()
 				require.Equal(t, 1, len(roots))
 
 				b := &ethpb.HistoricalBatch{
@@ -413,7 +409,7 @@ func TestProcessHistoricalDataUpdate(t *testing.T) {
 			name: "after capella can process and get historical summary",
 			st: func() state.BeaconState {
 				st, _ := util.DeterministicGenesisStateCapella(t, 1)
-				st, err := transition.ProcessSlots(context.Background(), st, params.BeaconConfig().SlotsPerHistoricalRoot-1)
+				st, err := transition.ProcessSlots(t.Context(), st, params.BeaconConfig().SlotsPerHistoricalRoot-1)
 				require.NoError(t, err)
 				return st
 			},
@@ -431,8 +427,7 @@ func TestProcessHistoricalDataUpdate(t *testing.T) {
 					StateSummaryRoot: sr[:],
 				}
 				require.DeepEqual(t, b, summaries[0])
-				hrs, err := st.HistoricalRoots()
-				require.NoError(t, err)
+				hrs := st.HistoricalRoots()
 				require.DeepEqual(t, hrs, [][]byte{})
 			},
 		},
@@ -511,7 +506,7 @@ func TestProcessSlashings_SlashedElectra(t *testing.T) {
 			s, err := state_native.InitializeFromProtoElectra(tt.state)
 			require.NoError(t, err)
 			helpers.ClearCache()
-			require.NoError(t, epoch.ProcessSlashings(s))
+			require.NoError(t, epoch.ProcessSlashings(t.Context(), s))
 			assert.Equal(t, tt.want, s.Balances()[0], "ProcessSlashings({%v}); s.Balances[0] = %d", original, s.Balances()[0])
 		})
 	}

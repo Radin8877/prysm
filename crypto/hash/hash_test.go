@@ -4,14 +4,14 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/hash"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	pb "github.com/OffchainLabs/prysm/v7/proto/testing"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	fuzz "github.com/google/gofuzz"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/hash"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/testing"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestHash(t *testing.T) {
@@ -26,7 +26,7 @@ func TestHash(t *testing.T) {
 }
 
 func BenchmarkHash(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		hash.Hash([]byte("abc"))
 	}
 }
@@ -50,7 +50,7 @@ func TestHashKeccak256(t *testing.T) {
 }
 
 func BenchmarkHashKeccak256(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		hash.Keccak256([]byte("abc"))
 	}
 }
@@ -77,7 +77,7 @@ func TestHashProtoFuzz(t *testing.T) {
 		}
 	}(t)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		msg := &pb.AddressBook{}
 		f.Fuzz(msg)
 		_, err := hash.Proto(msg)
@@ -98,7 +98,7 @@ func BenchmarkHashProto(b *testing.B) {
 		Signature: bls.NewAggregateSignature().Marshal(),
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := hash.Proto(att); err != nil {
 			b.Log(err)
 		}

@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/api"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
 )
 
 func TestInitialize(t *testing.T) {
@@ -33,7 +32,7 @@ func TestInitialize(t *testing.T) {
 	}
 	acc, err := accounts.NewCLIManager(opts...)
 	require.NoError(t, err)
-	_, err = acc.WalletCreate(context.Background())
+	_, err = acc.WalletCreate(t.Context())
 	require.NoError(t, err)
 	server := &Server{walletDir: localWalletDir, authTokenPath: authTokenPath}
 

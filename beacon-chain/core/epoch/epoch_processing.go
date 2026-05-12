@@ -9,18 +9,18 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/validators"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stateutil"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/math"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/validators"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stateutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/math"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 // ProcessRegistryUpdates rotates validators in and out of active pool.
@@ -96,13 +96,17 @@ func ProcessRegistryUpdates(ctx context.Context, st state.BeaconState) (state.Be
 	}
 
 	// Process validators eligible for ejection.
-	for _, idx := range eligibleForEjection {
-		// Here is fine to do a quadratic loop since this should
-		// barely happen
-		maxExitEpoch, churn := validators.MaxExitEpochAndChurn(st)
-		st, _, err = validators.InitiateValidatorExit(ctx, st, idx, maxExitEpoch, churn)
-		if err != nil && !errors.Is(err, validators.ErrValidatorAlreadyExited) {
-			return nil, errors.Wrapf(err, "could not initiate exit for validator %d", idx)
+	if len(eligibleForEjection) > 0 {
+		// It is safe to compute exitInfo once for all ejections in the epoch, as the ExitInfo pointer is
+		// updated within InitiateValidatorExit which is the only function that uses it.
+		exitInfo := validators.ExitInformation(st)
+		for _, idx := range eligibleForEjection {
+			// Here is fine to do a quadratic loop since this should
+			// barely happen
+			st, err = validators.InitiateValidatorExit(ctx, st, idx, exitInfo)
+			if err != nil && !errors.Is(err, validators.ErrValidatorAlreadyExited) {
+				return nil, errors.Wrapf(err, "could not initiate exit for validator %d", idx)
+			}
 		}
 	}
 
@@ -202,13 +206,13 @@ func ProcessRegistryUpdates(ctx context.Context, st state.BeaconState) (state.Be
 //	            penalty_numerator = validator.effective_balance // increment * adjusted_total_slashing_balance
 //	            penalty = penalty_numerator // total_balance * increment
 //	            decrease_balance(state, ValidatorIndex(index), penalty)
-func ProcessSlashings(st state.BeaconState) error {
+func ProcessSlashings(ctx context.Context, st state.BeaconState) error {
 	slashingMultiplier, err := st.ProportionalSlashingMultiplier()
 	if err != nil {
 		return errors.Wrap(err, "could not get proportional slashing multiplier")
 	}
 	currentEpoch := time.CurrentEpoch(st)
-	totalBalance, err := helpers.TotalActiveBalance(st)
+	totalBalance, err := helpers.TotalActiveBalance(ctx, st)
 	if err != nil {
 		return errors.Wrap(err, "could not get total active balance")
 	}
@@ -229,7 +233,7 @@ func ProcessSlashings(st state.BeaconState) error {
 	// a callback is used here to apply the following actions to all validators
 	// below equally.
 	increment := params.BeaconConfig().EffectiveBalanceIncrement
-	minSlashing := math.Min(totalSlashing*slashingMultiplier, totalBalance)
+	minSlashing := min(totalSlashing*slashingMultiplier, totalBalance)
 
 	// Modified in Electra:EIP7251
 	var penaltyPerEffectiveBalanceIncrement uint64
@@ -325,10 +329,7 @@ func ProcessEffectiveBalanceUpdates(st state.BeaconState) (state.BeaconState, er
 		balance := bals[idx]
 
 		if balance+downwardThreshold < val.EffectiveBalance() || val.EffectiveBalance()+upwardThreshold < balance {
-			effectiveBal := maxEffBalance
-			if effectiveBal > balance-balance%effBalanceInc {
-				effectiveBal = balance - balance%effBalanceInc
-			}
+			effectiveBal := min(maxEffBalance, balance-balance%effBalanceInc)
 			if effectiveBal != val.EffectiveBalance() {
 				newVal = val.Copy()
 				newVal.EffectiveBalance = effectiveBal

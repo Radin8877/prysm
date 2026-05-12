@@ -6,11 +6,10 @@ go_library(
         "attestation_utils.go",
         "id.go",
     ],
-    importpath = "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation",
+    importpath = "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation",
     visibility = ["//visibility:public"],
     deps = [
         "//beacon-chain/core/signing:go_default_library",
-        "//config/params:go_default_library",
         "//consensus-types/primitives:go_default_library",
         "//crypto/bls:go_default_library",
         "//crypto/hash:go_default_library",

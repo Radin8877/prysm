@@ -1,12 +1,11 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"go.etcd.io/bbolt"
 )
 
@@ -51,7 +50,7 @@ func Test_migrateArchivedIndex(t *testing.T) {
 					}
 					sb := util.NewBeaconBlock()
 					sb.Block.Slot = 2048
-					b, err := encode(context.Background(), sb)
+					b, err := encode(t.Context(), sb)
 					if err != nil {
 						return err
 					}
@@ -95,7 +94,7 @@ func Test_migrateArchivedIndex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupDB(t).db
 			tt.setup(t, db)
-			assert.NoError(t, migrateArchivedIndex(context.Background(), db), "migrateArchivedIndex(tx) error")
+			assert.NoError(t, migrateArchivedIndex(t.Context(), db), "migrateArchivedIndex(tx) error")
 			tt.eval(t, db)
 		})
 	}

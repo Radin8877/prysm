@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
 )
 
 type aggregatedSyncSelectionResponse struct {
@@ -20,7 +20,7 @@ func (c *beaconApiValidatorClient) aggregatedSyncSelections(ctx context.Context,
 	}
 
 	var resp aggregatedSyncSelectionResponse
-	err = c.jsonRestHandler.Post(ctx, "/eth/v1/validator/sync_committee_selections", nil, bytes.NewBuffer(body), &resp)
+	err = c.handler.Post(ctx, "/eth/v1/validator/sync_committee_selections", nil, bytes.NewBuffer(body), &resp)
 	if err != nil {
 		return nil, errors.Wrap(err, "error calling post endpoint")
 	}

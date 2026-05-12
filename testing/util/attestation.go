@@ -5,21 +5,21 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	attv1 "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	attv1 "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -207,7 +207,7 @@ func GenerateAttestations(bState state.BeaconState, privs []bls.SecretKey, numTo
 		)
 	}
 
-	attsPerCommittee := math.Max(float64(numToGen/committeesPerSlot), 1)
+	attsPerCommittee := max(float64(numToGen/committeesPerSlot), 1)
 	if math.Trunc(attsPerCommittee) != attsPerCommittee {
 		return nil, fmt.Errorf(
 			"requested attestations %d must be easily divisible by committees in slot %d, calculated %f",
@@ -321,6 +321,17 @@ func HydrateAttestationElectra(a *ethpb.AttestationElectra) *ethpb.AttestationEl
 	return a
 }
 
+func HydrateSingleAttestation(a *ethpb.SingleAttestation) *ethpb.SingleAttestation {
+	if a.Signature == nil {
+		a.Signature = make([]byte, 96)
+	}
+	if a.Data == nil {
+		a.Data = &ethpb.AttestationData{}
+	}
+	a.Data = HydrateAttestationData(a.Data)
+	return a
+}
+
 // HydrateV1Attestation hydrates a v1 attestation object with correct field length sizes
 // to comply with fssz marshalling and unmarshalling rules.
 func HydrateV1Attestation(a *attv1.Attestation) *attv1.Attestation {
@@ -382,6 +393,19 @@ func HydrateV1AttestationData(d *attv1.AttestationData) *attv1.AttestationData {
 // HydrateIndexedAttestation hydrates an indexed attestation with correct field length sizes
 // to comply with fssz marshalling and unmarshalling rules.
 func HydrateIndexedAttestation(a *ethpb.IndexedAttestation) *ethpb.IndexedAttestation {
+	if a.Signature == nil {
+		a.Signature = make([]byte, 96)
+	}
+	if a.Data == nil {
+		a.Data = &ethpb.AttestationData{}
+	}
+	a.Data = HydrateAttestationData(a.Data)
+	return a
+}
+
+// HydrateIndexedAttestationElectra hydrates an indexed attestation with correct field length sizes
+// to comply with fssz marshalling and unmarshalling rules.
+func HydrateIndexedAttestationElectra(a *ethpb.IndexedAttestationElectra) *ethpb.IndexedAttestationElectra {
 	if a.Signature == nil {
 		a.Signature = make([]byte, 96)
 	}

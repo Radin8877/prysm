@@ -4,22 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
-	"strings"
 
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/eth/shared"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/shared"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/wealdtech/go-bytesutil"
 )
 
@@ -27,8 +27,7 @@ import (
 func (s *Server) BlockRewards(w http.ResponseWriter, r *http.Request) {
 	ctx, span := trace.StartSpan(r.Context(), "beacon.BlockRewards")
 	defer span.End()
-	segments := strings.Split(r.URL.Path, "/")
-	blockId := segments[len(segments)-1]
+	blockId := r.PathValue("block_id")
 
 	blk, err := s.Blocker.Block(r.Context(), []byte(blockId))
 	if !shared.WriteBlockFetchError(w, blk, err) {
@@ -115,8 +114,7 @@ func (s *Server) AttestationRewards(w http.ResponseWriter, r *http.Request) {
 func (s *Server) SyncCommitteeRewards(w http.ResponseWriter, r *http.Request) {
 	ctx, span := trace.StartSpan(r.Context(), "beacon.SyncCommitteeRewards")
 	defer span.End()
-	segments := strings.Split(r.URL.Path, "/")
-	blockId := segments[len(segments)-1]
+	blockId := r.PathValue("block_id")
 
 	blk, err := s.Blocker.Block(r.Context(), []byte(blockId))
 	if !shared.WriteBlockFetchError(w, blk, err) {
@@ -151,7 +149,7 @@ func (s *Server) SyncCommitteeRewards(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, proposerReward, err := altair.ProcessSyncAggregate(r.Context(), st, sa)
+	_, proposerReward, err := altair.ProcessSyncAggregateNoVerifySig(r.Context(), st, sa)
 	if err != nil {
 		httputil.HandleError(w, "Could not get sync aggregate rewards: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -198,8 +196,7 @@ func (s *Server) SyncCommitteeRewards(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) attRewardsState(w http.ResponseWriter, r *http.Request) (state.BeaconState, bool) {
-	segments := strings.Split(r.URL.Path, "/")
-	requestedEpoch, err := strconv.ParseUint(segments[len(segments)-1], 10, 64)
+	requestedEpoch, err := strconv.ParseUint(r.PathValue("epoch"), 10, 64)
 	if err != nil {
 		httputil.HandleError(w, "Could not decode epoch: "+err.Error(), http.StatusBadRequest)
 		return nil, false
@@ -208,8 +205,13 @@ func (s *Server) attRewardsState(w http.ResponseWriter, r *http.Request) (state.
 		httputil.HandleError(w, "Attestation rewards are not supported for Phase 0", http.StatusNotFound)
 		return nil, false
 	}
-	currentEpoch := uint64(slots.ToEpoch(s.TimeFetcher.CurrentSlot()))
-	if requestedEpoch+1 >= currentEpoch {
+	currentEpoch := slots.ToEpoch(s.TimeFetcher.CurrentSlot())
+	bufferedEpoch, err := primitives.Epoch(requestedEpoch).SafeAdd(1)
+	if err != nil {
+		httputil.HandleError(w, "Could not increment epoch: "+err.Error(), http.StatusNotFound)
+		return nil, false
+	}
+	if bufferedEpoch >= currentEpoch {
 		httputil.HandleError(w,
 			"Attestation rewards are available after two epoch transitions to ensure all attestations have a chance of inclusion",
 			http.StatusNotFound)
@@ -222,7 +224,7 @@ func (s *Server) attRewardsState(w http.ResponseWriter, r *http.Request) (state.
 	}
 	st, err := s.Stater.StateBySlot(r.Context(), nextEpochEnd)
 	if err != nil {
-		httputil.HandleError(w, "Could not get state for epoch's starting slot: "+err.Error(), http.StatusInternalServerError)
+		shared.WriteStateFetchError(w, err)
 		return nil, false
 	}
 	return st, true
@@ -388,12 +390,9 @@ func syncRewardsVals(
 	scIndices := make([]primitives.ValidatorIndex, 0, len(allScIndices))
 	scVals := make([]*precompute.Validator, 0, len(allScIndices))
 	for _, valIdx := range valIndices {
-		for _, scIdx := range allScIndices {
-			if valIdx == scIdx {
-				scVals = append(scVals, allVals[valIdx])
-				scIndices = append(scIndices, valIdx)
-				break
-			}
+		if slices.Contains(allScIndices, valIdx) {
+			scVals = append(scVals, allVals[valIdx])
+			scIndices = append(scIndices, valIdx)
 		}
 	}
 
@@ -433,7 +432,7 @@ func requestedValIndices(w http.ResponseWriter, r *http.Request, st state.Beacon
 	}
 	if len(valIndices) == 0 {
 		valIndices = make([]primitives.ValidatorIndex, len(allVals))
-		for i := 0; i < len(allVals); i++ {
+		for i := range allVals {
 			valIndices[i] = primitives.ValidatorIndex(i)
 		}
 	}

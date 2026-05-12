@@ -1,15 +1,14 @@
 package validator
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/slashings"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/slashings"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestServer_getSlashings(t *testing.T) {
@@ -24,7 +23,7 @@ func TestServer_getSlashings(t *testing.T) {
 		proposerSlashing, err := util.GenerateProposerSlashingForValidator(beaconState, privKeys[i], i)
 		require.NoError(t, err)
 		proposerSlashings[i] = proposerSlashing
-		err = proposerServer.SlashingsPool.InsertProposerSlashing(context.Background(), beaconState, proposerSlashing)
+		err = proposerServer.SlashingsPool.InsertProposerSlashing(t.Context(), beaconState, proposerSlashing)
 		require.NoError(t, err)
 	}
 
@@ -37,11 +36,11 @@ func TestServer_getSlashings(t *testing.T) {
 		)
 		require.NoError(t, err)
 		attSlashings[i] = attesterSlashing
-		err = proposerServer.SlashingsPool.InsertAttesterSlashing(context.Background(), beaconState, attesterSlashing)
+		err = proposerServer.SlashingsPool.InsertAttesterSlashing(t.Context(), beaconState, attesterSlashing)
 		require.NoError(t, err)
 	}
 
-	p, a := proposerServer.getSlashings(context.Background(), beaconState)
+	p, a := proposerServer.getSlashings(t.Context(), beaconState)
 	require.Equal(t, len(p), int(params.BeaconConfig().MaxProposerSlashings))
 	require.Equal(t, len(a), int(params.BeaconConfig().MaxAttesterSlashings))
 	require.DeepEqual(t, p, proposerSlashings)

@@ -1,17 +1,16 @@
 package local
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	mock "github.com/prysmaticlabs/prysm/v5/validator/accounts/testing"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	mock "github.com/OffchainLabs/prysm/v7/validator/accounts/testing"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 	keystorev4 "github.com/wealdtech/go-eth2-wallet-encryptor-keystorev4"
 )
@@ -27,10 +26,10 @@ func TestLocalKeymanager_DeleteKeystores(t *testing.T) {
 		accountsStore: &accountStore{},
 	}
 	numAccounts := 5
-	ctx := context.Background()
+	ctx := t.Context()
 	keystores := make([]*keymanager.Keystore, numAccounts)
 	passwords := make([]string, numAccounts)
-	for i := 0; i < numAccounts; i++ {
+	for i := range numAccounts {
 		keystores[i] = createRandomKeystore(t, password)
 		passwords[i] = password
 	}

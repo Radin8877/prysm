@@ -3,14 +3,15 @@ package interop
 import (
 	"math"
 	"math/big"
+	"time"
 
+	clparams "github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	clparams "github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 // defaultMinerAddress is used to send deposits and test transactions in the e2e test.
@@ -67,24 +68,14 @@ var DefaultDepositContractStorage = map[string]string{
 var bigz = big.NewInt(0)
 var minerBalance = big.NewInt(0)
 
-// DefaultCliqueSigner is the testnet miner (clique signer) address encoded in the special way EIP-225 requires.
-// EIP-225 assigns a special meaning to the `extra-data` field in the block header for clique chains.
-// In a clique chain, this field contains one secp256k1 "miner" signature. This allows other nodes to
-// verify that the block was signed by an authorized signer, in place of the typical PoW verification.
-// Clique overloads the meaning of the `miner` and `nonce` fields to implement a voting protocol, whereby additional
-// signatures can be added to the list (for details see `Repurposing header fields for signing and voting` in EIP-225).
-// https://eips.ethereum.org/EIPS/eip-225
-// The following value is for the key used by the e2e test "miner" node.
-const DefaultCliqueSigner = "0x0000000000000000000000000000000000000000000000000000000000000000878705ba3f8bc32fcf7f4caa1a35e72af65cf7660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-
 // GethShanghaiTime calculates the absolute time of the shanghai (aka capella) fork block
 // by adding the relative time of the capella the fork epoch to the given genesis timestamp.
-func GethShanghaiTime(genesisTime uint64, cfg *clparams.BeaconChainConfig) *uint64 {
+func GethShanghaiTime(genesisTime time.Time, cfg *clparams.BeaconChainConfig) *uint64 {
 	var shanghaiTime *uint64
 	if cfg.CapellaForkEpoch != math.MaxUint64 {
 		startSlot, err := slots.EpochStart(cfg.CapellaForkEpoch)
 		if err == nil {
-			startTime := slots.StartTime(genesisTime, startSlot)
+			startTime := slots.UnsafeStartTime(genesisTime, startSlot)
 			newTime := uint64(startTime.Unix())
 			shanghaiTime = &newTime
 		}
@@ -94,12 +85,12 @@ func GethShanghaiTime(genesisTime uint64, cfg *clparams.BeaconChainConfig) *uint
 
 // GethCancunTime calculates the absolute time of the cancun (aka deneb) fork block
 // by adding the relative time of the capella the fork epoch to the given genesis timestamp.
-func GethCancunTime(genesisTime uint64, cfg *clparams.BeaconChainConfig) *uint64 {
+func GethCancunTime(genesisTime time.Time, cfg *clparams.BeaconChainConfig) *uint64 {
 	var cancunTime *uint64
 	if cfg.DenebForkEpoch != math.MaxUint64 {
 		startSlot, err := slots.EpochStart(cfg.DenebForkEpoch)
 		if err == nil {
-			startTime := slots.StartTime(genesisTime, startSlot)
+			startTime := slots.UnsafeStartTime(genesisTime, startSlot)
 			newTime := uint64(startTime.Unix())
 			cancunTime = &newTime
 		}
@@ -108,13 +99,13 @@ func GethCancunTime(genesisTime uint64, cfg *clparams.BeaconChainConfig) *uint64
 }
 
 // GethPragueTime calculates the absolute time of the prague (aka electra) fork block
-// by adding the relative time of the capella the fork epoch to the given genesis timestamp.
-func GethPragueTime(genesisTime uint64, cfg *clparams.BeaconChainConfig) *uint64 {
+// by adding the relative time of the electra fork epoch to the given genesis timestamp.
+func GethPragueTime(genesisTime time.Time, cfg *clparams.BeaconChainConfig) *uint64 {
 	var pragueTime *uint64
 	if cfg.ElectraForkEpoch != math.MaxUint64 {
 		startSlot, err := slots.EpochStart(cfg.ElectraForkEpoch)
 		if err == nil {
-			startTime := slots.StartTime(genesisTime, startSlot)
+			startTime := slots.UnsafeStartTime(genesisTime, startSlot)
 			newTime := uint64(startTime.Unix())
 			pragueTime = &newTime
 		}
@@ -122,22 +113,83 @@ func GethPragueTime(genesisTime uint64, cfg *clparams.BeaconChainConfig) *uint64
 	return pragueTime
 }
 
+// GethOsakaTime calculates the absolute time of the osaka (aka fulu) fork block
+// by adding the relative time of the capella the fork epoch to the given genesis timestamp.
+func GethOsakaTime(genesisTime time.Time, cfg *clparams.BeaconChainConfig) *uint64 {
+	var osakaTime *uint64
+	if cfg.FuluForkEpoch != math.MaxUint64 {
+		startSlot, err := slots.EpochStart(cfg.FuluForkEpoch)
+		if err == nil {
+			startTime := slots.UnsafeStartTime(genesisTime, startSlot)
+			newTime := uint64(startTime.Unix())
+			osakaTime = &newTime
+		}
+	}
+	return osakaTime
+}
+
+// GethBPO1Time calculates the absolute time of the BPO1 activation
+// by finding the first BlobSchedule entry with MaxBlobsPerBlock > 9 (Electra's limit)
+// which corresponds to the first BPO increase.
+func GethBPO1Time(genesisTime time.Time, cfg *clparams.BeaconChainConfig) *uint64 {
+	for _, entry := range cfg.BlobSchedule {
+		// BPO1 is the first entry that increases beyond Electra's 9 blobs
+		if entry.MaxBlobsPerBlock > uint64(cfg.DeprecatedMaxBlobsPerBlockElectra) {
+			startSlot, err := slots.EpochStart(entry.Epoch)
+			if err == nil {
+				startTime := slots.UnsafeStartTime(genesisTime, startSlot)
+				newTime := uint64(startTime.Unix())
+				return &newTime
+			}
+		}
+	}
+	return nil
+}
+
+// GethBPO2Time calculates the absolute time of the BPO2 activation
+// by finding the second BlobSchedule entry with MaxBlobsPerBlock > 9.
+func GethBPO2Time(genesisTime time.Time, cfg *clparams.BeaconChainConfig) *uint64 {
+	count := 0
+	for _, entry := range cfg.BlobSchedule {
+		// Count entries that are beyond Electra's limit
+		if entry.MaxBlobsPerBlock > uint64(cfg.DeprecatedMaxBlobsPerBlockElectra) {
+			count++
+			if count == 2 { // BPO2 is the second such entry
+				startSlot, err := slots.EpochStart(entry.Epoch)
+				if err == nil {
+					startTime := slots.UnsafeStartTime(genesisTime, startSlot)
+					newTime := uint64(startTime.Unix())
+					return &newTime
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // GethTestnetGenesis creates a genesis.json for eth1 clients with a set of defaults suitable for ephemeral testnets,
 // like in an e2e test. The parameters are minimal but the full value is returned unmarshaled so that it can be
 // customized as desired.
-func GethTestnetGenesis(genesisTime uint64, cfg *clparams.BeaconChainConfig) *core.Genesis {
-	shanghaiTime := GethShanghaiTime(genesisTime, cfg)
+func GethTestnetGenesis(genesis time.Time, cfg *clparams.BeaconChainConfig) *core.Genesis {
+	genesisTime := uint64(genesis.Unix())
+	shanghaiTime := GethShanghaiTime(genesis, cfg)
 	if cfg.CapellaForkEpoch == 0 {
 		shanghaiTime = &genesisTime
 	}
-	cancunTime := GethCancunTime(genesisTime, cfg)
+	cancunTime := GethCancunTime(genesis, cfg)
 	if cfg.DenebForkEpoch == 0 {
 		cancunTime = &genesisTime
 	}
-	pragueTime := GethPragueTime(genesisTime, cfg)
+	pragueTime := GethPragueTime(genesis, cfg)
 	if cfg.ElectraForkEpoch == 0 {
 		pragueTime = &genesisTime
 	}
+	osakaTime := GethOsakaTime(genesis, cfg)
+	if cfg.FuluForkEpoch == 0 {
+		osakaTime = &genesisTime
+	}
+	bpo1Time := GethBPO1Time(genesis, cfg)
+	bpo2Time := GethBPO2Time(genesis, cfg)
 	cc := &params.ChainConfig{
 		ChainID:                 big.NewInt(defaultTestChainId),
 		HomesteadBlock:          bigz,
@@ -159,6 +211,18 @@ func GethTestnetGenesis(genesisTime uint64, cfg *clparams.BeaconChainConfig) *co
 		ShanghaiTime:            shanghaiTime,
 		CancunTime:              cancunTime,
 		PragueTime:              pragueTime,
+		OsakaTime:               osakaTime,
+		BPO1Time:                bpo1Time,
+		BPO2Time:                bpo2Time,
+		DepositContractAddress:  common.HexToAddress(cfg.DepositContractAddress),
+		BlobScheduleConfig: &params.BlobScheduleConfig{
+			Cancun: params.DefaultCancunBlobConfig,
+			Prague: params.DefaultPragueBlobConfig,
+			Osaka:  params.DefaultOsakaBlobConfig,
+			BPO1:   params.DefaultBPO1BlobConfig,
+			BPO2:   params.DefaultBPO2BlobConfig,
+			BPO3:   params.DefaultBPO3BlobConfig,
+		},
 	}
 	da := defaultDepositContractAllocation(cfg.DepositContractAddress)
 	ma := minerAllocation()
@@ -199,7 +263,7 @@ func defaultDepositContractAllocation(contractAddress string) depositAllocation 
 	}
 	codeBytes, err := hexutil.Decode(DepositContractCode)
 	if err != nil {
-		panic(err)
+		panic(err) // lint:nopanic -- The deposit contract code is hardcoded and checked in tests.
 	}
 	return depositAllocation{
 		Address: common.HexToAddress(contractAddress),

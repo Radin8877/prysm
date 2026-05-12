@@ -3,10 +3,10 @@ package monitor
 import (
 	"fmt"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,7 +26,7 @@ func (s *Service) processSyncCommitteeContribution(contribution *ethpb.SignedCon
 }
 
 // processSyncAggregate logs the event when tracked validators is a sync-committee member and its contribution has been included
-func (s *Service) processSyncAggregate(state state.BeaconState, blk interfaces.ReadOnlyBeaconBlock) {
+func (s *Service) processSyncAggregate(state state.ReadOnlyBeaconState, blk interfaces.ReadOnlyBeaconBlock) {
 	if blk == nil || blk.Body() == nil {
 		return
 	}

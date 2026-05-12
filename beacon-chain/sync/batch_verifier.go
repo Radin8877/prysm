@@ -4,20 +4,24 @@ import (
 	"context"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
 )
 
-const signatureVerificationInterval = 50 * time.Millisecond
-
-const verifierLimit = 50
+const signatureVerificationInterval = 5 * time.Millisecond
 
 type signatureVerifier struct {
 	set     *bls.SignatureBatch
 	resChan chan error
+}
+
+type kzgVerifier struct {
+	dataColumns []blocks.RODataColumn
+	resChan     chan error
 }
 
 // A routine that runs in the background to perform batch
@@ -36,7 +40,7 @@ func (s *Service) verifierRoutine() {
 			return
 		case sig := <-s.signatureChan:
 			verifierBatch = append(verifierBatch, sig)
-			if len(verifierBatch) >= verifierLimit {
+			if len(verifierBatch) >= s.cfg.batchVerifierLimit {
 				verifyBatch(verifierBatch)
 				verifierBatch = []*signatureVerifier{}
 			}
@@ -54,11 +58,10 @@ func (s *Service) validateWithBatchVerifier(ctx context.Context, message string,
 	defer span.End()
 
 	resChan := make(chan error)
-	verificationSet := &signatureVerifier{set: set.Copy(), resChan: resChan}
+	verificationSet := &signatureVerifier{set: set, resChan: resChan}
 	s.signatureChan <- verificationSet
 
 	resErr := <-resChan
-	close(resChan)
 	// If verification fails we fallback to individual verification
 	// of each signature set.
 	if resErr != nil {
@@ -82,10 +85,9 @@ func verifyBatch(verifierBatch []*signatureVerifier) {
 	if len(verifierBatch) == 0 {
 		return
 	}
-	aggSet := verifierBatch[0].set
-
-	for i := 1; i < len(verifierBatch); i++ {
-		aggSet = aggSet.Join(verifierBatch[i].set)
+	aggSet := bls.NewSet()
+	for _, v := range verifierBatch {
+		aggSet = aggSet.Join(v.set)
 	}
 	var verificationErr error
 
@@ -99,7 +101,7 @@ func verifyBatch(verifierBatch []*signatureVerifier) {
 			verificationErr = errors.New("batch signature verification failed")
 		}
 	}
-	for i := 0; i < len(verifierBatch); i++ {
+	for i := range verifierBatch {
 		verifierBatch[i].resChan <- verificationErr
 	}
 }

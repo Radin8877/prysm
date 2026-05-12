@@ -7,24 +7,24 @@ import (
 	"testing"
 	"time"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	slashingsmock "github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/slashings/mock"
-	slashertypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/slasher/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls/common"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	slashingsmock "github.com/OffchainLabs/prysm/v7/beacon-chain/operations/slashings/mock"
+	slashertypes "github.com/OffchainLabs/prysm/v7/beacon-chain/slasher/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls/common"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -623,7 +623,7 @@ func Test_processAttestations(t *testing.T) {
 			name := version.String(tt.ver) + ": " + tt.name
 			t.Run(name, func(t *testing.T) {
 				// Create context.
-				ctx := context.Background()
+				ctx := t.Context()
 
 				// Configure logging.
 				hook := logTest.NewGlobal()
@@ -651,7 +651,7 @@ func Test_processAttestations(t *testing.T) {
 				}
 
 				// Create the slasher service.
-				slasherService, err := New(context.Background(), serviceConfig)
+				slasherService, err := New(t.Context(), serviceConfig)
 				require.NoError(t, err)
 
 				// Initialize validators in the state.
@@ -659,7 +659,7 @@ func Test_processAttestations(t *testing.T) {
 				validators := make([]*ethpb.Validator, numVals)
 				privateKeys := make([]bls.SecretKey, numVals)
 
-				for i := uint64(0); i < numVals; i++ {
+				for i := range numVals {
 					// Create a random private key.
 					privateKey, err := bls.RandKey()
 					require.NoError(t, err)
@@ -791,7 +791,7 @@ func Test_processQueuedAttestations_MultipleChunkIndices(t *testing.T) {
 	defer hook.Reset()
 
 	slasherDB := dbtest.SetupSlasherDB(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	slasherParams := DefaultParams()
 
 	// We process submit attestations from chunk index 0 to chunk index 1.
@@ -812,7 +812,7 @@ func Test_processQueuedAttestations_MultipleChunkIndices(t *testing.T) {
 		State: beaconState,
 	}
 
-	s, err := New(context.Background(),
+	s, err := New(t.Context(),
 		&ServiceConfig{
 			Database:                slasherDB,
 			StateNotifier:           &mock.MockStateNotifier{},
@@ -861,7 +861,7 @@ func Test_processQueuedAttestations_OverlappingChunkIndices(t *testing.T) {
 	defer hook.Reset()
 
 	slasherDB := dbtest.SetupSlasherDB(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	slasherParams := DefaultParams()
 
 	startEpoch := primitives.Epoch(slasherParams.chunkSize)
@@ -877,7 +877,7 @@ func Test_processQueuedAttestations_OverlappingChunkIndices(t *testing.T) {
 		State: beaconState,
 	}
 
-	s, err := New(context.Background(),
+	s, err := New(t.Context(),
 		&ServiceConfig{
 			Database:                slasherDB,
 			StateNotifier:           &mock.MockStateNotifier{},
@@ -1136,7 +1136,7 @@ func Test_updatedChunkByChunkIndex(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create context.
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Initialize the slasher database.
 			slasherDB := dbtest.SetupSlasherDB(t)
@@ -1215,9 +1215,9 @@ func Test_updatedChunkByChunkIndex(t *testing.T) {
 }
 
 func Test_applyAttestationForValidator_MinSpanChunk(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	slasherDB := dbtest.SetupSlasherDB(t)
-	srv, err := New(context.Background(),
+	srv, err := New(t.Context(),
 		&ServiceConfig{
 			Database:      slasherDB,
 			StateNotifier: &mock.MockStateNotifier{},
@@ -1272,9 +1272,9 @@ func Test_applyAttestationForValidator_MinSpanChunk(t *testing.T) {
 }
 
 func Test_applyAttestationForValidator_MaxSpanChunk(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	slasherDB := dbtest.SetupSlasherDB(t)
-	srv, err := New(context.Background(),
+	srv, err := New(t.Context(),
 		&ServiceConfig{
 			Database:      slasherDB,
 			StateNotifier: &mock.MockStateNotifier{},
@@ -1338,10 +1338,10 @@ func Test_loadChunks_MaxSpans(t *testing.T) {
 
 func testLoadChunks(t *testing.T, kind slashertypes.ChunkKind) {
 	slasherDB := dbtest.SetupSlasherDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Check if the chunk at chunk index already exists in-memory.
-	s, err := New(context.Background(),
+	s, err := New(t.Context(),
 		&ServiceConfig{
 			Database:      slasherDB,
 			StateNotifier: &mock.MockStateNotifier{},
@@ -1419,7 +1419,7 @@ func TestService_processQueuedAttestations(t *testing.T) {
 		Slot:  &slot,
 	}
 
-	s, err := New(context.Background(),
+	s, err := New(t.Context(),
 		&ServiceConfig{
 			Database:         slasherDB,
 			StateNotifier:    &mock.MockStateNotifier{},
@@ -1431,7 +1431,7 @@ func TestService_processQueuedAttestations(t *testing.T) {
 	s.attsQueue.extend([]*slashertypes.IndexedAttestationWrapper{
 		createAttestationWrapperEmptySig(t, version.Phase0, 0, 1, []uint64{0, 1} /* indices */, nil /* signingRoot */),
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	tickerChan := make(chan primitives.Slot)
 	s.wg.Add(1)
 	go func() {
@@ -1458,12 +1458,12 @@ func Benchmark_saveChunksToDisk(b *testing.B) {
 	params := DefaultParams()
 
 	// Get a context.
-	ctx := context.Background()
+	ctx := b.Context()
 
 	chunkByChunkIndexByValidatorChunkIndex := make(map[uint64]map[uint64]Chunker, validatorsChunksCount)
 
 	// Populate the chunkers.
-	for i := 0; i < validatorsChunksCount; i++ {
+	for i := range validatorsChunksCount {
 		data := make([]uint16, params.chunkSize)
 		for j := 0; j < int(params.chunkSize); j++ {
 			data[j] = uint16(rand.Intn(1 << 16))
@@ -1481,10 +1481,9 @@ func Benchmark_saveChunksToDisk(b *testing.B) {
 	require.NoError(b, err)
 
 	// Reset the benchmark timer.
-	b.ResetTimer()
 
 	// Run the benchmark.
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StartTimer()
 		err = service.saveChunksToDisk(ctx, slashertypes.MinSpan, chunkByChunkIndexByValidatorChunkIndex)
 		b.StopTimer()
@@ -1503,7 +1502,7 @@ func BenchmarkCheckSlashableAttestations(b *testing.B) {
 		Slot:  &slot,
 	}
 
-	s, err := New(context.Background(), &ServiceConfig{
+	s, err := New(b.Context(), &ServiceConfig{
 		Database:         slasherDB,
 		StateNotifier:    &mock.MockStateNotifier{},
 		HeadStateFetcher: mockChain,
@@ -1553,11 +1552,11 @@ func BenchmarkCheckSlashableAttestations(b *testing.B) {
 
 func runAttestationsBenchmark(b *testing.B, s *Service, numAtts, numValidators uint64) {
 	indices := make([]uint64, numValidators)
-	for i := uint64(0); i < numValidators; i++ {
+	for i := range numValidators {
 		indices[i] = i
 	}
 	atts := make([]*slashertypes.IndexedAttestationWrapper, numAtts)
-	for i := uint64(0); i < numAtts; i++ {
+	for i := range numAtts {
 		source := primitives.Epoch(i)
 		target := primitives.Epoch(i + 1)
 		var signingRoot [32]byte
@@ -1571,14 +1570,14 @@ func runAttestationsBenchmark(b *testing.B, s *Service, numAtts, numValidators u
 			signingRoot[:], /* signingRoot */
 		)
 	}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		numEpochs := numAtts
 		totalSeconds := numEpochs * uint64(params.BeaconConfig().SlotsPerEpoch) * params.BeaconConfig().SecondsPerSlot
 		genesisTime := time.Now().Add(-time.Second * time.Duration(totalSeconds))
 		s.genesisTime = genesisTime
 
 		epoch := slots.EpochsSinceGenesis(genesisTime)
-		_, err := s.checkSlashableAttestations(context.Background(), epoch, atts)
+		_, err := s.checkSlashableAttestations(b.Context(), epoch, atts)
 		require.NoError(b, err)
 	}
 }
@@ -1595,7 +1594,7 @@ func Benchmark_checkSurroundVotes(b *testing.B) {
 		currentEpoch = 43
 	)
 	// Create a context.
-	ctx := context.Background()
+	ctx := b.Context()
 
 	// Initialize the slasher database.
 	slasherDB := dbtest.SetupSlasherDB(b)
@@ -1623,7 +1622,7 @@ func Benchmark_checkSurroundVotes(b *testing.B) {
 
 	attestingValidatorsCount := validatorsCount / slotsPerEpoch
 	validatorIndexes := make([]uint64, attestingValidatorsCount)
-	for i := 0; i < attestingValidatorsCount; i++ {
+	for i := range attestingValidatorsCount {
 		validatorIndexes[i] = 32 * uint64(i)
 	}
 
@@ -1633,8 +1632,8 @@ func Benchmark_checkSurroundVotes(b *testing.B) {
 	attWrappers := []*slashertypes.IndexedAttestationWrapper{attWrapper}
 
 	// Run the benchmark.
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		b.StartTimer()
 		_, err = service.checkSurroundVotes(ctx, attWrappers, currentEpoch)
 		b.StopTimer()

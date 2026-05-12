@@ -1,13 +1,12 @@
 package slasherkv
 
 import (
-	"context"
 	"encoding/binary"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -120,7 +119,7 @@ func TestMigrate(t *testing.T) {
 	}
 
 	// Create a new context.
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Setup a test database.
 	beaconDB := setupDB(t)

@@ -1,18 +1,17 @@
 package derived
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	mock "github.com/prysmaticlabs/prysm/v5/validator/accounts/testing"
-	constant "github.com/prysmaticlabs/prysm/v5/validator/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	mock "github.com/OffchainLabs/prysm/v7/validator/accounts/testing"
+	constant "github.com/OffchainLabs/prysm/v7/validator/testing"
 	"github.com/tyler-smith/go-bip39"
 	util "github.com/wealdtech/go-eth2-util"
 )
@@ -23,8 +22,8 @@ const (
 
 // We test that using a '25th word' mnemonic passphrase leads to different
 // public keys derived than not specifying the passphrase.
-func TestDerivedKeymanager_MnemnonicPassphrase_DifferentResults(t *testing.T) {
-	ctx := context.Background()
+func TestDerivedKeymanager_MnemonicPassphrase_DifferentResults(t *testing.T) {
+	ctx := t.Context()
 	wallet := &mock.Wallet{
 		Files:            make(map[string]map[string][]byte),
 		AccountPasswords: make(map[string]string),
@@ -84,7 +83,7 @@ func TestDerivedKeymanager_FetchValidatingPublicKeys(t *testing.T) {
 		AccountPasswords: make(map[string]string),
 		WalletPassword:   password,
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dr, err := NewKeymanager(ctx, &SetupConfig{
 		Wallet:           wallet,
 		ListenForChanges: false,
@@ -100,7 +99,7 @@ func TestDerivedKeymanager_FetchValidatingPublicKeys(t *testing.T) {
 	require.Equal(t, numAccounts, len(publicKeys))
 
 	wantedPubKeys := make([][fieldparams.BLSPubkeyLength]byte, numAccounts)
-	for i := 0; i < numAccounts; i++ {
+	for i := range numAccounts {
 		privKey, err := util.PrivateKeyFromSeedAndPath(derivedSeed, fmt.Sprintf(ValidatingKeyDerivationPathTemplate, i))
 		require.NoError(t, err)
 		var pubKey [fieldparams.BLSPubkeyLength]byte
@@ -123,7 +122,7 @@ func TestDerivedKeymanager_FetchValidatingPrivateKeys(t *testing.T) {
 		AccountPasswords: make(map[string]string),
 		WalletPassword:   password,
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dr, err := NewKeymanager(ctx, &SetupConfig{
 		Wallet:           wallet,
 		ListenForChanges: false,
@@ -139,7 +138,7 @@ func TestDerivedKeymanager_FetchValidatingPrivateKeys(t *testing.T) {
 	require.Equal(t, numAccounts, len(privateKeys))
 
 	wantedPrivKeys := make([][32]byte, numAccounts)
-	for i := 0; i < numAccounts; i++ {
+	for i := range numAccounts {
 		privKey, err := util.PrivateKeyFromSeedAndPath(derivedSeed, fmt.Sprintf(ValidatingKeyDerivationPathTemplate, i))
 		require.NoError(t, err)
 		var privKeyBytes [32]byte
@@ -160,7 +159,7 @@ func TestDerivedKeymanager_Sign(t *testing.T) {
 		AccountPasswords: make(map[string]string),
 		WalletPassword:   password,
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dr, err := NewKeymanager(ctx, &SetupConfig{
 		Wallet:           wallet,
 		ListenForChanges: false,
@@ -196,7 +195,7 @@ func TestDerivedKeymanager_Sign_NoPublicKeySpecified(t *testing.T) {
 		PublicKey: nil,
 	}
 	dr := &Keymanager{}
-	_, err := dr.Sign(context.Background(), req)
+	_, err := dr.Sign(t.Context(), req)
 	assert.ErrorContains(t, "nil public key", err)
 }
 
@@ -205,6 +204,6 @@ func TestDerivedKeymanager_Sign_NoPublicKeyInCache(t *testing.T) {
 		PublicKey: []byte("hello world"),
 	}
 	dr := &Keymanager{}
-	_, err := dr.Sign(context.Background(), req)
+	_, err := dr.Sign(t.Context(), req)
 	assert.ErrorContains(t, "no signing key found", err)
 }

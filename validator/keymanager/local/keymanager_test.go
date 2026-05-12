@@ -1,19 +1,18 @@
 package local
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	mock "github.com/prysmaticlabs/prysm/v5/validator/accounts/testing"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	mock "github.com/OffchainLabs/prysm/v7/validator/accounts/testing"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
 	keystorev4 "github.com/wealdtech/go-eth2-wallet-encryptor-keystorev4"
 )
 
@@ -27,10 +26,10 @@ func TestLocalKeymanager_FetchValidatingPublicKeys(t *testing.T) {
 		accountsStore: &accountStore{},
 	}
 	// First, generate accounts and their keystore.json files.
-	ctx := context.Background()
+	ctx := t.Context()
 	numAccounts := 10
 	wantedPubKeys := make([][fieldparams.BLSPubkeyLength]byte, 0)
-	for i := 0; i < numAccounts; i++ {
+	for range numAccounts {
 		privKey, err := bls.RandKey()
 		require.NoError(t, err)
 		pubKey := bytesutil.ToBytes48(privKey.PublicKey().Marshal())
@@ -59,10 +58,10 @@ func TestLocalKeymanager_FetchValidatingPrivateKeys(t *testing.T) {
 		accountsStore: &accountStore{},
 	}
 	// First, generate accounts and their keystore.json files.
-	ctx := context.Background()
+	ctx := t.Context()
 	numAccounts := 10
 	wantedPrivateKeys := make([][32]byte, numAccounts)
-	for i := 0; i < numAccounts; i++ {
+	for i := range numAccounts {
 		privKey, err := bls.RandKey()
 		require.NoError(t, err)
 		privKeyData := privKey.Marshal()
@@ -94,11 +93,11 @@ func TestLocalKeymanager_Sign(t *testing.T) {
 	}
 
 	// First, generate accounts and their keystore.json files.
-	ctx := context.Background()
+	ctx := t.Context()
 	numAccounts := 10
 	keystores := make([]*keymanager.Keystore, numAccounts)
 	passwords := make([]string, numAccounts)
-	for i := 0; i < numAccounts; i++ {
+	for i := range numAccounts {
 		keystores[i] = createRandomKeystore(t, password)
 		passwords[i] = password
 	}
@@ -155,7 +154,7 @@ func TestLocalKeymanager_Sign_NoPublicKeySpecified(t *testing.T) {
 		PublicKey: nil,
 	}
 	dr := &Keymanager{}
-	_, err := dr.Sign(context.Background(), req)
+	_, err := dr.Sign(t.Context(), req)
 	assert.ErrorContains(t, "nil public key", err)
 }
 
@@ -165,6 +164,6 @@ func TestLocalKeymanager_Sign_NoPublicKeyInCache(t *testing.T) {
 	}
 	secretKeysCache = make(map[[fieldparams.BLSPubkeyLength]byte]bls.SecretKey)
 	dr := &Keymanager{}
-	_, err := dr.Sign(context.Background(), req)
+	_, err := dr.Sign(t.Context(), req)
 	assert.ErrorContains(t, "no signing key found in keys cache", err)
 }

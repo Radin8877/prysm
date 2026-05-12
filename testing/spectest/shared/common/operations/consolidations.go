@@ -5,13 +5,13 @@ import (
 	"path"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/requests"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/spectest/utils"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/golang/snappy"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/electra"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/spectest/utils"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func RunConsolidationTest(t *testing.T, config string, fork string, block blockWithSSZObject, sszToState SSZToState) {
@@ -32,7 +32,7 @@ func RunConsolidationTest(t *testing.T, config string, fork string, block blockW
 				if err != nil {
 					return nil, err
 				}
-				return s, electra.ProcessConsolidationRequests(ctx, s, er.Consolidations)
+				return s, requests.ProcessConsolidationRequests(ctx, s, er.Consolidations)
 			})
 		})
 	}

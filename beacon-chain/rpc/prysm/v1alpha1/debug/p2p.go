@@ -3,16 +3,18 @@ package debug
 import (
 	"context"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // GetPeer returns the data known about the peer defined by the provided peer id.
 func (ds *Server) GetPeer(_ context.Context, peerReq *ethpb.PeerRequest) (*ethpb.DebugPeerResponse, error) {
 	pid, err := peer.Decode(peerReq.PeerId)
@@ -22,6 +24,8 @@ func (ds *Server) GetPeer(_ context.Context, peerReq *ethpb.PeerRequest) (*ethpb
 	return ds.getPeer(pid)
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ListPeers returns all peers known to the host node, regardless of if they are connected/
 // disconnected.
 func (ds *Server) ListPeers(_ context.Context, _ *empty.Empty) (*ethpb.DebugPeerResponses, error) {
@@ -105,6 +109,8 @@ func (ds *Server) getPeer(pid peer.ID) (*ethpb.DebugPeerResponse, error) {
 			peerInfo.MetadataV0 = metadata.MetadataObjV0()
 		case metadata.MetadataObjV1() != nil:
 			peerInfo.MetadataV1 = metadata.MetadataObjV1()
+		case metadata.MetadataObjV2() != nil:
+			peerInfo.MetadataV2 = metadata.MetadataObjV2()
 		}
 	}
 	addresses := peerStore.Addrs(pid)
@@ -123,7 +129,7 @@ func (ds *Server) getPeer(pid peer.ID) (*ethpb.DebugPeerResponse, error) {
 	if err != nil {
 		// In the event chain state is non existent, we
 		// initialize with the zero value.
-		pStatus = new(ethpb.Status)
+		pStatus = new(ethpb.StatusV2)
 	}
 	lastUpdated, err := peers.ChainStateLastUpdated(pid)
 	if err != nil {
@@ -146,6 +152,16 @@ func (ds *Server) getPeer(pid peer.ID) (*ethpb.DebugPeerResponse, error) {
 		BehaviourPenalty:   float32(bPenalty),
 		ValidationError:    errorToString(peers.Scorers().ValidationError(pid)),
 	}
+
+	// Convert statusV2 into status
+	peerStatus := &ethpb.Status{
+		ForkDigest:     pStatus.ForkDigest,
+		FinalizedRoot:  pStatus.FinalizedRoot,
+		FinalizedEpoch: pStatus.FinalizedEpoch,
+		HeadRoot:       pStatus.HeadRoot,
+		HeadSlot:       pStatus.HeadSlot,
+	}
+
 	return &ethpb.DebugPeerResponse{
 		ListeningAddresses: stringAddrs,
 		Direction:          pbDirection,
@@ -153,7 +169,7 @@ func (ds *Server) getPeer(pid peer.ID) (*ethpb.DebugPeerResponse, error) {
 		PeerId:             pid.String(),
 		Enr:                enr,
 		PeerInfo:           peerInfo,
-		PeerStatus:         pStatus,
+		PeerStatus:         peerStatus,
 		LastUpdated:        unixTime,
 		ScoreInfo:          scoreInfo,
 	}, nil

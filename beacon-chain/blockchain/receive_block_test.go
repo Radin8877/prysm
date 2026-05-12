@@ -1,33 +1,38 @@
 package blockchain
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
 
+	blockchainTesting "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/das"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	lightClient "github.com/OffchainLabs/prysm/v7/beacon-chain/light-client"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/voluntaryexits"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpbv1 "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	blockchainTesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/das"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/voluntaryexits"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpbv1 "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestService_ReceiveBlock(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesis, keys := util.DeterministicGenesisState(t, 64)
 	copiedGen := genesis.Copy()
@@ -40,6 +45,16 @@ func TestService_ReceiveBlock(t *testing.T) {
 	bc := params.BeaconConfig().Copy()
 	bc.ShardCommitteePeriod = 0 // Required for voluntary exits test in reasonable time.
 	params.OverrideBeaconConfig(bc)
+
+	badBlock := genFullBlock(t, util.DefaultBlockGenConfig(), 101)
+	badRoot, err := badBlock.Block.HashTreeRoot()
+	require.NoError(t, err)
+	badRoots := make(map[[32]byte]struct{})
+	badRoots[badRoot] = struct{}{}
+	resetCfg := features.InitWithReset(&features.Flags{
+		BlacklistedRoots: badRoots,
+	})
+	defer resetCfg()
 
 	type args struct {
 		block *ethpb.SignedBeaconBlock
@@ -116,16 +131,20 @@ func TestService_ReceiveBlock(t *testing.T) {
 				block: genFullBlock(t, util.DefaultBlockGenConfig(), 1 /*slot*/),
 			},
 			check: func(t *testing.T, s *Service) {
-				// Hacky sleep, should use a better way to be able to resolve the race
-				// between event being sent out and processed.
-				time.Sleep(100 * time.Millisecond)
-				if recvd := len(s.cfg.StateNotifier.(*blockchainTesting.MockStateNotifier).ReceivedEvents()); recvd < 1 {
-					t.Errorf("Received %d state notifications, expected at least 1", recvd)
-				}
+				notifier := s.cfg.StateNotifier.(*blockchainTesting.MockStateNotifier)
+				require.Eventually(t, func() bool {
+					return len(notifier.ReceivedEvents()) >= 1
+				}, 2*time.Second, 10*time.Millisecond, "Expected at least 1 state notification")
 			},
 		},
+		{
+			name: "The block is blacklisted",
+			args: args{
+				block: badBlock,
+			},
+			wantedErr: errBlacklistedRoot.Error(),
+		},
 	}
-
 	wg := new(sync.WaitGroup)
 	for _, tt := range tests {
 		wg.Add(1)
@@ -163,6 +182,21 @@ func TestService_ReceiveBlock(t *testing.T) {
 	}
 	wg.Wait()
 }
+func TestHandleDA(t *testing.T) {
+	signedBeaconBlock, err := blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlock{
+		Block: &ethpb.BeaconBlock{
+			Body: &ethpb.BeaconBlockBody{},
+		},
+	})
+	require.NoError(t, err)
+
+	s, _ := minimalTestService(t)
+	block, err := blocks.NewROBlockWithRoot(signedBeaconBlock, [32]byte{})
+	require.NoError(t, err)
+	elapsed, err := s.handleDA(t.Context(), nil, block)
+	require.NoError(t, err)
+	require.Equal(t, true, elapsed > 0, "Elapsed time should be greater than 0")
+}
 
 func TestService_ReceiveBlockUpdateHead(t *testing.T) {
 	s, tr := minimalTestService(t,
@@ -181,24 +215,22 @@ func TestService_ReceiveBlockUpdateHead(t *testing.T) {
 	root, err := b.Block.HashTreeRoot()
 	require.NoError(t, err)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		wsb, err := blocks.NewSignedBeaconBlock(b)
 		require.NoError(t, err)
 		require.NoError(t, s.ReceiveBlock(ctx, wsb, root, nil))
-		wg.Done()
-	}()
+	})
 	wg.Wait()
-	time.Sleep(100 * time.Millisecond)
-	if recvd := len(s.cfg.StateNotifier.(*blockchainTesting.MockStateNotifier).ReceivedEvents()); recvd < 1 {
-		t.Errorf("Received %d state notifications, expected at least 1", recvd)
-	}
+	notifier := s.cfg.StateNotifier.(*blockchainTesting.MockStateNotifier)
+	require.Eventually(t, func() bool {
+		return len(notifier.ReceivedEvents()) >= 1
+	}, 2*time.Second, 10*time.Millisecond, "Expected at least 1 state notification")
 	// Verify fork choice has processed the block. (Genesis block and the new block)
 	assert.Equal(t, 2, s.cfg.ForkChoiceStore.NodeCount())
 }
 
 func TestService_ReceiveBlockBatch(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesis, keys := util.DeterministicGenesisState(t, 64)
 	genFullBlock := func(t *testing.T, conf *util.BlockGenConfig, slot primitives.Slot) *ethpb.SignedBeaconBlock {
@@ -232,10 +264,10 @@ func TestService_ReceiveBlockBatch(t *testing.T) {
 				block: genFullBlock(t, util.DefaultBlockGenConfig(), 1 /*slot*/),
 			},
 			check: func(t *testing.T, s *Service) {
-				time.Sleep(100 * time.Millisecond)
-				if recvd := len(s.cfg.StateNotifier.(*blockchainTesting.MockStateNotifier).ReceivedEvents()); recvd < 1 {
-					t.Errorf("Received %d state notifications, expected at least 1", recvd)
-				}
+				notifier := s.cfg.StateNotifier.(*blockchainTesting.MockStateNotifier)
+				require.Eventually(t, func() bool {
+					return len(notifier.ReceivedEvents()) >= 1
+				}, 2*time.Second, 10*time.Millisecond, "Expected at least 1 state notification")
 			},
 		},
 	}
@@ -249,7 +281,7 @@ func TestService_ReceiveBlockBatch(t *testing.T) {
 			require.NoError(t, err)
 			rwsb, err := blocks.NewROBlock(wsb)
 			require.NoError(t, err)
-			err = s.ReceiveBlockBatch(ctx, []blocks.ROBlock{rwsb}, &das.MockAvailabilityStore{})
+			err = s.ReceiveBlockBatch(ctx, []blocks.ROBlock{rwsb}, nil, &das.MockAvailabilityStore{})
 			if tt.wantedErr != "" {
 				assert.ErrorContains(t, tt.wantedErr, err)
 			} else {
@@ -263,23 +295,26 @@ func TestService_ReceiveBlockBatch(t *testing.T) {
 func TestService_HasBlock(t *testing.T) {
 	s, _ := minimalTestService(t)
 	r := [32]byte{'a'}
-	if s.HasBlock(context.Background(), r) {
+	if s.HasBlock(t.Context(), r) {
 		t.Error("Should not have block")
 	}
 	wsb, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlock())
 	require.NoError(t, err)
-	require.NoError(t, s.saveInitSyncBlock(context.Background(), r, wsb))
-	if !s.HasBlock(context.Background(), r) {
+	require.NoError(t, s.saveInitSyncBlock(t.Context(), r, wsb))
+	if !s.HasBlock(t.Context(), r) {
 		t.Error("Should have block")
 	}
 	b := util.NewBeaconBlock()
 	b.Block.Slot = 1
-	util.SaveBlock(t, context.Background(), s.cfg.BeaconDB, b)
+	util.SaveBlock(t, t.Context(), s.cfg.BeaconDB, b)
 	r, err = b.Block.HashTreeRoot()
 	require.NoError(t, err)
-	require.Equal(t, true, s.HasBlock(context.Background(), r))
-	s.blockBeingSynced.set(r)
-	require.Equal(t, false, s.HasBlock(context.Background(), r))
+	require.Equal(t, true, s.HasBlock(t.Context(), r))
+	err = s.blockBeingSynced.set(r)
+	require.NoError(t, err)
+	err = s.blockBeingSynced.set(r)
+	require.ErrorIs(t, err, errBlockBeingSynced)
+	require.Equal(t, false, s.HasBlock(t.Context(), r))
 }
 
 func TestCheckSaveHotStateDB_Enabling(t *testing.T) {
@@ -288,7 +323,7 @@ func TestCheckSaveHotStateDB_Enabling(t *testing.T) {
 	st := params.BeaconConfig().SlotsPerEpoch.Mul(uint64(epochsSinceFinalitySaveHotStateDB))
 	s.genesisTime = time.Now().Add(time.Duration(-1*int64(st)*int64(params.BeaconConfig().SecondsPerSlot)) * time.Second)
 
-	require.NoError(t, s.checkSaveHotStateDB(context.Background()))
+	require.NoError(t, s.checkSaveHotStateDB(t.Context()))
 	assert.LogsContain(t, hook, "Entering mode to save hot states in DB")
 }
 
@@ -299,19 +334,19 @@ func TestCheckSaveHotStateDB_Disabling(t *testing.T) {
 
 	st := params.BeaconConfig().SlotsPerEpoch.Mul(uint64(epochsSinceFinalitySaveHotStateDB))
 	s.genesisTime = time.Now().Add(time.Duration(-1*int64(st)*int64(params.BeaconConfig().SecondsPerSlot)) * time.Second)
-	require.NoError(t, s.checkSaveHotStateDB(context.Background()))
+	require.NoError(t, s.checkSaveHotStateDB(t.Context()))
 	s.genesisTime = time.Now()
 
-	require.NoError(t, s.checkSaveHotStateDB(context.Background()))
+	require.NoError(t, s.checkSaveHotStateDB(t.Context()))
 	assert.LogsContain(t, hook, "Exiting mode to save hot states in DB")
 }
 
 func TestCheckSaveHotStateDB_Overflow(t *testing.T) {
 	hook := logTest.NewGlobal()
 	s, _ := minimalTestService(t)
-	s.genesisTime = time.Now()
+	s.SetGenesisTime(time.Now())
 
-	require.NoError(t, s.checkSaveHotStateDB(context.Background()))
+	require.NoError(t, s.checkSaveHotStateDB(t.Context()))
 	assert.LogsDoNotContain(t, hook, "Entering mode to save hot states in DB")
 }
 
@@ -319,8 +354,9 @@ func TestHandleCaches_EnablingLargeSize(t *testing.T) {
 	hook := logTest.NewGlobal()
 	s, _ := minimalTestService(t)
 	st := params.BeaconConfig().SlotsPerEpoch.Mul(uint64(epochsSinceFinalitySaveHotStateDB))
-	s.genesisTime = time.Now().Add(time.Duration(-1*int64(st)*int64(params.BeaconConfig().SecondsPerSlot)) * time.Second)
+	s.SetGenesisTime(time.Now().Add(time.Duration(-1*int64(st)*int64(params.BeaconConfig().SecondsPerSlot)) * time.Second))
 
+	helpers.ClearCache()
 	require.NoError(t, s.handleCaches())
 	assert.LogsContain(t, hook, "Expanding committee cache size")
 }
@@ -426,7 +462,7 @@ func Test_executePostFinalizationTasks(t *testing.T) {
 
 	headState, err := util.NewBeaconStateElectra()
 	require.NoError(t, err)
-	finalizedStRoot, err := headState.HashTreeRoot(context.Background())
+	finalizedStRoot, err := headState.HashTreeRoot(t.Context())
 	require.NoError(t, err)
 
 	genesis := util.NewBeaconBlock()
@@ -455,41 +491,124 @@ func Test_executePostFinalizationTasks(t *testing.T) {
 		Root:  headRoot[:],
 	}))
 	require.NoError(t, headState.SetGenesisValidatorsRoot(params.BeaconConfig().ZeroHash[:]))
+	t.Run("pre deposit request", func(t *testing.T) {
+		require.NoError(t, headState.SetEth1DepositIndex(1))
+		s, tr := minimalTestService(t, WithFinalizedStateAtStartUp(headState))
+		ctx, beaconDB, stateGen := tr.ctx, tr.db, tr.sg
 
-	s, tr := minimalTestService(t, WithFinalizedStateAtStartUp(headState))
-	ctx, beaconDB, stateGen := tr.ctx, tr.db, tr.sg
+		require.NoError(t, beaconDB.SaveGenesisBlockRoot(ctx, genesisRoot))
+		util.SaveBlock(t, ctx, beaconDB, genesis)
+		require.NoError(t, beaconDB.SaveState(ctx, headState, headRoot))
+		require.NoError(t, beaconDB.SaveState(ctx, headState, genesisRoot))
+		util.SaveBlock(t, ctx, beaconDB, headBlock)
+		require.NoError(t, beaconDB.SaveFinalizedCheckpoint(ctx, &ethpb.Checkpoint{Epoch: slots.ToEpoch(finalizedSlot), Root: headRoot[:]}))
 
-	require.NoError(t, beaconDB.SaveGenesisBlockRoot(ctx, genesisRoot))
-	util.SaveBlock(t, ctx, beaconDB, genesis)
-	require.NoError(t, beaconDB.SaveState(ctx, headState, headRoot))
-	require.NoError(t, beaconDB.SaveState(ctx, headState, genesisRoot))
-	util.SaveBlock(t, ctx, beaconDB, headBlock)
-	require.NoError(t, beaconDB.SaveFinalizedCheckpoint(ctx, &ethpb.Checkpoint{Epoch: slots.ToEpoch(finalizedSlot), Root: headRoot[:]}))
+		require.NoError(t, err)
+		require.NoError(t, stateGen.SaveState(ctx, headRoot, headState))
+		require.NoError(t, beaconDB.SaveLastValidatedCheckpoint(ctx, &ethpb.Checkpoint{Epoch: slots.ToEpoch(finalizedSlot), Root: headRoot[:]}))
 
-	require.NoError(t, err)
-	require.NoError(t, stateGen.SaveState(ctx, headRoot, headState))
-	require.NoError(t, beaconDB.SaveLastValidatedCheckpoint(ctx, &ethpb.Checkpoint{Epoch: slots.ToEpoch(finalizedSlot), Root: headRoot[:]}))
+		notifier := &blockchainTesting.MockStateNotifier{RecordEvents: true}
+		s.cfg.StateNotifier = notifier
+		s.executePostFinalizationTasks(s.ctx, headState)
 
-	notifier := &blockchainTesting.MockStateNotifier{RecordEvents: true}
-	s.cfg.StateNotifier = notifier
-	s.executePostFinalizationTasks(s.ctx, headState)
+		require.Eventually(t, func() bool {
+			return len(notifier.ReceivedEvents()) == 1
+		}, 5*time.Second, 50*time.Millisecond, "Expected exactly 1 state notification")
+		e := notifier.ReceivedEvents()[0]
+		assert.Equal(t, statefeed.FinalizedCheckpoint, int(e.Type))
+		fc, ok := e.Data.(*ethpbv1.EventFinalizedCheckpoint)
+		require.Equal(t, true, ok, "event has wrong data type")
+		assert.Equal(t, primitives.Epoch(123), fc.Epoch)
+		assert.DeepEqual(t, headRoot[:], fc.Block)
+		assert.DeepEqual(t, finalizedStRoot[:], fc.State)
+		assert.Equal(t, false, fc.ExecutionOptimistic)
 
-	time.Sleep(1 * time.Second) // sleep for a second because event is in a separate go routine
-	require.Equal(t, 1, len(notifier.ReceivedEvents()))
-	e := notifier.ReceivedEvents()[0]
-	assert.Equal(t, statefeed.FinalizedCheckpoint, int(e.Type))
-	fc, ok := e.Data.(*ethpbv1.EventFinalizedCheckpoint)
-	require.Equal(t, true, ok, "event has wrong data type")
-	assert.Equal(t, primitives.Epoch(123), fc.Epoch)
-	assert.DeepEqual(t, headRoot[:], fc.Block)
-	assert.DeepEqual(t, finalizedStRoot[:], fc.State)
-	assert.Equal(t, false, fc.ExecutionOptimistic)
+		// check the cache
+		index, ok := headState.ValidatorIndexByPubkey(bytesutil.ToBytes48(key))
+		require.Equal(t, true, ok)
+		require.Equal(t, primitives.ValidatorIndex(0), index) // first index
 
-	// check the cache
-	index, ok := headState.ValidatorIndexByPubkey(bytesutil.ToBytes48(key))
-	require.Equal(t, true, ok)
-	require.Equal(t, primitives.ValidatorIndex(0), index) // first index
+		// check deposit
+		require.LogsContain(t, logHook, "Finalized deposit insertion completed at index")
+	})
+	t.Run("deposit requests started", func(t *testing.T) {
+		require.NoError(t, headState.SetEth1DepositIndex(1))
+		require.NoError(t, headState.SetDepositRequestsStartIndex(1))
+		s, tr := minimalTestService(t, WithFinalizedStateAtStartUp(headState))
+		ctx, beaconDB, stateGen := tr.ctx, tr.db, tr.sg
 
-	// check deposit
-	require.LogsContain(t, logHook, "Finalized deposit insertion completed at index")
+		require.NoError(t, beaconDB.SaveGenesisBlockRoot(ctx, genesisRoot))
+		util.SaveBlock(t, ctx, beaconDB, genesis)
+		require.NoError(t, beaconDB.SaveState(ctx, headState, headRoot))
+		require.NoError(t, beaconDB.SaveState(ctx, headState, genesisRoot))
+		util.SaveBlock(t, ctx, beaconDB, headBlock)
+		require.NoError(t, beaconDB.SaveFinalizedCheckpoint(ctx, &ethpb.Checkpoint{Epoch: slots.ToEpoch(finalizedSlot), Root: headRoot[:]}))
+
+		require.NoError(t, err)
+		require.NoError(t, stateGen.SaveState(ctx, headRoot, headState))
+		require.NoError(t, beaconDB.SaveLastValidatedCheckpoint(ctx, &ethpb.Checkpoint{Epoch: slots.ToEpoch(finalizedSlot), Root: headRoot[:]}))
+
+		notifier := &blockchainTesting.MockStateNotifier{RecordEvents: true}
+		s.cfg.StateNotifier = notifier
+		s.executePostFinalizationTasks(s.ctx, headState)
+
+		require.Eventually(t, func() bool {
+			return len(notifier.ReceivedEvents()) == 1
+		}, 5*time.Second, 50*time.Millisecond, "Expected exactly 1 state notification")
+		e := notifier.ReceivedEvents()[0]
+		assert.Equal(t, statefeed.FinalizedCheckpoint, int(e.Type))
+		fc, ok := e.Data.(*ethpbv1.EventFinalizedCheckpoint)
+		require.Equal(t, true, ok, "event has wrong data type")
+		assert.Equal(t, primitives.Epoch(123), fc.Epoch)
+		assert.DeepEqual(t, headRoot[:], fc.Block)
+		assert.DeepEqual(t, finalizedStRoot[:], fc.State)
+		assert.Equal(t, false, fc.ExecutionOptimistic)
+
+		// check the cache
+		index, ok := headState.ValidatorIndexByPubkey(bytesutil.ToBytes48(key))
+		require.Equal(t, true, ok)
+		require.Equal(t, primitives.ValidatorIndex(0), index) // first index
+	})
+
+}
+
+func TestProcessLightClientBootstrap(t *testing.T) {
+	featCfg := &features.Flags{}
+	featCfg.EnableLightClient = true
+	reset := features.InitWithReset(featCfg)
+	defer reset()
+
+	s, tr := minimalTestService(t, WithLCStore())
+	ctx := tr.ctx
+
+	for testVersion := version.Altair; testVersion <= version.Electra; testVersion++ {
+		t.Run(version.String(testVersion), func(t *testing.T) {
+			l := util.NewTestLightClient(t, testVersion)
+
+			require.NoError(t, s.cfg.BeaconDB.SaveBlock(ctx, l.FinalizedBlock))
+			finalizedBlockRoot, err := l.FinalizedBlock.Block().HashTreeRoot()
+			require.NoError(t, err)
+			require.NoError(t, s.cfg.BeaconDB.SaveState(ctx, l.FinalizedState, finalizedBlockRoot))
+
+			cp := l.AttestedState.FinalizedCheckpoint()
+			require.DeepSSZEqual(t, finalizedBlockRoot, [32]byte(cp.Root))
+
+			require.NoError(t, s.cfg.ForkChoiceStore.UpdateFinalizedCheckpoint(&forkchoicetypes.Checkpoint{Epoch: cp.Epoch, Root: [32]byte(cp.Root)}))
+
+			s.executePostFinalizationTasks(s.ctx, l.AttestedState)
+
+			// Wait for the light client bootstrap to be saved (runs in goroutine)
+			var b interfaces.LightClientBootstrap
+			require.Eventually(t, func() bool {
+				var err error
+				b, err = s.lcStore.LightClientBootstrap(ctx, [32]byte(cp.Root))
+				return err == nil && b != nil
+			}, 5*time.Second, 50*time.Millisecond, "Light client bootstrap was not saved within timeout")
+
+			btst, err := lightClient.NewLightClientBootstrapFromBeaconState(ctx, l.FinalizedState.Slot(), l.FinalizedState, l.FinalizedBlock)
+			require.NoError(t, err)
+			require.DeepEqual(t, btst, b)
+			require.Equal(t, b.Version(), testVersion)
+		})
+	}
 }

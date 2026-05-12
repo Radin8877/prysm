@@ -2,15 +2,16 @@ package beacon_api
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/rest"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/client/beacon"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -20,14 +21,13 @@ var (
 
 type beaconApiNodeClient struct {
 	fallbackClient  iface.NodeClient
-	jsonRestHandler JsonRestHandler
+	handler         rest.Handler
 	genesisProvider GenesisProvider
-	healthTracker   *beacon.NodeHealthTracker
 }
 
 func (c *beaconApiNodeClient) SyncStatus(ctx context.Context, _ *empty.Empty) (*ethpb.SyncStatus, error) {
 	syncingResponse := structs.SyncStatusResponse{}
-	if err := c.jsonRestHandler.Get(ctx, "/eth/v1/node/syncing", &syncingResponse); err != nil {
+	if err := c.handler.Get(ctx, "/eth/v1/node/syncing", &syncingResponse); err != nil {
 		return nil, err
 	}
 
@@ -57,7 +57,7 @@ func (c *beaconApiNodeClient) Genesis(ctx context.Context, _ *empty.Empty) (*eth
 	}
 
 	depositContractJson := structs.GetDepositContractResponse{}
-	if err = c.jsonRestHandler.Get(ctx, "/eth/v1/config/deposit_contract", &depositContractJson); err != nil {
+	if err = c.handler.Get(ctx, "/eth/v1/config/deposit_contract", &depositContractJson); err != nil {
 		return nil, err
 	}
 
@@ -81,7 +81,7 @@ func (c *beaconApiNodeClient) Genesis(ctx context.Context, _ *empty.Empty) (*eth
 
 func (c *beaconApiNodeClient) Version(ctx context.Context, _ *empty.Empty) (*ethpb.Version, error) {
 	var versionResponse structs.GetVersionResponse
-	if err := c.jsonRestHandler.Get(ctx, "/eth/v1/node/version", &versionResponse); err != nil {
+	if err := c.handler.Get(ctx, "/eth/v1/node/version", &versionResponse); err != nil {
 		return nil, err
 	}
 
@@ -100,23 +100,27 @@ func (c *beaconApiNodeClient) Peers(ctx context.Context, in *empty.Empty) (*ethp
 	}
 
 	// TODO: Implement me
-	panic("beaconApiNodeClient.Peers is not implemented. To use a fallback client, pass a fallback client as the last argument of NewBeaconApiNodeClientWithFallback.")
+	return nil, errors.New("beaconApiNodeClient.Peers is not implemented. To use a fallback client, pass a fallback client as the last argument of NewBeaconApiNodeClientWithFallback.")
 }
 
-func (c *beaconApiNodeClient) IsHealthy(ctx context.Context) bool {
-	return c.jsonRestHandler.Get(ctx, "/eth/v1/node/health", nil) == nil
-}
-
-func (c *beaconApiNodeClient) HealthTracker() *beacon.NodeHealthTracker {
-	return c.healthTracker
-}
-
-func NewNodeClientWithFallback(jsonRestHandler JsonRestHandler, fallbackClient iface.NodeClient) iface.NodeClient {
-	b := &beaconApiNodeClient{
-		jsonRestHandler: jsonRestHandler,
-		fallbackClient:  fallbackClient,
-		genesisProvider: &beaconApiGenesisProvider{jsonRestHandler: jsonRestHandler},
+// IsReady returns true only if the node is fully synced (200 OK).
+// A 206 Partial Content response indicates the node is syncing and not ready.
+func (c *beaconApiNodeClient) IsReady(ctx context.Context) bool {
+	statusCode, err := c.handler.GetStatusCode(ctx, "/eth/v1/node/health")
+	if err != nil {
+		log.WithError(err).WithField("url", c.handler.Host()).Error("failed to get health of node")
+		return false
 	}
-	b.healthTracker = beacon.NewNodeHealthTracker(b)
+	// Only 200 OK means the node is fully synced and ready.
+	// 206 Partial Content means syncing, 503 means unavailable.
+	return statusCode == http.StatusOK
+}
+
+func NewNodeClientWithFallback(handler rest.Handler, fallbackClient iface.NodeClient) iface.NodeClient {
+	b := &beaconApiNodeClient{
+		handler:         handler,
+		fallbackClient:  fallbackClient,
+		genesisProvider: &beaconApiGenesisProvider{handler: handler},
+	}
 	return b
 }

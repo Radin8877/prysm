@@ -1,23 +1,22 @@
 package altair_test
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -29,7 +28,7 @@ func TestProcessSyncCommitteeUpdates_CanRotate(t *testing.T) {
 		BodyRoot:   bytesutil.PadTo([]byte{'c'}, 32),
 	}
 	require.NoError(t, s.SetLatestBlockHeader(h))
-	postState, err := altair.ProcessSyncCommitteeUpdates(context.Background(), s)
+	postState, err := altair.ProcessSyncCommitteeUpdates(t.Context(), s)
 	require.NoError(t, err)
 	current, err := postState.CurrentSyncCommittee()
 	require.NoError(t, err)
@@ -38,7 +37,7 @@ func TestProcessSyncCommitteeUpdates_CanRotate(t *testing.T) {
 	require.DeepEqual(t, current, next)
 
 	require.NoError(t, s.SetSlot(params.BeaconConfig().SlotsPerEpoch))
-	postState, err = altair.ProcessSyncCommitteeUpdates(context.Background(), s)
+	postState, err = altair.ProcessSyncCommitteeUpdates(t.Context(), s)
 	require.NoError(t, err)
 	c, err := postState.CurrentSyncCommittee()
 	require.NoError(t, err)
@@ -48,7 +47,7 @@ func TestProcessSyncCommitteeUpdates_CanRotate(t *testing.T) {
 	require.DeepEqual(t, next, n)
 
 	require.NoError(t, s.SetSlot(primitives.Slot(params.BeaconConfig().EpochsPerSyncCommitteePeriod)*params.BeaconConfig().SlotsPerEpoch-1))
-	postState, err = altair.ProcessSyncCommitteeUpdates(context.Background(), s)
+	postState, err = altair.ProcessSyncCommitteeUpdates(t.Context(), s)
 	require.NoError(t, err)
 	c, err = postState.CurrentSyncCommittee()
 	require.NoError(t, err)
@@ -61,7 +60,7 @@ func TestProcessSyncCommitteeUpdates_CanRotate(t *testing.T) {
 	// Test boundary condition.
 	slot := params.BeaconConfig().SlotsPerEpoch * primitives.Slot(time.CurrentEpoch(s)+params.BeaconConfig().EpochsPerSyncCommitteePeriod)
 	require.NoError(t, s.SetSlot(slot))
-	boundaryCommittee, err := altair.NextSyncCommittee(context.Background(), s)
+	boundaryCommittee, err := altair.NextSyncCommittee(t.Context(), s)
 	require.NoError(t, err)
 	require.DeepNotEqual(t, boundaryCommittee, n)
 }
@@ -105,7 +104,7 @@ func TestProcessSlashings_NotSlashed(t *testing.T) {
 	}
 	s, err := state_native.InitializeFromProtoAltair(base)
 	require.NoError(t, err)
-	require.NoError(t, epoch.ProcessSlashings(s))
+	require.NoError(t, epoch.ProcessSlashings(t.Context(), s))
 	wanted := params.BeaconConfig().MaxEffectiveBalance
 	assert.Equal(t, wanted, s.Balances()[0], "Unexpected slashed balance")
 }
@@ -175,7 +174,7 @@ func TestProcessSlashings_SlashedLess(t *testing.T) {
 			original := proto.Clone(tt.state)
 			s, err := state_native.InitializeFromProtoAltair(tt.state)
 			require.NoError(t, err)
-			require.NoError(t, epoch.ProcessSlashings(s))
+			require.NoError(t, epoch.ProcessSlashings(t.Context(), s))
 			assert.Equal(t, tt.want, s.Balances()[0], "ProcessSlashings({%v}) = newState; newState.Balances[0] = %d", original, s.Balances()[0])
 		})
 	}
@@ -190,5 +189,5 @@ func TestProcessSlashings_BadValue(t *testing.T) {
 	}
 	s, err := state_native.InitializeFromProtoAltair(base)
 	require.NoError(t, err)
-	require.ErrorContains(t, "addition overflows", epoch.ProcessSlashings(s))
+	require.ErrorContains(t, "addition overflows", epoch.ProcessSlashings(t.Context(), s))
 }

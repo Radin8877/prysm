@@ -1,18 +1,17 @@
 package proxy
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	pb "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 	"github.com/sirupsen/logrus"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
@@ -21,7 +20,7 @@ func TestProxy(t *testing.T) {
 	t.Run("fails to proxy if destination is down", func(t *testing.T) {
 		logger := logrus.New()
 		hook := logTest.NewLocal(logger)
-		ctx := context.Background()
+		ctx := t.Context()
 		r := rand.NewGenerator()
 		proxy, err := New(
 			WithPort(r.Intn(50000)),
@@ -46,8 +45,7 @@ func TestProxy(t *testing.T) {
 		require.LogsContain(t, hook, "Could not forward request to destination server")
 	})
 	t.Run("properly proxies request/response", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		wantDestinationResponse := &pb.ForkchoiceState{
 			HeadBlockHash:      []byte("foo"),
@@ -86,8 +84,7 @@ func TestProxy(t *testing.T) {
 
 func TestProxy_CustomInterceptors(t *testing.T) {
 	t.Run("only intercepts engine API methods", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		type syncingResponse struct {
 			Syncing bool `json:"syncing"`
@@ -116,7 +113,7 @@ func TestProxy_CustomInterceptors(t *testing.T) {
 		// RPC method to intercept.
 		proxy.AddRequestInterceptor(
 			method,
-			func() interface{} {
+			func() any {
 				return &syncingResponse{Syncing: false}
 			}, // Custom response.
 			func() bool {
@@ -138,8 +135,7 @@ func TestProxy_CustomInterceptors(t *testing.T) {
 		require.DeepEqual(t, wantDestinationResponse, proxyResult)
 	})
 	t.Run("only intercepts if trigger function returns true", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		type engineResponse struct {
 			BlockHash common.Hash `json:"blockHash"`
@@ -166,7 +162,7 @@ func TestProxy_CustomInterceptors(t *testing.T) {
 		method := "engine_newPayloadV1"
 
 		// RPC method to intercept.
-		wantInterceptedResponse := func() interface{} {
+		wantInterceptedResponse := func() any {
 			return &engineResponse{BlockHash: common.BytesToHash([]byte("bar"))}
 		}
 		conditional := false
@@ -206,8 +202,7 @@ func TestProxy_CustomInterceptors(t *testing.T) {
 		require.DeepEqual(t, wantInterceptedResponse(), proxyResult)
 	})
 	t.Run("triggers interceptor response correctly", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		type engineResponse struct {
 			BlockHash common.Hash `json:"blockHash"`
@@ -234,7 +229,7 @@ func TestProxy_CustomInterceptors(t *testing.T) {
 		method := "engine_newPayloadV1"
 
 		// RPC method to intercept.
-		wantInterceptedResponse := func() interface{} {
+		wantInterceptedResponse := func() any {
 			return &engineResponse{BlockHash: common.BytesToHash([]byte("bar"))}
 		}
 		proxy.AddRequestInterceptor(
@@ -300,13 +295,13 @@ func Test_isEngineAPICall(t *testing.T) {
 	}
 }
 
-func destinationServerSetup(t *testing.T, response interface{}) *httptest.Server {
+func destinationServerSetup(t *testing.T, response any) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		defer func() {
 			require.NoError(t, r.Body.Close())
 		}()
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"jsonrpc": "2.0",
 			"id":      1,
 			"result":  response,

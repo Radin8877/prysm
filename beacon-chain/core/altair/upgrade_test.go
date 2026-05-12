@@ -1,23 +1,22 @@
 package altair_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestTranslateParticipation(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s, _ := util.DeterministicGenesisStateAltair(t, 64)
 	require.NoError(t, s.SetSlot(s.Slot()+params.BeaconConfig().MinAttestationInclusionDelay))
 
@@ -34,7 +33,7 @@ func TestTranslateParticipation(t *testing.T) {
 	r, err := helpers.BlockRootAtSlot(s, 0)
 	require.NoError(t, err)
 	var pendingAtts []*ethpb.PendingAttestation
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		pendingAtts = append(pendingAtts, &ethpb.PendingAttestation{
 			Data: &ethpb.AttestationData{
 				CommitteeIndex:  primitives.CommitteeIndex(i),
@@ -73,7 +72,7 @@ func TestTranslateParticipation(t *testing.T) {
 func TestUpgradeToAltair(t *testing.T) {
 	st, _ := util.DeterministicGenesisState(t, params.BeaconConfig().MaxValidatorsPerCommittee)
 	preForkState := st.Copy()
-	aState, err := altair.UpgradeToAltair(context.Background(), st)
+	aState, err := altair.UpgradeToAltair(t.Context(), st)
 	require.NoError(t, err)
 
 	require.Equal(t, preForkState.GenesisTime(), aState.GenesisTime())
@@ -82,10 +81,8 @@ func TestUpgradeToAltair(t *testing.T) {
 	require.DeepSSZEqual(t, preForkState.LatestBlockHeader(), aState.LatestBlockHeader())
 	require.DeepSSZEqual(t, preForkState.BlockRoots(), aState.BlockRoots())
 	require.DeepSSZEqual(t, preForkState.StateRoots(), aState.StateRoots())
-	r1, err := preForkState.HistoricalRoots()
-	require.NoError(t, err)
-	r2, err := aState.HistoricalRoots()
-	require.NoError(t, err)
+	r1 := preForkState.HistoricalRoots()
+	r2 := aState.HistoricalRoots()
 	require.DeepSSZEqual(t, r1, r2)
 	require.DeepSSZEqual(t, preForkState.Eth1Data(), aState.Eth1Data())
 	require.DeepSSZEqual(t, preForkState.Eth1DataVotes(), aState.Eth1DataVotes())

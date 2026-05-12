@@ -11,14 +11,14 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/testing/endtoend/helpers"
+	e2e "github.com/OffchainLabs/prysm/v7/testing/endtoend/params"
+	e2etypes "github.com/OffchainLabs/prysm/v7/testing/endtoend/types"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/testing/endtoend/helpers"
-	e2e "github.com/prysmaticlabs/prysm/v5/testing/endtoend/params"
-	e2etypes "github.com/prysmaticlabs/prysm/v5/testing/endtoend/types"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -110,12 +110,13 @@ func (node *Node) Start(ctx context.Context) error {
 		"--ipcdisable",
 		"--verbosity=4",
 		"--syncmode=full",
+		fmt.Sprintf("--miner.gaslimit=%d", params.BeaconConfig().DefaultBuilderGasLimit),
 		fmt.Sprintf("--txpool.locals=%s", EthAddress),
 	}
 
 	// give the miner start a couple of tries, since the p2p networking check is flaky
 	var retryErr error
-	for retries := 0; retries < 3; retries++ {
+	for retries := range 3 {
 		retryErr = nil
 		log.Infof("Starting eth1 node %d, attempt %d with flags: %s", node.index, retries, strings.Join(args[2:], " "))
 		runCmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204 -- Safe
@@ -134,13 +135,13 @@ func (node *Node) Start(ctx context.Context) error {
 		if err = helpers.WaitForTextInFile(errLog, "Node revalidated"); err != nil {
 			kerr := runCmd.Process.Kill()
 			if kerr != nil {
-				log.WithError(kerr).Error("error sending kill to failed node command process")
+				log.WithError(kerr).Error("Error sending kill to failed node command process")
 			}
 			retryErr = fmt.Errorf("the first node revalidated log not found, this means the eth1 chain had issues starting: %w", err)
 			continue
 		}
 		node.cmd = runCmd
-		log.Infof("eth1 node started after %d retries", retries)
+		log.Infof("Eth1 node started after %d retries", retries)
 		break
 	}
 	if retryErr != nil {
@@ -170,7 +171,7 @@ func (node *Node) Resume() error {
 
 // Stop kills the component and its underlying process.
 func (node *Node) Stop() error {
-	return node.cmd.Process.Kill()
+	return helpers.GracefulStop(node.cmd.Process)
 }
 
 func (node *Node) UnderlyingProcess() *os.Process {

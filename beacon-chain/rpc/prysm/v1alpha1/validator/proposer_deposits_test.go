@@ -1,23 +1,20 @@
 package validator
 
 import (
-	"context"
-	"math"
 	"math/big"
 	"testing"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache/depositsnapshot"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestShouldFallback(t *testing.T) {
@@ -75,7 +72,7 @@ func TestShouldFallback(t *testing.T) {
 
 func TestProposer_PendingDeposits_Electra(t *testing.T) {
 	// Electra continues to pack deposits while the state eth1deposit index is less than the eth1depositIndexLimit
-	ctx := context.Background()
+	ctx := t.Context()
 
 	height := big.NewInt(int64(params.BeaconConfig().Eth1FollowDistance))
 	newHeight := big.NewInt(height.Int64() + 11000)
@@ -213,86 +210,4 @@ func TestProposer_PendingDeposits_Electra(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(deposits), "Received unexpected number of pending deposits")
 
-}
-
-func TestIsLegacyDepositProcessPeriod(t *testing.T) {
-	tests := []struct {
-		name              string
-		state             state.BeaconState
-		canonicalEth1Data *ethpb.Eth1Data
-		want              bool
-	}{
-		{
-			name: "pre-electra",
-			state: func() state.BeaconState {
-				st, err := state_native.InitializeFromProtoDeneb(&ethpb.BeaconStateDeneb{
-					Eth1Data: &ethpb.Eth1Data{
-						BlockHash:    []byte("0x0"),
-						DepositRoot:  make([]byte, 32),
-						DepositCount: 5,
-					},
-					Eth1DepositIndex: 1,
-				})
-				require.NoError(t, err)
-				return st
-			}(),
-			canonicalEth1Data: &ethpb.Eth1Data{
-				BlockHash:    []byte("0x0"),
-				DepositRoot:  make([]byte, 32),
-				DepositCount: 5,
-			},
-			want: true,
-		},
-		{
-			name: "post-electra, pending deposits from pre-electra",
-			state: func() state.BeaconState {
-				st, err := state_native.InitializeFromProtoElectra(&ethpb.BeaconStateElectra{
-					Eth1Data: &ethpb.Eth1Data{
-						BlockHash:    []byte("0x0"),
-						DepositRoot:  make([]byte, 32),
-						DepositCount: 5,
-					},
-					DepositRequestsStartIndex: math.MaxUint64,
-					Eth1DepositIndex:          1,
-				})
-				require.NoError(t, err)
-				return st
-			}(),
-			canonicalEth1Data: &ethpb.Eth1Data{
-				BlockHash:    []byte("0x0"),
-				DepositRoot:  make([]byte, 32),
-				DepositCount: 5,
-			},
-			want: true,
-		},
-		{
-			name: "post-electra, no pending deposits from pre-alpaca",
-			state: func() state.BeaconState {
-				st, err := state_native.InitializeFromProtoElectra(&ethpb.BeaconStateElectra{
-					Eth1Data: &ethpb.Eth1Data{
-						BlockHash:    []byte("0x0"),
-						DepositRoot:  make([]byte, 32),
-						DepositCount: 5,
-					},
-					DepositRequestsStartIndex: 1,
-					Eth1DepositIndex:          5,
-				})
-				require.NoError(t, err)
-				return st
-			}(),
-			canonicalEth1Data: &ethpb.Eth1Data{
-				BlockHash:    []byte("0x0"),
-				DepositRoot:  make([]byte, 32),
-				DepositCount: 5,
-			},
-			want: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isLegacyDepositProcessPeriod(tt.state, tt.canonicalEth1Data); got != tt.want {
-				t.Errorf("isLegacyDepositProcessPeriod() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }

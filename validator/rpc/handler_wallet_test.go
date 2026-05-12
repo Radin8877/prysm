@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,20 +9,21 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	"github.com/OffchainLabs/prysm/v7/validator/client"
+	"github.com/OffchainLabs/prysm/v7/validator/client/testutil"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	validatorTesting "github.com/OffchainLabs/prysm/v7/validator/testing"
 	"github.com/google/uuid"
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/iface"
-	mock "github.com/prysmaticlabs/prysm/v5/validator/accounts/testing"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	"github.com/prysmaticlabs/prysm/v5/validator/client"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
 	"github.com/tyler-smith/go-bip39"
 	keystorev4 "github.com/wealdtech/go-eth2-wallet-encryptor-keystorev4"
 )
@@ -31,7 +31,7 @@ import (
 const strongPass = "29384283xasjasd32%%&*@*#*"
 
 func TestServer_CreateWallet_Local(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
 	opts := []accounts.Option{
@@ -47,8 +47,9 @@ func TestServer_CreateWallet_Local(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   validatorTesting.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -75,7 +76,7 @@ func TestServer_CreateWallet_Local(t *testing.T) {
 	encryptor := keystorev4.New()
 	keystores := make([]string, 3)
 	passwords := make([]string, 3)
-	for i := 0; i < len(keystores); i++ {
+	for i := range keystores {
 		privKey, err := bls.RandKey()
 		require.NoError(t, err)
 		pubKey := fmt.Sprintf("%x", privKey.PublicKey().Marshal())
@@ -424,7 +425,7 @@ func TestServer_WalletConfig_NoWalletFound(t *testing.T) {
 func TestServer_WalletConfig(t *testing.T) {
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
-	ctx := context.Background()
+	ctx := t.Context()
 	s := &Server{
 		walletInitializedFeed: new(event.Feed),
 		walletDir:             defaultWalletPath,
@@ -444,8 +445,9 @@ func TestServer_WalletConfig(t *testing.T) {
 	require.NoError(t, err)
 	s.wallet = w
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   validatorTesting.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})

@@ -3,18 +3,18 @@ package blstoexec
 import (
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls/common"
-	"github.com/prysmaticlabs/prysm/v5/crypto/hash"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls/common"
+	"github.com/OffchainLabs/prysm/v7/crypto/hash"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestPendingBLSToExecChanges(t *testing.T) {
@@ -122,7 +122,7 @@ func TestBLSToExecChangesForInclusion(t *testing.T) {
 	})
 	t.Run("more than MaxBlsToExecutionChanges in pool", func(t *testing.T) {
 		pool := NewPool()
-		for i := uint64(0); i < numValidators; i++ {
+		for i := range numValidators {
 			pool.InsertBLSToExecChange(signedChanges[i])
 		}
 		changes, err := pool.BLSToExecChangesForInclusion(st)
@@ -137,7 +137,7 @@ func TestBLSToExecChangesForInclusion(t *testing.T) {
 		pool := NewPool()
 		saveByte := signedChanges[1].Message.FromBlsPubkey[5]
 		signedChanges[1].Message.FromBlsPubkey[5] = 0xff
-		for i := uint64(0); i < numValidators; i++ {
+		for i := range numValidators {
 			pool.InsertBLSToExecChange(signedChanges[i])
 		}
 		changes, err := pool.BLSToExecChangesForInclusion(st)
@@ -149,7 +149,7 @@ func TestBLSToExecChangesForInclusion(t *testing.T) {
 	t.Run("One Bad Signature", func(t *testing.T) {
 		pool := NewPool()
 		copy(signedChanges[30].Signature, signedChanges[31].Signature)
-		for i := uint64(0); i < numValidators; i++ {
+		for i := range numValidators {
 			pool.InsertBLSToExecChange(signedChanges[i])
 		}
 		changes, err := pool.BLSToExecChangesForInclusion(st)

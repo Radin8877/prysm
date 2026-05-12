@@ -1,28 +1,27 @@
 package altair_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
 )
 
 func TestSyncCommitteeIndices_CanGet(t *testing.T) {
 	getState := func(t *testing.T, count uint64, vers int) state.BeaconState {
 		validators := make([]*ethpb.Validator, count)
-		for i := 0; i < len(validators); i++ {
+		for i := range validators {
 			validators[i] = &ethpb.Validator{
 				ExitEpoch:        params.BeaconConfig().FarFutureEpoch,
 				EffectiveBalance: params.BeaconConfig().MinDepositAmount,
@@ -97,7 +96,7 @@ func TestSyncCommitteeIndices_CanGet(t *testing.T) {
 				t.Run(version.String(v), func(t *testing.T) {
 					helpers.ClearCache()
 					st := getState(t, tt.args.validatorCount, v)
-					got, err := altair.NextSyncCommitteeIndices(context.Background(), st)
+					got, err := altair.NextSyncCommitteeIndices(t.Context(), st)
 					if tt.wantErr {
 						require.ErrorContains(t, tt.errString, err)
 					} else {
@@ -114,7 +113,7 @@ func TestSyncCommitteeIndices_DifferentPeriods(t *testing.T) {
 	helpers.ClearCache()
 	getState := func(t *testing.T, count uint64) state.BeaconState {
 		validators := make([]*ethpb.Validator, count)
-		for i := 0; i < len(validators); i++ {
+		for i := range validators {
 			validators[i] = &ethpb.Validator{
 				ExitEpoch:        params.BeaconConfig().FarFutureEpoch,
 				EffectiveBalance: params.BeaconConfig().MinDepositAmount,
@@ -129,18 +128,18 @@ func TestSyncCommitteeIndices_DifferentPeriods(t *testing.T) {
 	}
 
 	st := getState(t, params.BeaconConfig().MaxValidatorsPerCommittee)
-	got1, err := altair.NextSyncCommitteeIndices(context.Background(), st)
+	got1, err := altair.NextSyncCommitteeIndices(t.Context(), st)
 	require.NoError(t, err)
 	require.NoError(t, st.SetSlot(params.BeaconConfig().SlotsPerEpoch))
-	got2, err := altair.NextSyncCommitteeIndices(context.Background(), st)
+	got2, err := altair.NextSyncCommitteeIndices(t.Context(), st)
 	require.NoError(t, err)
 	require.DeepNotEqual(t, got1, got2)
 	require.NoError(t, st.SetSlot(params.BeaconConfig().SlotsPerEpoch*primitives.Slot(params.BeaconConfig().EpochsPerSyncCommitteePeriod)))
-	got2, err = altair.NextSyncCommitteeIndices(context.Background(), st)
+	got2, err = altair.NextSyncCommitteeIndices(t.Context(), st)
 	require.NoError(t, err)
 	require.DeepNotEqual(t, got1, got2)
 	require.NoError(t, st.SetSlot(params.BeaconConfig().SlotsPerEpoch*primitives.Slot(2*params.BeaconConfig().EpochsPerSyncCommitteePeriod)))
-	got2, err = altair.NextSyncCommitteeIndices(context.Background(), st)
+	got2, err = altair.NextSyncCommitteeIndices(t.Context(), st)
 	require.NoError(t, err)
 	require.DeepNotEqual(t, got1, got2)
 }
@@ -148,7 +147,7 @@ func TestSyncCommitteeIndices_DifferentPeriods(t *testing.T) {
 func TestSyncCommittee_CanGet(t *testing.T) {
 	getState := func(t *testing.T, count uint64) state.BeaconState {
 		validators := make([]*ethpb.Validator, count)
-		for i := 0; i < len(validators); i++ {
+		for i := range validators {
 			blsKey, err := bls.RandKey()
 			require.NoError(t, err)
 			validators[i] = &ethpb.Validator{
@@ -206,7 +205,7 @@ func TestSyncCommittee_CanGet(t *testing.T) {
 			if !tt.wantErr {
 				require.NoError(t, tt.args.state.SetSlot(primitives.Slot(tt.args.epoch)*params.BeaconConfig().SlotsPerEpoch))
 			}
-			got, err := altair.NextSyncCommittee(context.Background(), tt.args.state)
+			got, err := altair.NextSyncCommittee(t.Context(), tt.args.state)
 			if tt.wantErr {
 				require.ErrorContains(t, tt.errString, err)
 			} else {
@@ -270,7 +269,7 @@ func TestValidateNilSyncContribution(t *testing.T) {
 func TestSyncSubCommitteePubkeys_CanGet(t *testing.T) {
 	helpers.ClearCache()
 	st := getState(t, params.BeaconConfig().MaxValidatorsPerCommittee)
-	com, err := altair.NextSyncCommittee(context.Background(), st)
+	com, err := altair.NextSyncCommittee(t.Context(), st)
 	require.NoError(t, err)
 	sub, err := altair.SyncSubCommitteePubkeys(com, 0)
 	require.NoError(t, err)
@@ -395,7 +394,7 @@ func Test_ValidateSyncMessageTime(t *testing.T) {
 
 func getState(t *testing.T, count uint64) state.BeaconState {
 	validators := make([]*ethpb.Validator, count)
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		blsKey, err := bls.RandKey()
 		require.NoError(t, err)
 		validators[i] = &ethpb.Validator{

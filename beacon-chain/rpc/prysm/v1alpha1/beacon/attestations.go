@@ -6,19 +6,19 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/prysmaticlabs/prysm/v5/api/pagination"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filters"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/attestations"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
+	"github.com/OffchainLabs/prysm/v7/api/pagination"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filters"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/attestations"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -49,6 +49,8 @@ func mapAttestationsByTargetRoot(atts []ethpb.Att) map[[32]byte][]ethpb.Att {
 	return attsMap
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ListAttestations retrieves attestations by block root, slot, or epoch.
 // Attestations are sorted by data slot by default.
 //
@@ -113,6 +115,8 @@ func (bs *Server) ListAttestations(
 	}, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ListAttestationsElectra retrieves attestations by block root, slot, or epoch.
 // Attestations are sorted by data slot by default.
 //
@@ -176,6 +180,8 @@ func (bs *Server) ListAttestationsElectra(ctx context.Context, req *ethpb.ListAt
 	}, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ListIndexedAttestations retrieves indexed attestations by block root.
 // IndexedAttestationsForEpoch are sorted by data slot by default. Start-end epoch
 // filter is used to retrieve blocks with.
@@ -236,6 +242,8 @@ func (bs *Server) ListIndexedAttestations(
 	}, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ListIndexedAttestationsElectra retrieves indexed attestations by block root.
 // IndexedAttestationsForEpoch are sorted by data slot by default. Start-end epoch
 // filter is used to retrieve blocks with.
@@ -297,6 +305,8 @@ func (bs *Server) ListIndexedAttestationsElectra(
 	}, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // AttestationPool retrieves pending attestations.
 //
 // The server returns a list of attestations that have been seen but not
@@ -305,7 +315,7 @@ func (bs *Server) ListIndexedAttestationsElectra(
 // that it was included in a block. The attestation may have expired.
 // Refer to the ethereum consensus specification for more details on how
 // attestations are processed and when they are no longer valid.
-// https://github.com/ethereum/consensus-specs/blob/dev/specs/phase0/beacon-chain.md#attestations
+// https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/beacon-chain.md#attestations
 func (bs *Server) AttestationPool(_ context.Context, req *ethpb.AttestationPoolRequest) (*ethpb.AttestationPoolResponse, error) {
 	var atts []*ethpb.Attestation
 	var err error
@@ -340,6 +350,7 @@ func (bs *Server) AttestationPool(_ context.Context, req *ethpb.AttestationPoolR
 	}, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
 func (bs *Server) AttestationPoolElectra(_ context.Context, req *ethpb.AttestationPoolRequest) (*ethpb.AttestationPoolElectraResponse, error) {
 	var atts []*ethpb.AttestationElectra
 	var err error
@@ -422,7 +433,7 @@ func blockIndexedAttestations[T ethpb.IndexedAtt](
 	mappedAttestations := mapAttestationsByTargetRoot(attsArray)
 	indexed := make([]T, 0, numAttestations)
 	for targetRoot, atts := range mappedAttestations {
-		attState, err := stateGen.StateByRoot(ctx, targetRoot)
+		attState, err := stateGen.StateByRootNoCopy(ctx, targetRoot)
 		if err != nil && strings.Contains(err.Error(), "unknown state summary") {
 			// We shouldn't stop the request if we encounter an attestation we don't have the state for.
 			log.Debugf("Could not get state for attestation target root %#x", targetRoot)
@@ -435,7 +446,7 @@ func blockIndexedAttestations[T ethpb.IndexedAtt](
 				err,
 			)
 		}
-		for i := 0; i < len(atts); i++ {
+		for i := range atts {
 			att := atts[i]
 			committee, err := helpers.BeaconCommitteeFromState(ctx, attState, att.GetData().Slot, att.GetData().CommitteeIndex)
 			if err != nil {

@@ -4,37 +4,36 @@ package sync
 
 import (
 	"bytes"
-	"context"
 	"reflect"
 	"testing"
 	"time"
 
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	lruwrpr "github.com/OffchainLabs/prysm/v7/cache/lru"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
 	gcache "github.com/patrickmn/go-cache"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	lruwrpr "github.com/prysmaticlabs/prysm/v5/cache/lru"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func FuzzValidateBeaconBlockPubSub_Phase0(f *testing.F) {
 	db := dbtest.SetupDB(f)
 	p := p2ptest.NewFuzzTestP2P()
-	ctx := context.Background()
+	ctx := f.Context()
 	beaconState, privKeys := util.DeterministicGenesisState(f, 100)
 	parentBlock := util.NewBeaconBlock()
 	util.SaveBlock(f, ctx, db, parentBlock)
@@ -80,7 +79,7 @@ func FuzzValidateBeaconBlockPubSub_Phase0(f *testing.F) {
 	buf := new(bytes.Buffer)
 	_, err = p.Encoding().EncodeGossip(buf, msg)
 	require.NoError(f, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(msg)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedBeaconBlock]()]
 	digest, err := r.currentForkDigest()
 	assert.NoError(f, err)
 	topic = r.addDigestToTopic(topic, digest)
@@ -100,6 +99,7 @@ func FuzzValidateBeaconBlockPubSub_Phase0(f *testing.F) {
 		}
 		r.cfg.chain = cService
 		r.cfg.blockNotifier = cService.BlockNotifier()
+		r.cfg.operationNotifier = cService.OperationNotifier()
 		strTop := string(topic)
 		msg := &pubsub.Message{
 			Message: &pb.Message{
@@ -116,7 +116,7 @@ func FuzzValidateBeaconBlockPubSub_Phase0(f *testing.F) {
 func FuzzValidateBeaconBlockPubSub_Altair(f *testing.F) {
 	db := dbtest.SetupDB(f)
 	p := p2ptest.NewFuzzTestP2P()
-	ctx := context.Background()
+	ctx := f.Context()
 	beaconState, privKeys := util.DeterministicGenesisStateAltair(f, 100)
 	parentBlock := util.NewBeaconBlockAltair()
 	util.SaveBlock(f, ctx, db, parentBlock)
@@ -146,13 +146,14 @@ func FuzzValidateBeaconBlockPubSub_Altair(f *testing.F) {
 	}
 	r := &Service{
 		cfg: &config{
-			beaconDB:      db,
-			p2p:           p,
-			initialSync:   &mockSync.Sync{IsSyncing: false},
-			chain:         chainService,
-			blockNotifier: chainService.BlockNotifier(),
-			stateGen:      stateGen,
-			clock:         startup.NewClock(chainService.Genesis, chainService.ValidatorsRoot),
+			beaconDB:          db,
+			p2p:               p,
+			initialSync:       &mockSync.Sync{IsSyncing: false},
+			chain:             chainService,
+			clock:             startup.NewClock(chainService.Genesis, chainService.ValidatorsRoot),
+			blockNotifier:     chainService.BlockNotifier(),
+			operationNotifier: chainService.OperationNotifier(),
+			stateGen:          stateGen,
 		},
 		seenBlockCache:      lruwrpr.New(10),
 		badBlockCache:       lruwrpr.New(10),
@@ -162,7 +163,7 @@ func FuzzValidateBeaconBlockPubSub_Altair(f *testing.F) {
 	buf := new(bytes.Buffer)
 	_, err = p.Encoding().EncodeGossip(buf, msg)
 	require.NoError(f, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(msg)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedBeaconBlock]()]
 	digest, err := r.currentForkDigest()
 	assert.NoError(f, err)
 	topic = r.addDigestToTopic(topic, digest)
@@ -182,6 +183,7 @@ func FuzzValidateBeaconBlockPubSub_Altair(f *testing.F) {
 		}
 		r.cfg.chain = cService
 		r.cfg.blockNotifier = cService.BlockNotifier()
+		r.cfg.operationNotifier = cService.OperationNotifier()
 		strTop := string(topic)
 		msg := &pubsub.Message{
 			Message: &pb.Message{
@@ -198,7 +200,7 @@ func FuzzValidateBeaconBlockPubSub_Altair(f *testing.F) {
 func FuzzValidateBeaconBlockPubSub_Bellatrix(f *testing.F) {
 	db := dbtest.SetupDB(f)
 	p := p2ptest.NewFuzzTestP2P()
-	ctx := context.Background()
+	ctx := f.Context()
 	beaconState, privKeys := util.DeterministicGenesisStateBellatrix(f, 100)
 	parentBlock := util.NewBeaconBlockBellatrix()
 	util.SaveBlock(f, ctx, db, parentBlock)
@@ -228,13 +230,14 @@ func FuzzValidateBeaconBlockPubSub_Bellatrix(f *testing.F) {
 	}
 	r := &Service{
 		cfg: &config{
-			beaconDB:      db,
-			p2p:           p,
-			initialSync:   &mockSync.Sync{IsSyncing: false},
-			chain:         chainService,
-			clock:         startup.NewClock(chainService.Genesis, chainService.ValidatorsRoot),
-			blockNotifier: chainService.BlockNotifier(),
-			stateGen:      stateGen,
+			beaconDB:          db,
+			p2p:               p,
+			initialSync:       &mockSync.Sync{IsSyncing: false},
+			chain:             chainService,
+			clock:             startup.NewClock(chainService.Genesis, chainService.ValidatorsRoot),
+			blockNotifier:     chainService.BlockNotifier(),
+			operationNotifier: chainService.OperationNotifier(),
+			stateGen:          stateGen,
 		},
 		seenBlockCache:      lruwrpr.New(10),
 		badBlockCache:       lruwrpr.New(10),
@@ -244,7 +247,7 @@ func FuzzValidateBeaconBlockPubSub_Bellatrix(f *testing.F) {
 	buf := new(bytes.Buffer)
 	_, err = p.Encoding().EncodeGossip(buf, msg)
 	require.NoError(f, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(msg)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedBeaconBlock]()]
 	digest, err := r.currentForkDigest()
 	assert.NoError(f, err)
 	topic = r.addDigestToTopic(topic, digest)
@@ -264,6 +267,7 @@ func FuzzValidateBeaconBlockPubSub_Bellatrix(f *testing.F) {
 		}
 		r.cfg.chain = cService
 		r.cfg.blockNotifier = cService.BlockNotifier()
+		r.cfg.operationNotifier = cService.OperationNotifier()
 		strTop := string(topic)
 		msg := &pubsub.Message{
 			Message: &pb.Message{

@@ -5,17 +5,17 @@ import (
 	"math"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	libp2pcore "github.com/libp2p/go-libp2p/core"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 func (s *Service) streamBlobBatch(ctx context.Context, batch blockBatch, wQuota uint64, stream libp2pcore.Stream) (uint64, error) {
@@ -27,14 +27,10 @@ func (s *Service) streamBlobBatch(ctx context.Context, batch blockBatch, wQuota 
 	defer span.End()
 	for _, b := range batch.canonical() {
 		root := b.Root()
-		idxs, err := s.cfg.blobStorage.Indices(b.Root(), b.Block().Slot())
-		if err != nil {
-			s.writeErrorResponseToStream(responseCodeServerError, p2ptypes.ErrGeneric.Error(), stream)
-			return wQuota, errors.Wrapf(err, "could not retrieve sidecars for block root %#x", root)
-		}
-		for i, l := uint64(0), uint64(len(idxs)); i < l; i++ {
+		idxs := s.cfg.blobStorage.Summary(root)
+		for i := range idxs.MaxBlobsForEpoch() {
 			// index not available, skip
-			if !idxs[i] {
+			if !idxs.HasIndex(i) {
 				continue
 			}
 			// We won't check for file not found since the .Indices method should normally prevent that from happening.
@@ -44,7 +40,7 @@ func (s *Service) streamBlobBatch(ctx context.Context, batch blockBatch, wQuota 
 				return wQuota, errors.Wrapf(err, "could not retrieve sidecar: index %d, block root %#x", i, root)
 			}
 			SetStreamWriteDeadline(stream, defaultWriteDuration)
-			if chunkErr := WriteBlobSidecarChunk(stream, s.cfg.chain, s.cfg.p2p.Encoding(), sc); chunkErr != nil {
+			if chunkErr := WriteBlobSidecarChunk(stream, s.cfg.clock, s.cfg.p2p.Encoding(), sc); chunkErr != nil {
 				log.WithError(chunkErr).Debug("Could not send a chunked response")
 				s.writeErrorResponseToStream(responseCodeServerError, p2ptypes.ErrGeneric.Error(), stream)
 				tracing.AnnotateError(span, chunkErr)
@@ -61,8 +57,10 @@ func (s *Service) streamBlobBatch(ctx context.Context, batch blockBatch, wQuota 
 	return wQuota, nil
 }
 
+var blobRpcThrottleInterval = time.Second
+
 // blobsSidecarsByRangeRPCHandler looks up the request blobs from the database from a given start slot index
-func (s *Service) blobSidecarsByRangeRPCHandler(ctx context.Context, msg interface{}, stream libp2pcore.Stream) error {
+func (s *Service) blobSidecarsByRangeRPCHandler(ctx context.Context, msg any, stream libp2pcore.Stream) error {
 	var err error
 	ctx, span := trace.StartSpan(ctx, "sync.BlobsSidecarsByRangeHandler")
 	defer span.End()
@@ -78,20 +76,23 @@ func (s *Service) blobSidecarsByRangeRPCHandler(ctx context.Context, msg interfa
 	if err := s.rateLimiter.validateRequest(stream, 1); err != nil {
 		return err
 	}
-	rp, err := validateBlobsByRange(r, s.cfg.chain.CurrentSlot())
+
+	remotePeer := stream.Conn().RemotePeer()
+
+	rp, err := validateBlobsByRange(r, s.cfg.clock.CurrentSlot())
 	if err != nil {
 		s.writeErrorResponseToStream(responseCodeInvalidRequest, err.Error(), stream)
-		s.cfg.p2p.Peers().Scorers().BadResponsesScorer().Increment(stream.Conn().RemotePeer())
+		s.downscorePeer(remotePeer, "blobSidecarsByRangeRpcHandlerValidationError")
 		tracing.AnnotateError(span, err)
 		return err
 	}
 
 	// Ticker to stagger out large requests.
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(blobRpcThrottleInterval)
 	defer ticker.Stop()
 	batcher, err := newBlockRangeBatcher(rp, s.cfg.beaconDB, s.rateLimiter, s.cfg.chain.IsCanonical, ticker)
 	if err != nil {
-		log.WithError(err).Info("error in BlobSidecarsByRange batch")
+		log.WithError(err).Error("Cannot create new block range batcher")
 		s.writeErrorResponseToStream(responseCodeServerError, p2ptypes.ErrGeneric.Error(), stream)
 		tracing.AnnotateError(span, err)
 		return err
@@ -100,7 +101,7 @@ func (s *Service) blobSidecarsByRangeRPCHandler(ctx context.Context, msg interfa
 	var batch blockBatch
 
 	wQuota := params.BeaconConfig().MaxRequestBlobSidecars
-	if slots.ToEpoch(s.cfg.chain.CurrentSlot()) >= params.BeaconConfig().ElectraForkEpoch {
+	if slots.ToEpoch(s.cfg.clock.CurrentSlot()) >= params.BeaconConfig().ElectraForkEpoch {
 		wQuota = params.BeaconConfig().MaxRequestBlobSidecarsElectra
 	}
 	for batch, ok = batcher.next(ctx, stream); ok; batch, ok = batcher.next(ctx, stream) {
@@ -116,7 +117,7 @@ func (s *Service) blobSidecarsByRangeRPCHandler(ctx context.Context, msg interfa
 		}
 	}
 	if err := batch.error(); err != nil {
-		log.WithError(err).Debug("error in BlobSidecarsByRange batch")
+		log.WithError(err).Debug("Error in BlobSidecarsByRange batch")
 
 		// If a rate limit is hit, it means an error response has already been sent and the stream has been closed.
 		if !errors.Is(err, p2ptypes.ErrRateLimited) {
@@ -148,9 +149,14 @@ func BlobRPCMinValidSlot(current primitives.Slot) (primitives.Slot, error) {
 	return slots.EpochStart(minStart)
 }
 
+// This function is used to derive what is the ideal block batch size we can serve
+// blobs to the remote peer for. We compute the current limit which is the maximum
+// blobs to be served to the peer every period. And then using the maximum blobs per
+// block determine the block batch size satisfying this limit.
 func blobBatchLimit(slot primitives.Slot) uint64 {
 	maxBlobsPerBlock := params.BeaconConfig().MaxBlobsPerBlock(slot)
-	return uint64(flags.Get().BlockBatchLimit / maxBlobsPerBlock)
+	maxPossibleBlobs := flags.Get().BlobBatchLimit * flags.Get().BlobBatchLimitBurstFactor
+	return uint64(maxPossibleBlobs / maxBlobsPerBlock)
 }
 
 func validateBlobsByRange(r *pb.BlobSidecarsByRangeRequest, current primitives.Slot) (rangeParams, error) {
@@ -203,10 +209,7 @@ func validateBlobsByRange(r *pb.BlobSidecarsByRangeRequest, current primitives.S
 		rp.end = rp.start
 	}
 
-	limit := blobBatchLimit(current)
-	if limit > maxRequest {
-		limit = maxRequest
-	}
+	limit := min(blobBatchLimit(current), maxRequest)
 	if rp.size > limit {
 		rp.size = limit
 	}

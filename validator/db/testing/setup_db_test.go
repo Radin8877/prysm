@@ -1,16 +1,15 @@
 package testing
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/filesystem"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/filesystem"
+	"github.com/OffchainLabs/prysm/v7/validator/db/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
 )
 
 func TestClearDB(t *testing.T) {
@@ -27,7 +26,7 @@ func TestClearDB(t *testing.T) {
 					PubKeys: nil,
 				})
 			} else {
-				testDB, err = kv.NewKVStore(context.Background(), t.TempDir(), &kv.Config{
+				testDB, err = kv.NewKVStore(t.Context(), t.TempDir(), &kv.Config{
 					PubKeys: nil,
 				})
 			}

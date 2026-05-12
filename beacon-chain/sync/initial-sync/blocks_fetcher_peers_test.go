@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers/scorers"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	leakybucket "github.com/OffchainLabs/prysm/v7/container/leaky-bucket"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers/scorers"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	leakybucket "github.com/prysmaticlabs/prysm/v5/container/leaky-bucket"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
 )
 
 func TestBlocksFetcher_selectFailOverPeer(t *testing.T) {
@@ -23,7 +23,7 @@ func TestBlocksFetcher_selectFailOverPeer(t *testing.T) {
 		excludedPID peer.ID
 		peers       []peer.ID
 	}
-	fetcher := newBlocksFetcher(context.Background(), &blocksFetcherConfig{})
+	fetcher := newBlocksFetcher(t.Context(), &blocksFetcherConfig{})
 	tests := []struct {
 		name    string
 		args    args
@@ -231,7 +231,7 @@ func TestBlocksFetcher_filterPeers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc, p2p, _ := initializeTestServices(t, []primitives.Slot{}, []*peerData{})
-			fetcher := newBlocksFetcher(context.Background(), &blocksFetcherConfig{
+			fetcher := newBlocksFetcher(t.Context(), &blocksFetcherConfig{
 				chain:                    mc,
 				p2p:                      p2p,
 				peerFilterCapacityWeight: tt.args.capacityWeight,
@@ -252,8 +252,8 @@ func TestBlocksFetcher_filterPeers(t *testing.T) {
 			peerStats := make(map[peer.ID]int, len(tt.want))
 			var filteredPIDs []peer.ID
 			var err error
-			for i := 0; i < 1000; i++ {
-				filteredPIDs = fetcher.filterPeers(context.Background(), peerIDs, tt.args.peersPercentage)
+			for range 1000 {
+				filteredPIDs = fetcher.filterPeers(t.Context(), peerIDs, tt.args.peersPercentage)
 				if len(filteredPIDs) <= 1 {
 					break
 				}
@@ -399,7 +399,7 @@ func TestBlocksFetcher_removeStalePeerLocks(t *testing.T) {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	fetcher := newBlocksFetcher(ctx, &blocksFetcherConfig{})
 

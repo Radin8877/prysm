@@ -4,18 +4,17 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers/peerdata"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	corenet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers/peerdata"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // ListTrustedPeer retrieves data about the node's trusted peers.
@@ -105,8 +104,7 @@ func (s *Server) RemoveTrustedPeer(w http.ResponseWriter, r *http.Request) {
 	_, span := trace.StartSpan(r.Context(), "node.RemoveTrustedPeer")
 	defer span.End()
 
-	segments := strings.Split(r.URL.Path, "/")
-	id := segments[len(segments)-1]
+	id := r.PathValue("peer_id")
 	peerId, err := peer.Decode(id)
 	if err != nil {
 		errJson := &httputil.DefaultJsonError{

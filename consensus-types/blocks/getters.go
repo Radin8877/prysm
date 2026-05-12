@@ -3,16 +3,16 @@ package blocks
 import (
 	"fmt"
 
+	field_params "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	consensus_types "github.com/OffchainLabs/prysm/v7/consensus-types"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
 	ssz "github.com/prysmaticlabs/fastssz"
-	field_params "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	consensus_types "github.com/prysmaticlabs/prysm/v5/consensus-types"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 // BeaconBlockIsNil checks if any composite field of input signed beacon block is nil.
@@ -80,6 +80,8 @@ func (b *SignedBeaconBlock) Copy() (interfaces.SignedBeaconBlock, error) {
 			return initBlindedSignedBlockFromProtoFulu(pb.(*eth.SignedBlindedBeaconBlockFulu).Copy())
 		}
 		return initSignedBlockFromProtoFulu(pb.(*eth.SignedBeaconBlockFulu).Copy())
+	case version.Gloas:
+		return initSignedBlockFromProtoGloas(eth.CopySignedBeaconBlockGloas(pb.(*eth.SignedBeaconBlockGloas)))
 	default:
 		return nil, errIncorrectBlockVersion
 	}
@@ -157,6 +159,10 @@ func (b *SignedBeaconBlock) PbGenericBlock() (*eth.GenericSignedBeaconBlock, err
 		return &eth.GenericSignedBeaconBlock{
 			Block: &eth.GenericSignedBeaconBlock_Fulu{Fulu: bc},
 		}, nil
+	case version.Gloas:
+		return &eth.GenericSignedBeaconBlock{
+			Block: &eth.GenericSignedBeaconBlock_Gloas{Gloas: pb.(*eth.SignedBeaconBlockGloas)},
+		}, nil
 	default:
 		return nil, errIncorrectBlockVersion
 	}
@@ -164,7 +170,7 @@ func (b *SignedBeaconBlock) PbGenericBlock() (*eth.GenericSignedBeaconBlock, err
 
 // ToBlinded converts a non-blinded block to its blinded equivalent.
 func (b *SignedBeaconBlock) ToBlinded() (interfaces.ReadOnlySignedBeaconBlock, error) {
-	if b.version < version.Bellatrix {
+	if b.version < version.Bellatrix || b.version >= version.Gloas {
 		return nil, ErrUnsupportedVersion
 	}
 	if b.IsBlinded() {
@@ -195,7 +201,7 @@ func (b *SignedBeaconBlock) ToBlinded() (interfaces.ReadOnlySignedBeaconBlock, e
 					ProposerIndex: b.block.proposerIndex,
 					ParentRoot:    b.block.parentRoot[:],
 					StateRoot:     b.block.stateRoot[:],
-					Body: &eth.BlindedBeaconBlockBodyFulu{
+					Body: &eth.BlindedBeaconBlockBodyElectra{
 						RandaoReveal:           b.block.body.randaoReveal[:],
 						Eth1Data:               b.block.body.eth1Data,
 						Graffiti:               b.block.body.graffiti[:],
@@ -376,7 +382,7 @@ func (b *SignedBeaconBlock) Version() int {
 
 // IsBlinded metadata on whether a block is blinded
 func (b *SignedBeaconBlock) IsBlinded() bool {
-	return b.version >= version.Bellatrix && b.block.body.executionPayload == nil
+	return b.version < version.Gloas && b.version >= version.Bellatrix && b.block.body.executionPayload == nil
 }
 
 // Header converts the underlying protobuf object from blinded block to header format.
@@ -437,6 +443,8 @@ func (b *SignedBeaconBlock) MarshalSSZ() ([]byte, error) {
 			return pb.(*eth.SignedBlindedBeaconBlockFulu).MarshalSSZ()
 		}
 		return pb.(*eth.SignedBeaconBlockFulu).MarshalSSZ()
+	case version.Gloas:
+		return pb.(*eth.SignedBeaconBlockGloas).MarshalSSZ()
 	default:
 		return []byte{}, errIncorrectBlockVersion
 	}
@@ -479,6 +487,8 @@ func (b *SignedBeaconBlock) MarshalSSZTo(dst []byte) ([]byte, error) {
 			return pb.(*eth.SignedBlindedBeaconBlockFulu).MarshalSSZTo(dst)
 		}
 		return pb.(*eth.SignedBeaconBlockFulu).MarshalSSZTo(dst)
+	case version.Gloas:
+		return pb.(*eth.SignedBeaconBlockGloas).MarshalSSZTo(dst)
 	default:
 		return []byte{}, errIncorrectBlockVersion
 	}
@@ -490,6 +500,7 @@ func (b *SignedBeaconBlock) MarshalSSZTo(dst []byte) ([]byte, error) {
 // of fastssz's SizeSSZ() interface function to avoid panicking.
 // Changing the signature causes very problematic issues with wealdtech deps.
 // For the time being panicking is preferable.
+// lint:nopanic -- Panic warning is communicated in godoc commentary.
 func (b *SignedBeaconBlock) SizeSSZ() int {
 	pb, err := b.Proto()
 	if err != nil {
@@ -525,12 +536,14 @@ func (b *SignedBeaconBlock) SizeSSZ() int {
 			return pb.(*eth.SignedBlindedBeaconBlockFulu).SizeSSZ()
 		}
 		return pb.(*eth.SignedBeaconBlockFulu).SizeSSZ()
+	case version.Gloas:
+		return pb.(*eth.SignedBeaconBlockGloas).SizeSSZ()
 	default:
 		panic(incorrectBlockVersion)
 	}
 }
 
-// UnmarshalSSZ unmarshals the signed beacon block from its relevant ssz form.
+// UnmarshalSSZ unmarshals the sitime/slots/slottime.gogned beacon block from its relevant ssz form.
 // nolint:gocognit
 func (b *SignedBeaconBlock) UnmarshalSSZ(buf []byte) error {
 	var newBlock *SignedBeaconBlock
@@ -665,6 +678,16 @@ func (b *SignedBeaconBlock) UnmarshalSSZ(buf []byte) error {
 				return err
 			}
 		}
+	case version.Gloas:
+		pb := &eth.SignedBeaconBlockGloas{}
+		err := pb.UnmarshalSSZ(buf)
+		if err != nil {
+			return err
+		}
+		newBlock, err = initSignedBlockFromProtoGloas(pb)
+		if err != nil {
+			return err
+		}
 	default:
 		return errIncorrectBlockVersion
 	}
@@ -704,7 +727,7 @@ func (b *BeaconBlock) IsNil() bool {
 
 // IsBlinded checks if the beacon block is a blinded block.
 func (b *BeaconBlock) IsBlinded() bool {
-	return b.version >= version.Bellatrix && b.body.executionPayload == nil
+	return b.version < version.Gloas && b.version >= version.Bellatrix && b.body.executionPayload == nil
 }
 
 // Version of the underlying protobuf object.
@@ -747,7 +770,10 @@ func (b *BeaconBlock) HashTreeRoot() ([field_params.RootLength]byte, error) {
 		if b.IsBlinded() {
 			return pb.(*eth.BlindedBeaconBlockFulu).HashTreeRoot()
 		}
-		return pb.(*eth.BeaconBlockFulu).HashTreeRoot()
+		return pb.(*eth.BeaconBlockElectra).HashTreeRoot()
+	case version.Gloas:
+		return pb.(*eth.BeaconBlockGloas).HashTreeRoot()
+
 	default:
 		return [field_params.RootLength]byte{}, errIncorrectBlockVersion
 	}
@@ -788,7 +814,9 @@ func (b *BeaconBlock) HashTreeRootWith(h *ssz.Hasher) error {
 		if b.IsBlinded() {
 			return pb.(*eth.BlindedBeaconBlockFulu).HashTreeRootWith(h)
 		}
-		return pb.(*eth.BeaconBlockFulu).HashTreeRootWith(h)
+		return pb.(*eth.BeaconBlockElectra).HashTreeRootWith(h)
+	case version.Gloas:
+		return pb.(*eth.BeaconBlockGloas).HashTreeRootWith(h)
 	default:
 		return errIncorrectBlockVersion
 	}
@@ -830,7 +858,9 @@ func (b *BeaconBlock) MarshalSSZ() ([]byte, error) {
 		if b.IsBlinded() {
 			return pb.(*eth.BlindedBeaconBlockFulu).MarshalSSZ()
 		}
-		return pb.(*eth.BeaconBlockFulu).MarshalSSZ()
+		return pb.(*eth.BeaconBlockElectra).MarshalSSZ()
+	case version.Gloas:
+		return pb.(*eth.BeaconBlockGloas).MarshalSSZ()
 	default:
 		return []byte{}, errIncorrectBlockVersion
 	}
@@ -872,7 +902,9 @@ func (b *BeaconBlock) MarshalSSZTo(dst []byte) ([]byte, error) {
 		if b.IsBlinded() {
 			return pb.(*eth.BlindedBeaconBlockFulu).MarshalSSZTo(dst)
 		}
-		return pb.(*eth.BeaconBlockFulu).MarshalSSZTo(dst)
+		return pb.(*eth.BeaconBlockElectra).MarshalSSZTo(dst)
+	case version.Gloas:
+		return pb.(*eth.BeaconBlockGloas).MarshalSSZTo(dst)
 	default:
 		return []byte{}, errIncorrectBlockVersion
 	}
@@ -884,6 +916,7 @@ func (b *BeaconBlock) MarshalSSZTo(dst []byte) ([]byte, error) {
 // of fastssz's SizeSSZ() interface function to avoid panicking.
 // Changing the signature causes very problematic issues with wealdtech deps.
 // For the time being panicking is preferable.
+// lint:nopanic -- Panic is communicated in godoc.
 func (b *BeaconBlock) SizeSSZ() int {
 	pb, err := b.Proto()
 	if err != nil {
@@ -918,7 +951,9 @@ func (b *BeaconBlock) SizeSSZ() int {
 		if b.IsBlinded() {
 			return pb.(*eth.BlindedBeaconBlockFulu).SizeSSZ()
 		}
-		return pb.(*eth.BeaconBlockFulu).SizeSSZ()
+		return pb.(*eth.BeaconBlockElectra).SizeSSZ()
+	case version.Gloas:
+		return pb.(*eth.BeaconBlockGloas).SizeSSZ()
 	default:
 		panic(incorrectBodyVersion)
 	}
@@ -1049,7 +1084,7 @@ func (b *BeaconBlock) UnmarshalSSZ(buf []byte) error {
 				return err
 			}
 		} else {
-			pb := &eth.BeaconBlockFulu{}
+			pb := &eth.BeaconBlockElectra{}
 			if err := pb.UnmarshalSSZ(buf); err != nil {
 				return err
 			}
@@ -1058,6 +1093,16 @@ func (b *BeaconBlock) UnmarshalSSZ(buf []byte) error {
 			if err != nil {
 				return err
 			}
+		}
+	case version.Gloas:
+		pb := &eth.BeaconBlockGloas{}
+		if err := pb.UnmarshalSSZ(buf); err != nil {
+			return err
+		}
+		var err error
+		newBlock, err = initBlockFromProtoGloas(pb)
+		if err != nil {
+			return err
 		}
 	default:
 		return errIncorrectBlockVersion
@@ -1101,7 +1146,9 @@ func (b *BeaconBlock) AsSignRequestObject() (validatorpb.SignRequestObject, erro
 		if b.IsBlinded() {
 			return &validatorpb.SignRequest_BlindedBlockFulu{BlindedBlockFulu: pb.(*eth.BlindedBeaconBlockFulu)}, nil
 		}
-		return &validatorpb.SignRequest_BlockFulu{BlockFulu: pb.(*eth.BeaconBlockFulu)}, nil
+		return &validatorpb.SignRequest_BlockFulu{BlockFulu: pb.(*eth.BeaconBlockElectra)}, nil
+	case version.Gloas:
+		return &validatorpb.SignRequest_BlockGloas{BlockGloas: pb.(*eth.BeaconBlockGloas)}, nil
 	default:
 		return nil, errIncorrectBlockVersion
 	}
@@ -1198,15 +1245,13 @@ func (b *BeaconBlockBody) SyncAggregate() (*eth.SyncAggregate, error) {
 
 // Execution returns the execution payload of the block body.
 func (b *BeaconBlockBody) Execution() (interfaces.ExecutionData, error) {
-	switch b.version {
-	case version.Phase0, version.Altair:
+	if b.version <= version.Altair || b.version >= version.Gloas {
 		return nil, consensus_types.ErrNotSupported("Execution", b.version)
-	default:
-		if b.IsBlinded() {
-			return b.executionPayloadHeader, nil
-		}
-		return b.executionPayload, nil
 	}
+	if b.IsBlinded() {
+		return b.executionPayloadHeader, nil
+	}
+	return b.executionPayload, nil
 }
 
 func (b *BeaconBlockBody) BLSToExecutionChanges() ([]*eth.SignedBLSToExecutionChange, error) {
@@ -1218,23 +1263,52 @@ func (b *BeaconBlockBody) BLSToExecutionChanges() ([]*eth.SignedBLSToExecutionCh
 
 // BlobKzgCommitments returns the blob kzg commitments in the block.
 func (b *BeaconBlockBody) BlobKzgCommitments() ([][]byte, error) {
+	if b.version >= version.Gloas {
+		signedBid, err := b.SignedExecutionPayloadBid()
+		if err != nil {
+			return nil, err
+		}
+		return signedBid.Message.BlobKzgCommitments, nil
+	}
 	if b.version >= version.Deneb {
 		return b.blobKzgCommitments, nil
 	}
-
 	if b.version >= version.Phase0 {
 		return nil, consensus_types.ErrNotSupported("BlobKzgCommitments", b.version)
 	}
-
 	return nil, errIncorrectBlockVersion
 }
 
 // ExecutionRequests returns the execution requests
 func (b *BeaconBlockBody) ExecutionRequests() (*enginev1.ExecutionRequests, error) {
-	if b.version < version.Electra {
+	if b.version < version.Electra || b.version >= version.Gloas {
 		return nil, consensus_types.ErrNotSupported("ExecutionRequests", b.version)
 	}
 	return b.executionRequests, nil
+}
+
+// PayloadAttestations returns the payload attestations in the block.
+func (b *BeaconBlockBody) PayloadAttestations() ([]*eth.PayloadAttestation, error) {
+	if b.version >= version.Gloas {
+		return b.payloadAttestations, nil
+	}
+	return nil, consensus_types.ErrNotSupported("PayloadAttestations", b.version)
+}
+
+// SignedExecutionPayloadBid returns the signed execution payload header in the block.
+func (b *BeaconBlockBody) SignedExecutionPayloadBid() (*eth.SignedExecutionPayloadBid, error) {
+	if b.version >= version.Gloas {
+		return b.signedExecutionPayloadBid, nil
+	}
+	return nil, consensus_types.ErrNotSupported("SignedExecutionPayloadBid", b.version)
+}
+
+// ParentExecutionRequests returns the parent's deferred execution requests.
+func (b *BeaconBlockBody) ParentExecutionRequests() (*enginev1.ExecutionRequests, error) {
+	if b.version >= version.Gloas {
+		return b.parentExecutionRequests, nil
+	}
+	return nil, consensus_types.ErrNotSupported("ParentExecutionRequests", b.version)
 }
 
 // Version returns the version of the beacon block body
@@ -1275,9 +1349,11 @@ func (b *BeaconBlockBody) HashTreeRoot() ([field_params.RootLength]byte, error) 
 		return pb.(*eth.BeaconBlockBodyElectra).HashTreeRoot()
 	case version.Fulu:
 		if b.IsBlinded() {
-			return pb.(*eth.BlindedBeaconBlockBodyFulu).HashTreeRoot()
+			return pb.(*eth.BlindedBeaconBlockBodyElectra).HashTreeRoot()
 		}
-		return pb.(*eth.BeaconBlockBodyFulu).HashTreeRoot()
+		return pb.(*eth.BeaconBlockBodyElectra).HashTreeRoot()
+	case version.Gloas:
+		return pb.(*eth.BeaconBlockBodyGloas).HashTreeRoot()
 	default:
 		return [field_params.RootLength]byte{}, errIncorrectBodyVersion
 	}
@@ -1285,5 +1361,5 @@ func (b *BeaconBlockBody) HashTreeRoot() ([field_params.RootLength]byte, error) 
 
 // IsBlinded checks if the beacon block body is a blinded block body.
 func (b *BeaconBlockBody) IsBlinded() bool {
-	return b.version >= version.Bellatrix && b.executionPayload == nil
+	return b.version < version.Gloas && b.version >= version.Bellatrix && b.executionPayload == nil
 }

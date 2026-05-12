@@ -1,20 +1,19 @@
 package wallet
 
 import (
-	"context"
 	"flag"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/derived"
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/derived"
 	"github.com/urfave/cli/v2"
 )
 
@@ -72,7 +71,7 @@ func TestRecoverDerivedWallet(t *testing.T) {
 	cliCtx := createRecoverCliCtx(t, cfg)
 	require.NoError(t, walletRecover(cliCtx))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	w, err := wallet.OpenWallet(cliCtx.Context, &wallet.Config{
 		WalletDir:      cfg.walletDir,
 		WalletPassword: password,

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestJWTAuthTransport(t *testing.T) {
@@ -28,7 +28,7 @@ func TestJWTAuthTransport(t *testing.T) {
 		// The format should be `Bearer ${token}`.
 		require.Equal(t, 2, len(splitToken))
 		reqToken = strings.TrimSpace(splitToken[1])
-		token, err := jwt.Parse(reqToken, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.Parse(reqToken, func(token *jwt.Token) (any, error) {
 			// We should be doing HMAC signing.
 			_, ok := token.Method.(*jwt.SigningMethodHMAC)
 			require.Equal(t, true, ok)
@@ -70,7 +70,7 @@ func TestJWTWithId(t *testing.T) {
 		// The format should be `Bearer ${token}`.
 		require.Equal(t, 2, len(splitToken))
 		reqToken = strings.TrimSpace(splitToken[1])
-		token, err := jwt.Parse(reqToken, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.Parse(reqToken, func(token *jwt.Token) (any, error) {
 			// We should be doing HMAC signing.
 			_, ok := token.Method.(*jwt.SigningMethodHMAC)
 			require.Equal(t, true, ok)
@@ -114,7 +114,7 @@ func TestJWTWithoutId(t *testing.T) {
 		// The format should be `Bearer ${token}`.
 		require.Equal(t, 2, len(splitToken))
 		reqToken = strings.TrimSpace(splitToken[1])
-		token, err := jwt.Parse(reqToken, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.Parse(reqToken, func(token *jwt.Token) (any, error) {
 			// We should be doing HMAC signing.
 			_, ok := token.Method.(*jwt.SigningMethodHMAC)
 			require.Equal(t, true, ok)

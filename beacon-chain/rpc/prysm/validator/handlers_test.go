@@ -2,7 +2,6 @@ package validator
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -12,33 +11,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	dbTest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/testutil"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	blocktest "github.com/OffchainLabs/prysm/v7/consensus-types/blocks/testing"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	dbTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/testutil"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	blocktest "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks/testing"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 func addDefaultReplayerBuilder(s *Server, h stategen.HistoryAccessor) {
@@ -81,12 +80,12 @@ func TestServer_GetValidatorParticipation_CurrentAndPrevEpoch(t *testing.T) {
 	helpers.ClearCache()
 	beaconDB := dbTest.SetupDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	validatorCount := uint64(32)
 
 	validators := make([]*ethpb.Validator, validatorCount)
 	balances := make([]uint64, validatorCount)
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			PublicKey:             bytesutil.ToBytes(uint64(i), 48),
 			WithdrawalCredentials: make([]byte, 32),
@@ -185,12 +184,12 @@ func TestServer_GetValidatorParticipation_OrphanedUntilGenesis(t *testing.T) {
 	params.OverrideBeaconConfig(params.BeaconConfig())
 
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	validatorCount := uint64(100)
 
 	validators := make([]*ethpb.Validator, validatorCount)
 	balances := make([]uint64, validatorCount)
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			PublicKey:             bytesutil.ToBytes(uint64(i), 48),
 			WithdrawalCredentials: make([]byte, 32),
@@ -287,7 +286,7 @@ func TestServer_GetValidatorParticipation_CurrentAndPrevEpochWithBits(t *testing
 		validatorCount := uint64(32)
 		genState, _ := util.DeterministicGenesisStateAltair(t, validatorCount)
 
-		c, err := altair.NextSyncCommittee(context.Background(), genState)
+		c, err := altair.NextSyncCommittee(t.Context(), genState)
 		require.NoError(t, err)
 		require.NoError(t, genState.SetCurrentSyncCommittee(c))
 
@@ -305,7 +304,7 @@ func TestServer_GetValidatorParticipation_CurrentAndPrevEpochWithBits(t *testing
 	t.Run("bellatrix", func(t *testing.T) {
 		validatorCount := uint64(32)
 		genState, _ := util.DeterministicGenesisStateBellatrix(t, validatorCount)
-		c, err := altair.NextSyncCommittee(context.Background(), genState)
+		c, err := altair.NextSyncCommittee(t.Context(), genState)
 		require.NoError(t, err)
 		require.NoError(t, genState.SetCurrentSyncCommittee(c))
 
@@ -323,7 +322,7 @@ func TestServer_GetValidatorParticipation_CurrentAndPrevEpochWithBits(t *testing
 	t.Run("capella", func(t *testing.T) {
 		validatorCount := uint64(32)
 		genState, _ := util.DeterministicGenesisStateCapella(t, validatorCount)
-		c, err := altair.NextSyncCommittee(context.Background(), genState)
+		c, err := altair.NextSyncCommittee(t.Context(), genState)
 		require.NoError(t, err)
 		require.NoError(t, genState.SetCurrentSyncCommittee(c))
 
@@ -343,7 +342,7 @@ func runGetValidatorParticipationCurrentEpoch(t *testing.T, genState state.Beaco
 	helpers.ClearCache()
 	beaconDB := dbTest.SetupDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	validatorCount := uint64(32)
 
 	gsr, err := genState.HashTreeRoot(ctx)
@@ -441,13 +440,13 @@ func TestServer_GetValidatorActiveSetChanges_NoState(t *testing.T) {
 func TestServer_GetValidatorActiveSetChanges(t *testing.T) {
 	beaconDB := dbTest.SetupDB(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	validators := make([]*ethpb.Validator, 8)
 	headState, err := util.NewBeaconState()
 	require.NoError(t, err)
 	require.NoError(t, headState.SetSlot(0))
 	require.NoError(t, headState.SetValidators(validators))
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		activationEpoch := params.BeaconConfig().FarFutureEpoch
 		withdrawableEpoch := params.BeaconConfig().FarFutureEpoch
 		exitEpoch := params.BeaconConfig().FarFutureEpoch

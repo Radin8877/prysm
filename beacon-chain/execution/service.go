@@ -13,6 +13,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache/depositsnapshot"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/execution/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/verification"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	contracts "github.com/OffchainLabs/prysm/v7/contracts/deposit"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/clientstats"
+	"github.com/OffchainLabs/prysm/v7/network"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -20,26 +41,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/verification"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	contracts "github.com/prysmaticlabs/prysm/v5/contracts/deposit"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/clientstats"
-	"github.com/prysmaticlabs/prysm/v5/network"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -102,7 +103,7 @@ type Chain interface {
 type RPCClient interface {
 	Close()
 	BatchCall(b []gethRPC.BatchElem) error
-	CallContext(ctx context.Context, result interface{}, method string, args ...interface{}) error
+	CallContext(ctx context.Context, result any, method string, args ...any) error
 }
 
 type RPCClientEmpty struct {
@@ -113,7 +114,7 @@ func (RPCClientEmpty) BatchCall([]gethRPC.BatchElem) error {
 	return errors.New("rpc client is not initialized")
 }
 
-func (RPCClientEmpty) CallContext(context.Context, interface{}, string, ...interface{}) error {
+func (RPCClientEmpty) CallContext(context.Context, any, string, ...any) error {
 	return errors.New("rpc client is not initialized")
 }
 
@@ -141,6 +142,7 @@ type config struct {
 type Service struct {
 	connectedETH1           bool
 	isRunning               bool
+	depositRequestsStarted  bool
 	processingLock          sync.RWMutex
 	latestEth1DataLock      sync.RWMutex
 	cfg                     *config
@@ -160,6 +162,7 @@ type Service struct {
 	verifierWaiter          *verification.InitializerWaiter
 	blobVerifier            verification.NewBlobVerifier
 	capabilityCache         *capabilityCache
+	graffitiInfo            *GraffitiInfo
 }
 
 // NewService sets up a new instance with an ethclient when given a web3 endpoint as a string in the config.
@@ -205,7 +208,7 @@ func NewService(ctx context.Context, opts ...Option) (*Service, error) {
 			return nil, err
 		}
 	}
-
+	s.initDepositRequests()
 	eth1Data, err := s.validPowchainData(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to validate powchain data")
@@ -316,6 +319,28 @@ func (s *Service) updateConnectedETH1(state bool) {
 	s.updateBeaconNodeStats()
 }
 
+// GraffitiInfo returns the GraffitiInfo struct for graffiti generation.
+func (s *Service) GraffitiInfo() *GraffitiInfo {
+	return s.graffitiInfo
+}
+
+// updateGraffitiInfo fetches EL client version and updates the graffiti info.
+func (s *Service) updateGraffitiInfo() {
+	if s.graffitiInfo == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second)
+	defer cancel()
+	versions, err := s.GetClientVersion(ctx)
+	if err != nil {
+		log.WithError(err).Debug("Could not get execution client version for graffiti")
+		return
+	}
+	if len(versions) >= 1 {
+		s.graffitiInfo.UpdateFromEngine(versions[0].Code, versions[0].Commit)
+	}
+}
+
 // refers to the latest eth1 block which follows the condition: eth1_timestamp +
 // SECONDS_PER_ETH1_BLOCK * ETH1_FOLLOW_DISTANCE <= current_unix_time
 func (s *Service) followedBlockHeight(ctx context.Context) (uint64, error) {
@@ -424,7 +449,7 @@ func (s *Service) batchRequestHeaders(startBlock, endBlock uint64) ([]*types.Hea
 		header := &types.HeaderInfo{}
 		elems = append(elems, gethRPC.BatchElem{
 			Method: "eth_getBlockByNumber",
-			Args:   []interface{}{hexutil.EncodeBig(new(big.Int).SetUint64(i)), false},
+			Args:   []any{hexutil.EncodeBig(new(big.Int).SetUint64(i)), false},
 			Result: header,
 			Error:  error(nil),
 		})
@@ -463,7 +488,9 @@ func safelyHandlePanic() {
 func (s *Service) handleETH1FollowDistance() {
 	defer safelyHandlePanic()
 	ctx := s.ctx
-
+	if s.depositRequestsStarted {
+		return
+	}
 	// use a 5 minutes timeout for block time, because the max mining time is 278 sec (block 7208027)
 	// (analyzed the time of the block from 2018-09-01 to 2019-02-13)
 	fiveMinutesTimeout := prysmTime.Now().Add(-5 * time.Minute)
@@ -530,29 +557,31 @@ func (s *Service) initPOWService() {
 			s.latestEth1Data.BlockTime = header.Time
 			s.latestEth1DataLock.Unlock()
 
-			if err := s.processPastLogs(ctx); err != nil {
-				err = errors.Wrap(err, "processPastLogs")
-				s.retryExecutionClientConnection(ctx, err)
-				errorLogger(
-					err,
-					"Unable to process past deposit contract logs, perhaps your execution client is not fully synced",
-				)
-				continue
-			}
-			// Cache eth1 headers from our voting period.
-			if err := s.cacheHeadersForEth1DataVote(ctx); err != nil {
-				err = errors.Wrap(err, "cacheHeadersForEth1DataVote")
-				s.retryExecutionClientConnection(ctx, err)
-				if errors.Is(err, errBlockTimeTooLate) {
-					log.WithError(err).Debug("Unable to cache headers for execution client votes")
-				} else {
-					errorLogger(err, "Unable to cache headers for execution client votes")
+			if !s.depositRequestsStarted {
+				if err := s.processPastLogs(ctx); err != nil {
+					err = errors.Wrap(err, "processPastLogs")
+					s.retryExecutionClientConnection(ctx, err)
+					errorLogger(
+						err,
+						"Unable to process past deposit contract logs, perhaps your execution client is not fully synced",
+					)
+					continue
 				}
-				continue
+				// Cache eth1 headers from our voting period.
+				if err := s.cacheHeadersForEth1DataVote(ctx); err != nil {
+					err = errors.Wrap(err, "cacheHeadersForEth1DataVote")
+					s.retryExecutionClientConnection(ctx, err)
+					if errors.Is(err, errBlockTimeTooLate) {
+						log.WithError(err).Debug("Unable to cache headers for execution client votes")
+					} else {
+						errorLogger(err, "Unable to cache headers for execution client votes")
+					}
+					continue
+				}
 			}
 			// Handle edge case with embedded genesis state by fetching genesis header to determine
-			// its height.
-			if s.chainStartData.Chainstarted && s.chainStartData.GenesisBlock == 0 {
+			// its height only if the deposit requests have not started yet (Pre Pectra EIP-6110 behavior).
+			if s.chainStartData.Chainstarted && s.chainStartData.GenesisBlock == 0 && !s.depositRequestsStarted {
 				genHash := common.BytesToHash(s.chainStartData.Eth1Data.BlockHash)
 				genBlock := s.chainStartData.GenesisBlock
 				// In the event our provided chainstart data references a non-existent block hash,
@@ -592,6 +621,12 @@ func (s *Service) run(done <-chan struct{}) {
 	chainstartTicker := time.NewTicker(logPeriod)
 	defer chainstartTicker.Stop()
 
+	// Update graffiti info 4 times per epoch (~96 seconds with 12s slots and 32 slots/epoch)
+	graffitiTicker := time.NewTicker(96 * time.Second)
+	defer graffitiTicker.Stop()
+	// Initial update
+	s.updateGraffitiInfo()
+
 	for {
 		select {
 		case <-done:
@@ -616,6 +651,8 @@ func (s *Service) run(done <-chan struct{}) {
 				continue
 			}
 			s.logTillChainStart(context.Background())
+		case <-graffitiTicker.C:
+			s.updateGraffitiInfo()
 		}
 	}
 }
@@ -705,7 +742,7 @@ func (s *Service) cacheBlockHeaders(start, end uint64) error {
 // Determines the earliest voting block from which to start caching all our previous headers from.
 func (s *Service) determineEarliestVotingBlock(ctx context.Context, followBlock uint64) (uint64, error) {
 	genesisTime := s.chainStartData.GenesisTime
-	currSlot := slots.CurrentSlot(genesisTime)
+	currSlot := slots.CurrentSlot(time.Unix(int64(genesisTime), 0)) // lint:ignore uintcast -- Genesis time will never exceed int64 in seconds.
 
 	// In the event genesis has not occurred yet, we just request to go back follow_distance blocks.
 	if genesisTime == 0 || currSlot == 0 {
@@ -824,14 +861,14 @@ func (s *Service) validPowchainData(ctx context.Context) (*ethpb.ETH1ChainData, 
 	if genState == nil || genState.IsNil() {
 		return eth1Data, nil
 	}
-	if eth1Data == nil || !eth1Data.ChainstartData.Chainstarted || !validateDepositContainers(eth1Data.DepositContainers) {
+	if s.depositRequestsStarted || eth1Data == nil || !eth1Data.ChainstartData.Chainstarted || !validateDepositContainers(eth1Data.DepositContainers) {
 		pbState, err := native.ProtobufBeaconStatePhase0(s.preGenesisState.ToProtoUnsafe())
 		if err != nil {
 			return nil, err
 		}
 		s.chainStartData = &ethpb.ChainStartData{
 			Chainstarted:       true,
-			GenesisTime:        genState.GenesisTime(),
+			GenesisTime:        uint64(genState.GenesisTime().Unix()),
 			GenesisBlock:       0,
 			Eth1Data:           genState.Eth1Data(),
 			ChainstartDeposits: make([]*ethpb.Deposit, 0),
@@ -900,6 +937,15 @@ func (s *Service) removeStartupState() {
 	s.cfg.finalizedStateAtStartup = nil
 }
 
+func (s *Service) initDepositRequests() {
+	fState := s.cfg.finalizedStateAtStartup
+	isNil := fState == nil || fState.IsNil()
+	if isNil {
+		return
+	}
+	s.depositRequestsStarted = helpers.DepositRequestsStarted(fState)
+}
+
 func newBlobVerifierFromInitializer(ini *verification.Initializer) verification.NewBlobVerifier {
 	return func(b blocks.ROBlob, reqs []verification.Requirement) verification.BlobVerifier {
 		return ini.NewBlobVerifier(b, reqs)
@@ -907,7 +953,7 @@ func newBlobVerifierFromInitializer(ini *verification.Initializer) verification.
 }
 
 type capabilityCache struct {
-	capabilities     map[string]interface{}
+	capabilities     map[string]any
 	capabilitiesLock sync.RWMutex
 }
 
@@ -916,7 +962,7 @@ func (c *capabilityCache) save(cs []string) {
 	defer c.capabilitiesLock.Unlock()
 
 	if c.capabilities == nil {
-		c.capabilities = make(map[string]interface{})
+		c.capabilities = make(map[string]any)
 	}
 
 	for _, capability := range cs {

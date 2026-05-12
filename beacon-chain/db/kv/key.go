@@ -2,6 +2,13 @@ package kv
 
 import "bytes"
 
+func hasPhase0Key(enc []byte) bool {
+	if len(phase0Key) >= len(enc) {
+		return false
+	}
+	return bytes.Equal(enc[:len(phase0Key)], phase0Key)
+}
+
 // In order for an encoding to be Altair compatible, it must be prefixed with altair key.
 func hasAltairKey(enc []byte) bool {
 	if len(altairKey) >= len(enc) {
@@ -52,11 +59,12 @@ func hasDenebBlindKey(enc []byte) bool {
 	return bytes.Equal(enc[:len(denebBlindKey)], denebBlindKey)
 }
 
-func hasElectraKey(enc []byte) bool {
-	if len(electraKey) >= len(enc) {
+// HasElectraKey verifies if the encoding is Electra compatible.
+func HasElectraKey(enc []byte) bool {
+	if len(ElectraKey) >= len(enc) {
 		return false
 	}
-	return bytes.Equal(enc[:len(electraKey)], electraKey)
+	return bytes.Equal(enc[:len(ElectraKey)], ElectraKey)
 }
 
 func hasElectraBlindKey(enc []byte) bool {
@@ -78,4 +86,11 @@ func hasFuluBlindKey(enc []byte) bool {
 		return false
 	}
 	return bytes.Equal(enc[:len(fuluBlindKey)], fuluBlindKey)
+}
+
+func hasGloasKey(enc []byte) bool {
+	if len(gloasKey) >= len(enc) {
+		return false
+	}
+	return bytes.Equal(enc[:len(gloasKey)], gloasKey)
 }

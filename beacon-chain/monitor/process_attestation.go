@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,12 +33,18 @@ func (s *Service) canUpdateAttestedValidator(idx primitives.ValidatorIndex, slot
 }
 
 // attestingIndices returns the indices of validators that participated in the given aggregated attestation.
-func attestingIndices(ctx context.Context, state state.BeaconState, att ethpb.Att) ([]uint64, error) {
-	committee, err := helpers.BeaconCommitteeFromState(ctx, state, att.GetData().Slot, att.GetData().CommitteeIndex)
-	if err != nil {
-		return nil, err
+func attestingIndices(ctx context.Context, state state.ReadOnlyBeaconState, att ethpb.Att) ([]uint64, error) {
+	committeeBits := att.CommitteeBitsVal().BitIndices()
+	committees := make([][]primitives.ValidatorIndex, len(committeeBits))
+	var err error
+	for i, ci := range committeeBits {
+		committees[i], err = helpers.BeaconCommitteeFromState(ctx, state, att.GetData().Slot, primitives.CommitteeIndex(ci))
+		if err != nil {
+			return nil, err
+		}
 	}
-	return attestation.AttestingIndices(att, committee)
+
+	return attestation.AttestingIndices(att, committees...)
 }
 
 // logMessageTimelyFlagsForIndex returns the log message with performance info for the attestation (head, source, target)
@@ -53,7 +59,7 @@ func logMessageTimelyFlagsForIndex(idx primitives.ValidatorIndex, data *ethpb.At
 }
 
 // processAttestations logs the event for the tracked validators' attestations inclusion in block
-func (s *Service) processAttestations(ctx context.Context, state state.BeaconState, blk interfaces.ReadOnlyBeaconBlock) {
+func (s *Service) processAttestations(ctx context.Context, state state.ReadOnlyBeaconState, blk interfaces.ReadOnlyBeaconBlock) {
 	if blk == nil || blk.Body() == nil {
 		return
 	}
@@ -63,7 +69,7 @@ func (s *Service) processAttestations(ctx context.Context, state state.BeaconSta
 }
 
 // processIncludedAttestation logs in the event for the tracked validators' and their latest attestation gets processed.
-func (s *Service) processIncludedAttestation(ctx context.Context, state state.BeaconState, att ethpb.Att) {
+func (s *Service) processIncludedAttestation(ctx context.Context, state state.ReadOnlyBeaconState, att ethpb.Att) {
 	attestingIndices, err := attestingIndices(ctx, state, att)
 	if err != nil {
 		log.WithError(err).Error("Could not get attesting indices")
@@ -157,6 +163,23 @@ func (s *Service) processIncludedAttestation(ctx context.Context, state state.Be
 			s.aggregatedPerformance[primitives.ValidatorIndex(idx)] = aggregatedPerf
 			log.WithFields(logFields).Info("Attestation included")
 		}
+	}
+}
+
+// processSingleAttestation logs when the beacon node observes a single attestation from tracked validator.
+func (s *Service) processSingleAttestation(att ethpb.Att) {
+	s.RLock()
+	defer s.RUnlock()
+
+	single, ok := att.(*ethpb.SingleAttestation)
+	if !ok {
+		log.Errorf("Wrong attestation type (expected %T, got %T)", &ethpb.SingleAttestation{}, att)
+		return
+	}
+
+	if s.canUpdateAttestedValidator(single.AttesterIndex, single.GetData().Slot) {
+		logFields := logMessageTimelyFlagsForIndex(single.AttesterIndex, att.GetData())
+		log.WithFields(logFields).Info("Processed unaggregated attestation")
 	}
 }
 

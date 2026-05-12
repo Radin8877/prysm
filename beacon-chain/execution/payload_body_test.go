@@ -1,20 +1,19 @@
 package execution
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	pb "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 func payloadToBody(t *testing.T, ed interfaces.ExecutionData) *pb.ExecutionPayloadBody {
@@ -125,7 +124,7 @@ func TestPayloadBodiesViaUnblinder(t *testing.T) {
 			}
 			mockWriteResult(t, w, msg, executionPayloadBodies)
 		})
-		ctx := context.Background()
+		ctx := t.Context()
 
 		toUnblind := []interfaces.ReadOnlySignedBeaconBlock{
 			fx.denebBlock.blinded.block,
@@ -255,7 +254,7 @@ func TestComputeRanges(t *testing.T) {
 
 func TestReconstructBlindedBlockBatchFallbackToRange(t *testing.T) {
 	defer util.HackForksMaxuint(t, []int{version.Electra, version.Fulu})()
-	ctx := context.Background()
+	ctx := t.Context()
 	t.Run("fallback fails", func(t *testing.T) {
 		cli, srv := newMockEngine(t)
 		fx := testBlindedBlockFixtures(t)
@@ -353,7 +352,7 @@ func TestReconstructBlindedBlockBatchDenebAndBeyond(t *testing.T) {
 			fx.electra.blinded.block,
 			fx.fulu.blinded.block,
 		}
-		unblinded, err := reconstructBlindedBlockBatch(context.Background(), cli, blinded)
+		unblinded, err := reconstructBlindedBlockBatch(t.Context(), cli, blinded)
 		require.NoError(t, err)
 		require.Equal(t, len(blinded), len(unblinded))
 		for i := range unblinded {

@@ -1,7 +1,7 @@
 package testing
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 var _ slots.Ticker = (*MockTicker)(nil)

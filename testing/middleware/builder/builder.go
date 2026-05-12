@@ -14,6 +14,21 @@ import (
 	"sync"
 	"time"
 
+	builderAPI "github.com/OffchainLabs/prysm/v7/api/client/builder"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	types "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/network"
+	"github.com/OffchainLabs/prysm/v7/network/authorization"
+	v1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -21,21 +36,6 @@ import (
 	gethRPC "github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/pkg/errors"
-	builderAPI "github.com/prysmaticlabs/prysm/v5/api/client/builder"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	types "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/network"
-	"github.com/prysmaticlabs/prysm/v5/network/authorization"
-	v1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/sirupsen/logrus"
 )
 
@@ -67,18 +67,18 @@ var (
 )
 
 type jsonRPCObject struct {
-	Jsonrpc string        `json:"jsonrpc"`
-	Method  string        `json:"method"`
-	Params  []interface{} `json:"params"`
-	ID      uint64        `json:"id"`
-	Result  interface{}   `json:"result"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  []any  `json:"params"`
+	ID      uint64 `json:"id"`
+	Result  any    `json:"result"`
 }
 
 type ForkchoiceUpdatedResponse struct {
-	Jsonrpc string        `json:"jsonrpc"`
-	Method  string        `json:"method"`
-	Params  []interface{} `json:"params"`
-	ID      uint64        `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  []any  `json:"params"`
+	ID      uint64 `json:"id"`
 	Result  struct {
 		Status    *v1.PayloadStatus  `json:"payloadStatus"`
 		PayloadId *v1.PayloadIDBytes `json:"payloadId"`
@@ -363,7 +363,13 @@ func (p *Builder) handleHeaderRequest(w http.ResponseWriter, req *http.Request) 
 	gEth := big.NewInt(int64(params.BeaconConfig().GweiPerEth))
 	weiEth := gEth.Mul(gEth, gEth)
 	val := builderAPI.Uint256{Int: weiEth}
-	wrappedHdr := &builderAPI.ExecutionPayloadHeader{ExecutionPayloadHeader: hdr}
+
+	wrappedHdr, err := structs.ExecutionPayloadHeaderFromConsensus(hdr)
+	if err != nil {
+		p.cfg.logger.WithError(err).Error("Could not convert wrapped header")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	bid := &builderAPI.BuilderBid{
 		Header: wrappedHdr,
 		Value:  val,
@@ -399,7 +405,7 @@ func (p *Builder) handleHeaderRequest(w http.ResponseWriter, req *http.Request) 
 			Message:   bid,
 		},
 	}
-
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(hdrResp)
 	if err != nil {
 		p.cfg.logger.WithError(err).Error("Could not encode response")
@@ -408,7 +414,6 @@ func (p *Builder) handleHeaderRequest(w http.ResponseWriter, req *http.Request) 
 	}
 	p.currVersion = version.Bellatrix
 	p.currPayload = wObj
-	w.WriteHeader(http.StatusOK)
 }
 
 func (p *Builder) handleHeaderRequestCapella(w http.ResponseWriter) {
@@ -441,7 +446,12 @@ func (p *Builder) handleHeaderRequestCapella(w http.ResponseWriter) {
 		return
 	}
 	val := builderAPI.Uint256{Int: v}
-	wrappedHdr := &builderAPI.ExecutionPayloadHeaderCapella{ExecutionPayloadHeaderCapella: hdr}
+	wrappedHdr, err := structs.ExecutionPayloadHeaderCapellaFromConsensus(hdr)
+	if err != nil {
+		p.cfg.logger.WithError(err).Error("Could not make execution payload")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	bid := &builderAPI.BuilderBidCapella{
 		Header: wrappedHdr,
 		Value:  val,
@@ -477,7 +487,7 @@ func (p *Builder) handleHeaderRequestCapella(w http.ResponseWriter) {
 			Message:   bid,
 		},
 	}
-
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(hdrResp)
 	if err != nil {
 		p.cfg.logger.WithError(err).Error("Could not encode response")
@@ -486,7 +496,6 @@ func (p *Builder) handleHeaderRequestCapella(w http.ResponseWriter) {
 	}
 	p.currVersion = version.Capella
 	p.currPayload = wObj
-	w.WriteHeader(http.StatusOK)
 }
 
 func (p *Builder) handleHeaderRequestDeneb(w http.ResponseWriter) {
@@ -525,7 +534,12 @@ func (p *Builder) handleHeaderRequestDeneb(w http.ResponseWriter) {
 		copiedC := c
 		commitments = append(commitments, copiedC)
 	}
-	wrappedHdr := &builderAPI.ExecutionPayloadHeaderDeneb{ExecutionPayloadHeaderDeneb: hdr}
+	wrappedHdr, err := structs.ExecutionPayloadHeaderDenebFromConsensus(hdr)
+	if err != nil {
+		p.cfg.logger.WithError(err).Error("Could not make execution payload")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	bid := &builderAPI.BuilderBidDeneb{
 		Header:             wrappedHdr,
 		BlobKzgCommitments: commitments,
@@ -563,7 +577,7 @@ func (p *Builder) handleHeaderRequestDeneb(w http.ResponseWriter) {
 			Message:   bid,
 		},
 	}
-
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(hdrResp)
 	if err != nil {
 		p.cfg.logger.WithError(err).Error("Could not encode response")
@@ -573,7 +587,6 @@ func (p *Builder) handleHeaderRequestDeneb(w http.ResponseWriter) {
 	p.currVersion = version.Deneb
 	p.currPayload = wObj
 	p.blobBundle = b.BlobsBundle
-	w.WriteHeader(http.StatusOK)
 }
 
 func (p *Builder) handleHeaderRequestElectra(w http.ResponseWriter) {
@@ -612,50 +625,19 @@ func (p *Builder) handleHeaderRequestElectra(w http.ResponseWriter) {
 		copiedC := c
 		commitments = append(commitments, copiedC)
 	}
-	wrappedHdr := &builderAPI.ExecutionPayloadHeaderDeneb{ExecutionPayloadHeaderDeneb: hdr}
-	requests, err := b.GetDecodedExecutionRequests()
+	wrappedHdr, err := structs.ExecutionPayloadHeaderDenebFromConsensus(hdr)
+	if err != nil {
+		p.cfg.logger.WithError(err).Error("Could not make execution payload")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	requests, err := b.GetDecodedExecutionRequests(params.BeaconConfig().ExecutionRequestLimits())
 	if err != nil {
 		p.cfg.logger.WithError(err).Error("Could not get decoded execution requests")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	rv1 := &builderAPI.ExecutionRequestsV1{
-		Deposits:       make([]*builderAPI.DepositRequestV1, len(requests.Deposits)),
-		Withdrawals:    make([]*builderAPI.WithdrawalRequestV1, len(requests.Withdrawals)),
-		Consolidations: make([]*builderAPI.ConsolidationRequestV1, len(requests.Consolidations)),
-	}
-
-	for i, d := range requests.Deposits {
-		amount := new(big.Int).SetUint64(d.Amount)
-		index := new(big.Int).SetUint64(d.Index)
-		dr := &builderAPI.DepositRequestV1{
-			PubKey:                d.Pubkey,
-			WithdrawalCredentials: d.WithdrawalCredentials,
-			Amount:                builderAPI.Uint256{Int: amount},
-			Signature:             d.Signature,
-			Index:                 builderAPI.Uint256{Int: index},
-		}
-		rv1.Deposits[i] = dr
-	}
-
-	for i, w := range requests.Withdrawals {
-		bi := new(big.Int).SetUint64(w.Amount)
-		wr := &builderAPI.WithdrawalRequestV1{
-			SourceAddress:   w.SourceAddress,
-			ValidatorPubkey: w.ValidatorPubkey,
-			Amount:          builderAPI.Uint256{Int: bi},
-		}
-		rv1.Withdrawals[i] = wr
-	}
-
-	for i, c := range requests.Consolidations {
-		cr := &builderAPI.ConsolidationRequestV1{
-			SourceAddress: c.SourceAddress,
-			SourcePubkey:  c.SourcePubkey,
-			TargetPubkey:  c.TargetPubkey,
-		}
-		rv1.Consolidations[i] = cr
-	}
+	rv1 := structs.ExecutionRequestsFromConsensus(requests)
 
 	bid := &builderAPI.BuilderBidElectra{
 		Header:             wrappedHdr,
@@ -697,7 +679,7 @@ func (p *Builder) handleHeaderRequestElectra(w http.ResponseWriter) {
 			Message:   bid,
 		},
 	}
-
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(hdrResp)
 	if err != nil {
 		p.cfg.logger.WithError(err).Error("Could not encode response")
@@ -707,18 +689,28 @@ func (p *Builder) handleHeaderRequestElectra(w http.ResponseWriter) {
 	p.currVersion = version.Electra
 	p.currPayload = wObj
 	p.blobBundle = b.BlobsBundle
-	w.WriteHeader(http.StatusOK)
 }
 
 func (p *Builder) handleBlindedBlock(w http.ResponseWriter, req *http.Request) {
-	// TODO update for fork specific
-	sb := &builderAPI.SignedBlindedBeaconBlockBellatrix{
-		SignedBlindedBeaconBlockBellatrix: &eth.SignedBlindedBeaconBlockBellatrix{},
+	// Decode blinded block based on the current fork version.
+	// The beacon node sends JSON using api/server/structs types.
+	var err error
+	switch p.currVersion {
+	case version.Electra:
+		var sb structs.SignedBlindedBeaconBlockElectra
+		err = json.NewDecoder(req.Body).Decode(&sb)
+	case version.Deneb:
+		var sb structs.SignedBlindedBeaconBlockDeneb
+		err = json.NewDecoder(req.Body).Decode(&sb)
+	case version.Capella:
+		var sb structs.SignedBlindedBeaconBlockCapella
+		err = json.NewDecoder(req.Body).Decode(&sb)
+	default:
+		var sb structs.SignedBlindedBeaconBlockBellatrix
+		err = json.NewDecoder(req.Body).Decode(&sb)
 	}
-	err := json.NewDecoder(req.Body).Decode(sb)
 	if err != nil {
-		p.cfg.logger.WithError(err).Error("Could not decode blinded block")
-		// TODO: Allow the method to unmarshal blinded blocks correctly
+		p.cfg.logger.WithError(err).WithField("version", version.String(p.currVersion)).Error("Could not decode blinded block")
 	}
 	if p.currPayload == nil {
 		p.cfg.logger.Error("No payload is cached")
@@ -732,13 +724,13 @@ func (p *Builder) handleBlindedBlock(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusOK)
 	err = json.NewEncoder(w).Encode(resp)
 	if err != nil {
 		p.cfg.logger.WithError(err).Error("Could not encode full payload response")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 var errInvalidTypeConversion = errors.New("unable to translate between api and foreign type")
@@ -747,26 +739,26 @@ var errInvalidTypeConversion = errors.New("unable to translate between api and f
 // This involves serializing the execution payload value so that the abstract payload envelope can be used.
 func ExecutionPayloadResponseFromData(v int, ed interfaces.ExecutionData, bundle *v1.BlobsBundle) (*builderAPI.ExecutionPayloadResponse, error) {
 	pb := ed.Proto()
-	var data interface{}
+	var data any
 	var err error
 	ver := version.String(v)
 	switch pbStruct := pb.(type) {
 	case *v1.ExecutionPayloadDeneb:
-		payloadStruct, err := builderAPI.FromProtoDeneb(pbStruct)
+		payloadStruct, err := structs.ExecutionPayloadDenebFromConsensus(pbStruct)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to convert a Deneb ExecutionPayload to an API response")
 		}
 		data = &builderAPI.ExecutionPayloadDenebAndBlobsBundle{
-			ExecutionPayload: &payloadStruct,
+			ExecutionPayload: payloadStruct,
 			BlobsBundle:      builderAPI.FromBundleProto(bundle),
 		}
 	case *v1.ExecutionPayloadCapella:
-		data, err = builderAPI.FromProtoCapella(pbStruct)
+		data, err = structs.ExecutionPayloadCapellaFromConsensus(pbStruct)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to convert a Capella ExecutionPayload to an API response")
 		}
 	case *v1.ExecutionPayload:
-		data, err = builderAPI.FromProto(pbStruct)
+		data, err = structs.ExecutionPayloadFromConsensus(pbStruct)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to convert a Bellatrix ExecutionPayload to an API response")
 		}
@@ -955,7 +947,7 @@ func unmarshalRPCObject(b []byte) (*jsonRPCObject, error) {
 }
 
 func modifyExecutionPayload(execPayload engine.ExecutableData, fees *big.Int, prevBeaconRoot []byte, requests [][]byte) (*engine.ExecutionPayloadEnvelope, error) {
-	modifiedBlock, err := executableDataToBlock(execPayload, prevBeaconRoot)
+	modifiedBlock, err := executableDataToBlock(execPayload, prevBeaconRoot, requests)
 	if err != nil {
 		return &engine.ExecutionPayloadEnvelope{}, err
 	}
@@ -963,7 +955,7 @@ func modifyExecutionPayload(execPayload engine.ExecutableData, fees *big.Int, pr
 }
 
 // This modifies the provided payload to imprint the builder's extra data
-func executableDataToBlock(params engine.ExecutableData, prevBeaconRoot []byte) (*gethTypes.Block, error) {
+func executableDataToBlock(params engine.ExecutableData, prevBeaconRoot []byte, requests [][]byte) (*gethTypes.Block, error) {
 	txs, err := decodeTransactions(params.Transactions)
 	if err != nil {
 		return nil, err
@@ -975,6 +967,12 @@ func executableDataToBlock(params engine.ExecutableData, prevBeaconRoot []byte) 
 	if params.Withdrawals != nil {
 		h := gethTypes.DeriveSha(gethTypes.Withdrawals(params.Withdrawals), trie.NewStackTrie(nil))
 		withdrawalsRoot = &h
+	}
+
+	var requestsHash *common.Hash
+	if requests != nil {
+		h := gethTypes.CalcRequestsHash(requests)
+		requestsHash = &h
 	}
 
 	header := &gethTypes.Header{
@@ -996,7 +994,9 @@ func executableDataToBlock(params engine.ExecutableData, prevBeaconRoot []byte) 
 		WithdrawalsHash: withdrawalsRoot,
 		BlobGasUsed:     params.BlobGasUsed,
 		ExcessBlobGas:   params.ExcessBlobGas,
+		RequestsHash:    requestsHash,
 	}
+
 	if prevBeaconRoot != nil {
 		pRoot := common.Hash(prevBeaconRoot)
 		header.ParentBeaconRoot = &pRoot

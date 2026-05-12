@@ -6,22 +6,22 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	consensusblocks "github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	blocktest "github.com/OffchainLabs/prysm/v7/consensus-types/blocks/testing"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	consensusblocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	blocktest "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks/testing"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestMockHistoryStates(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var begin, middle, end primitives.Slot = 100, 150, 155
 	specs := []mockHistorySpec{
 		{slot: begin},
@@ -60,7 +60,7 @@ func TestMockHistoryStates(t *testing.T) {
 }
 
 func TestMockHistoryParentRoot(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var begin, middle, end primitives.Slot = 100, 150, 155
 	specs := []mockHistorySpec{
 		{slot: begin},
@@ -108,9 +108,9 @@ func (m slotList) Swap(i, j int) {
 
 var errFallThroughOverride = errors.New("override yielding control back to real HighestRootsBelowSlot")
 
-func (m *mockHistory) HighestRootsBelowSlot(_ context.Context, slot primitives.Slot) (primitives.Slot, [][32]byte, error) {
+func (m *mockHistory) HighestRootsBelowSlot(ctx context.Context, slot primitives.Slot) (primitives.Slot, [][32]byte, error) {
 	if m.overrideHighestSlotBlocksBelow != nil {
-		s, r, err := m.overrideHighestSlotBlocksBelow(context.Background(), slot)
+		s, r, err := m.overrideHighestSlotBlocksBelow(ctx, slot)
 		if !errors.Is(err, errFallThroughOverride) {
 			return s, r, err
 		}
@@ -196,7 +196,7 @@ func (h *mockHistory) validateRoots() error {
 }
 
 func newMockHistory(t *testing.T, hist []mockHistorySpec, current primitives.Slot) *mockHistory {
-	ctx := context.Background()
+	ctx := t.Context()
 	mh := &mockHistory{
 		blocks:       map[[32]byte]interfaces.ReadOnlySignedBeaconBlock{},
 		canonical:    map[[32]byte]bool{},

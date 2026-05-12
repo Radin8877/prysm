@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/server"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/container/slice"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/container/slice"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 var ErrUnsupportedConversion = errors.New("Could not determine api struct type to use for value")
@@ -268,6 +268,8 @@ func SignedBeaconBlockMessageJsoner(block interfaces.ReadOnlySignedBeaconBlock) 
 		return SignedBlindedBeaconBlockFuluFromConsensus(pbStruct)
 	case *eth.SignedBeaconBlockFulu:
 		return SignedBeaconBlockFuluFromConsensus(pbStruct)
+	case *eth.SignedBeaconBlockGloas:
+		return SignedBeaconBlockGloasFromConsensus(pbStruct)
 	default:
 		return nil, ErrUnsupportedConversion
 	}
@@ -278,58 +280,6 @@ func SignedBeaconBlockPhase0FromConsensus(b *eth.SignedBeaconBlock) *SignedBeaco
 		Message:   BeaconBlockFromConsensus(b.Block),
 		Signature: hexutil.Encode(b.Signature),
 	}
-}
-
-func ExecutionPayloadFromConsensus(payload *enginev1.ExecutionPayload) (*ExecutionPayload, error) {
-	baseFeePerGas, err := sszBytesToUint256String(payload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-	transactions := make([]string, len(payload.Transactions))
-	for i, tx := range payload.Transactions {
-		transactions[i] = hexutil.Encode(tx)
-	}
-
-	return &ExecutionPayload{
-		ParentHash:    hexutil.Encode(payload.ParentHash),
-		FeeRecipient:  hexutil.Encode(payload.FeeRecipient),
-		StateRoot:     hexutil.Encode(payload.StateRoot),
-		ReceiptsRoot:  hexutil.Encode(payload.ReceiptsRoot),
-		LogsBloom:     hexutil.Encode(payload.LogsBloom),
-		PrevRandao:    hexutil.Encode(payload.PrevRandao),
-		BlockNumber:   fmt.Sprintf("%d", payload.BlockNumber),
-		GasLimit:      fmt.Sprintf("%d", payload.GasLimit),
-		GasUsed:       fmt.Sprintf("%d", payload.GasUsed),
-		Timestamp:     fmt.Sprintf("%d", payload.Timestamp),
-		ExtraData:     hexutil.Encode(payload.ExtraData),
-		BaseFeePerGas: baseFeePerGas,
-		BlockHash:     hexutil.Encode(payload.BlockHash),
-		Transactions:  transactions,
-	}, nil
-}
-
-func ExecutionPayloadHeaderFromConsensus(payload *enginev1.ExecutionPayloadHeader) (*ExecutionPayloadHeader, error) {
-	baseFeePerGas, err := sszBytesToUint256String(payload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ExecutionPayloadHeader{
-		ParentHash:       hexutil.Encode(payload.ParentHash),
-		FeeRecipient:     hexutil.Encode(payload.FeeRecipient),
-		StateRoot:        hexutil.Encode(payload.StateRoot),
-		ReceiptsRoot:     hexutil.Encode(payload.ReceiptsRoot),
-		LogsBloom:        hexutil.Encode(payload.LogsBloom),
-		PrevRandao:       hexutil.Encode(payload.PrevRandao),
-		BlockNumber:      fmt.Sprintf("%d", payload.BlockNumber),
-		GasLimit:         fmt.Sprintf("%d", payload.GasLimit),
-		GasUsed:          fmt.Sprintf("%d", payload.GasUsed),
-		Timestamp:        fmt.Sprintf("%d", payload.Timestamp),
-		ExtraData:        hexutil.Encode(payload.ExtraData),
-		BaseFeePerGas:    baseFeePerGas,
-		BlockHash:        hexutil.Encode(payload.BlockHash),
-		TransactionsRoot: hexutil.Encode(payload.TransactionsRoot),
-	}, nil
 }
 
 // ----------------------------------------------------------------------------
@@ -611,68 +561,9 @@ func (b *BeaconBlockBellatrix) ToConsensus() (*eth.BeaconBlockBellatrix, error) 
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ParentHash, common.HashLength)
+	payload, err := b.Body.ExecutionPayload.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ParentHash")
-	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayload.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayload.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayload.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayload.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayload.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockHash")
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Transactions, fieldparams.MaxTxsPerPayloadLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Transactions")
-	}
-	payloadTxs := make([][]byte, len(b.Body.ExecutionPayload.Transactions))
-	for i, tx := range b.Body.ExecutionPayload.Transactions {
-		payloadTxs[i], err = bytesutil.DecodeHexWithMaxLength(tx, fieldparams.MaxBytesPerTxLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Transactions[%d]", i))
-		}
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayload")
 	}
 
 	return &eth.BeaconBlockBellatrix{
@@ -697,22 +588,7 @@ func (b *BeaconBlockBellatrix) ToConsensus() (*eth.BeaconBlockBellatrix, error) 
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayload: &enginev1.ExecutionPayload{
-				ParentHash:    payloadParentHash,
-				FeeRecipient:  payloadFeeRecipient,
-				StateRoot:     payloadStateRoot,
-				ReceiptsRoot:  payloadReceiptsRoot,
-				LogsBloom:     payloadLogsBloom,
-				PrevRandao:    payloadPrevRandao,
-				BlockNumber:   payloadBlockNumber,
-				GasLimit:      payloadGasLimit,
-				GasUsed:       payloadGasUsed,
-				Timestamp:     payloadTimestamp,
-				ExtraData:     payloadExtraData,
-				BaseFeePerGas: payloadBaseFeePerGas,
-				BlockHash:     payloadBlockHash,
-				Transactions:  payloadTxs,
-			},
+			ExecutionPayload: payload,
 		},
 	}, nil
 }
@@ -826,61 +702,9 @@ func (b *BlindedBeaconBlockBellatrix) ToConsensus() (*eth.BlindedBeaconBlockBell
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.ParentHash, common.HashLength)
+	payload, err := b.Body.ExecutionPayloadHeader.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ParentHash")
-	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayloadHeader.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayloadHeader.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BlockHash")
-	}
-	payloadTxsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.TransactionsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.TransactionsRoot")
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader")
 	}
 	return &eth.BlindedBeaconBlockBellatrix{
 		Slot:          primitives.Slot(slot),
@@ -904,22 +728,7 @@ func (b *BlindedBeaconBlockBellatrix) ToConsensus() (*eth.BlindedBeaconBlockBell
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayloadHeader: &enginev1.ExecutionPayloadHeader{
-				ParentHash:       payloadParentHash,
-				FeeRecipient:     payloadFeeRecipient,
-				StateRoot:        payloadStateRoot,
-				ReceiptsRoot:     payloadReceiptsRoot,
-				LogsBloom:        payloadLogsBloom,
-				PrevRandao:       payloadPrevRandao,
-				BlockNumber:      payloadBlockNumber,
-				GasLimit:         payloadGasLimit,
-				GasUsed:          payloadGasUsed,
-				Timestamp:        payloadTimestamp,
-				ExtraData:        payloadExtraData,
-				BaseFeePerGas:    payloadBaseFeePerGas,
-				BlockHash:        payloadBlockHash,
-				TransactionsRoot: payloadTxsRoot,
-			},
+			ExecutionPayloadHeader: payload,
 		},
 	}, nil
 }
@@ -1117,98 +926,12 @@ func (b *BeaconBlockCapella) ToConsensus() (*eth.BeaconBlockCapella, error) {
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ParentHash, common.HashLength)
+
+	payload, err := b.Body.ExecutionPayload.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ParentHash")
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayload")
 	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayload.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayload.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayload.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayload.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayload.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockHash")
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Transactions, fieldparams.MaxTxsPerPayloadLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Transactions")
-	}
-	payloadTxs := make([][]byte, len(b.Body.ExecutionPayload.Transactions))
-	for i, tx := range b.Body.ExecutionPayload.Transactions {
-		payloadTxs[i], err = bytesutil.DecodeHexWithMaxLength(tx, fieldparams.MaxBytesPerTxLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Transactions[%d]", i))
-		}
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Withdrawals, fieldparams.MaxWithdrawalsPerPayload)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Withdrawals")
-	}
-	withdrawals := make([]*enginev1.Withdrawal, len(b.Body.ExecutionPayload.Withdrawals))
-	for i, w := range b.Body.ExecutionPayload.Withdrawals {
-		withdrawalIndex, err := strconv.ParseUint(w.WithdrawalIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].WithdrawalIndex", i))
-		}
-		validatorIndex, err := strconv.ParseUint(w.ValidatorIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ValidatorIndex", i))
-		}
-		address, err := bytesutil.DecodeHexWithLength(w.ExecutionAddress, common.AddressLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ExecutionAddress", i))
-		}
-		amount, err := strconv.ParseUint(w.Amount, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].Amount", i))
-		}
-		withdrawals[i] = &enginev1.Withdrawal{
-			Index:          withdrawalIndex,
-			ValidatorIndex: primitives.ValidatorIndex(validatorIndex),
-			Address:        address,
-			Amount:         amount,
-		}
-	}
+
 	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.BLSToExecutionChanges")
@@ -1236,23 +959,7 @@ func (b *BeaconBlockCapella) ToConsensus() (*eth.BeaconBlockCapella, error) {
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayload: &enginev1.ExecutionPayloadCapella{
-				ParentHash:    payloadParentHash,
-				FeeRecipient:  payloadFeeRecipient,
-				StateRoot:     payloadStateRoot,
-				ReceiptsRoot:  payloadReceiptsRoot,
-				LogsBloom:     payloadLogsBloom,
-				PrevRandao:    payloadPrevRandao,
-				BlockNumber:   payloadBlockNumber,
-				GasLimit:      payloadGasLimit,
-				GasUsed:       payloadGasUsed,
-				Timestamp:     payloadTimestamp,
-				ExtraData:     payloadExtraData,
-				BaseFeePerGas: payloadBaseFeePerGas,
-				BlockHash:     payloadBlockHash,
-				Transactions:  payloadTxs,
-				Withdrawals:   withdrawals,
-			},
+			ExecutionPayload:      payload,
 			BlsToExecutionChanges: blsChanges,
 		},
 	}, nil
@@ -1367,66 +1074,12 @@ func (b *BlindedBeaconBlockCapella) ToConsensus() (*eth.BlindedBeaconBlockCapell
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.ParentHash, common.HashLength)
+
+	payload, err := b.Body.ExecutionPayloadHeader.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ParentHash")
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader")
 	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayloadHeader.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayloadHeader.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayloadHeader.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BlockHash")
-	}
-	payloadTxsRoot, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayloadHeader.TransactionsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.TransactionsRoot")
-	}
-	payloadWithdrawalsRoot, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayloadHeader.WithdrawalsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.WithdrawalsRoot")
-	}
+
 	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.BLSToExecutionChanges")
@@ -1454,24 +1107,8 @@ func (b *BlindedBeaconBlockCapella) ToConsensus() (*eth.BlindedBeaconBlockCapell
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayloadHeader: &enginev1.ExecutionPayloadHeaderCapella{
-				ParentHash:       payloadParentHash,
-				FeeRecipient:     payloadFeeRecipient,
-				StateRoot:        payloadStateRoot,
-				ReceiptsRoot:     payloadReceiptsRoot,
-				LogsBloom:        payloadLogsBloom,
-				PrevRandao:       payloadPrevRandao,
-				BlockNumber:      payloadBlockNumber,
-				GasLimit:         payloadGasLimit,
-				GasUsed:          payloadGasUsed,
-				Timestamp:        payloadTimestamp,
-				ExtraData:        payloadExtraData,
-				BaseFeePerGas:    payloadBaseFeePerGas,
-				BlockHash:        payloadBlockHash,
-				TransactionsRoot: payloadTxsRoot,
-				WithdrawalsRoot:  payloadWithdrawalsRoot,
-			},
-			BlsToExecutionChanges: blsChanges,
+			ExecutionPayloadHeader: payload,
+			BlsToExecutionChanges:  blsChanges,
 		},
 	}, nil
 }
@@ -1555,60 +1192,6 @@ func SignedBeaconBlockCapellaFromConsensus(b *eth.SignedBeaconBlockCapella) (*Si
 	return &SignedBeaconBlockCapella{
 		Message:   block,
 		Signature: hexutil.Encode(b.Signature),
-	}, nil
-}
-
-func ExecutionPayloadCapellaFromConsensus(payload *enginev1.ExecutionPayloadCapella) (*ExecutionPayloadCapella, error) {
-	baseFeePerGas, err := sszBytesToUint256String(payload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-	transactions := make([]string, len(payload.Transactions))
-	for i, tx := range payload.Transactions {
-		transactions[i] = hexutil.Encode(tx)
-	}
-
-	return &ExecutionPayloadCapella{
-		ParentHash:    hexutil.Encode(payload.ParentHash),
-		FeeRecipient:  hexutil.Encode(payload.FeeRecipient),
-		StateRoot:     hexutil.Encode(payload.StateRoot),
-		ReceiptsRoot:  hexutil.Encode(payload.ReceiptsRoot),
-		LogsBloom:     hexutil.Encode(payload.LogsBloom),
-		PrevRandao:    hexutil.Encode(payload.PrevRandao),
-		BlockNumber:   fmt.Sprintf("%d", payload.BlockNumber),
-		GasLimit:      fmt.Sprintf("%d", payload.GasLimit),
-		GasUsed:       fmt.Sprintf("%d", payload.GasUsed),
-		Timestamp:     fmt.Sprintf("%d", payload.Timestamp),
-		ExtraData:     hexutil.Encode(payload.ExtraData),
-		BaseFeePerGas: baseFeePerGas,
-		BlockHash:     hexutil.Encode(payload.BlockHash),
-		Transactions:  transactions,
-		Withdrawals:   WithdrawalsFromConsensus(payload.Withdrawals),
-	}, nil
-}
-
-func ExecutionPayloadHeaderCapellaFromConsensus(payload *enginev1.ExecutionPayloadHeaderCapella) (*ExecutionPayloadHeaderCapella, error) {
-	baseFeePerGas, err := sszBytesToUint256String(payload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ExecutionPayloadHeaderCapella{
-		ParentHash:       hexutil.Encode(payload.ParentHash),
-		FeeRecipient:     hexutil.Encode(payload.FeeRecipient),
-		StateRoot:        hexutil.Encode(payload.StateRoot),
-		ReceiptsRoot:     hexutil.Encode(payload.ReceiptsRoot),
-		LogsBloom:        hexutil.Encode(payload.LogsBloom),
-		PrevRandao:       hexutil.Encode(payload.PrevRandao),
-		BlockNumber:      fmt.Sprintf("%d", payload.BlockNumber),
-		GasLimit:         fmt.Sprintf("%d", payload.GasLimit),
-		GasUsed:          fmt.Sprintf("%d", payload.GasUsed),
-		Timestamp:        fmt.Sprintf("%d", payload.Timestamp),
-		ExtraData:        hexutil.Encode(payload.ExtraData),
-		BaseFeePerGas:    baseFeePerGas,
-		BlockHash:        hexutil.Encode(payload.BlockHash),
-		TransactionsRoot: hexutil.Encode(payload.TransactionsRoot),
-		WithdrawalsRoot:  hexutil.Encode(payload.WithdrawalsRoot),
 	}, nil
 }
 
@@ -1775,106 +1358,9 @@ func (b *BeaconBlockDeneb) ToConsensus() (*eth.BeaconBlockDeneb, error) {
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ParentHash, common.HashLength)
+	payload, err := b.Body.ExecutionPayload.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ParentHash")
-	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayload.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayload.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayload.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayload.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayload.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockHash")
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Transactions, fieldparams.MaxTxsPerPayloadLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Transactions")
-	}
-	txs := make([][]byte, len(b.Body.ExecutionPayload.Transactions))
-	for i, tx := range b.Body.ExecutionPayload.Transactions {
-		txs[i], err = bytesutil.DecodeHexWithMaxLength(tx, fieldparams.MaxBytesPerTxLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Transactions[%d]", i))
-		}
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Withdrawals, fieldparams.MaxWithdrawalsPerPayload)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Withdrawals")
-	}
-	withdrawals := make([]*enginev1.Withdrawal, len(b.Body.ExecutionPayload.Withdrawals))
-	for i, w := range b.Body.ExecutionPayload.Withdrawals {
-		withdrawalIndex, err := strconv.ParseUint(w.WithdrawalIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].WithdrawalIndex", i))
-		}
-		validatorIndex, err := strconv.ParseUint(w.ValidatorIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ValidatorIndex", i))
-		}
-		address, err := bytesutil.DecodeHexWithLength(w.ExecutionAddress, common.AddressLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ExecutionAddress", i))
-		}
-		amount, err := strconv.ParseUint(w.Amount, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].Amount", i))
-		}
-		withdrawals[i] = &enginev1.Withdrawal{
-			Index:          withdrawalIndex,
-			ValidatorIndex: primitives.ValidatorIndex(validatorIndex),
-			Address:        address,
-			Amount:         amount,
-		}
-	}
-
-	payloadBlobGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.BlobGasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlobGasUsed")
-	}
-	payloadExcessBlobGas, err := strconv.ParseUint(b.Body.ExecutionPayload.ExcessBlobGas, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExcessBlobGas")
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayload")
 	}
 	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
 	if err != nil {
@@ -1914,25 +1400,7 @@ func (b *BeaconBlockDeneb) ToConsensus() (*eth.BeaconBlockDeneb, error) {
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayload: &enginev1.ExecutionPayloadDeneb{
-				ParentHash:    payloadParentHash,
-				FeeRecipient:  payloadFeeRecipient,
-				StateRoot:     payloadStateRoot,
-				ReceiptsRoot:  payloadReceiptsRoot,
-				LogsBloom:     payloadLogsBloom,
-				PrevRandao:    payloadPrevRandao,
-				BlockNumber:   payloadBlockNumber,
-				GasLimit:      payloadGasLimit,
-				GasUsed:       payloadGasUsed,
-				Timestamp:     payloadTimestamp,
-				ExtraData:     payloadExtraData,
-				BaseFeePerGas: payloadBaseFeePerGas,
-				BlockHash:     payloadBlockHash,
-				Transactions:  txs,
-				Withdrawals:   withdrawals,
-				BlobGasUsed:   payloadBlobGasUsed,
-				ExcessBlobGas: payloadExcessBlobGas,
-			},
+			ExecutionPayload:      payload,
 			BlsToExecutionChanges: blsChanges,
 			BlobKzgCommitments:    blobKzgCommitments,
 		},
@@ -2076,76 +1544,10 @@ func (b *BlindedBeaconBlockDeneb) ToConsensus() (*eth.BlindedBeaconBlockDeneb, e
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.ParentHash, common.HashLength)
+	payload, err := b.Body.ExecutionPayloadHeader.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ParentHash")
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader")
 	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayloadHeader.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayloadHeader.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.BlockHash")
-	}
-	payloadTxsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.TransactionsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.TransactionsRoot")
-	}
-	payloadWithdrawalsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayloadHeader.WithdrawalsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.WithdrawalsRoot")
-	}
-
-	payloadBlobGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.BlobGasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlobGasUsed")
-	}
-	payloadExcessBlobGas, err := strconv.ParseUint(b.Body.ExecutionPayloadHeader.ExcessBlobGas, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExcessBlobGas")
-	}
-
 	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.BLSToExecutionChanges")
@@ -2185,27 +1587,9 @@ func (b *BlindedBeaconBlockDeneb) ToConsensus() (*eth.BlindedBeaconBlockDeneb, e
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayloadHeader: &enginev1.ExecutionPayloadHeaderDeneb{
-				ParentHash:       payloadParentHash,
-				FeeRecipient:     payloadFeeRecipient,
-				StateRoot:        payloadStateRoot,
-				ReceiptsRoot:     payloadReceiptsRoot,
-				LogsBloom:        payloadLogsBloom,
-				PrevRandao:       payloadPrevRandao,
-				BlockNumber:      payloadBlockNumber,
-				GasLimit:         payloadGasLimit,
-				GasUsed:          payloadGasUsed,
-				Timestamp:        payloadTimestamp,
-				ExtraData:        payloadExtraData,
-				BaseFeePerGas:    payloadBaseFeePerGas,
-				BlockHash:        payloadBlockHash,
-				TransactionsRoot: payloadTxsRoot,
-				WithdrawalsRoot:  payloadWithdrawalsRoot,
-				BlobGasUsed:      payloadBlobGasUsed,
-				ExcessBlobGas:    payloadExcessBlobGas,
-			},
-			BlsToExecutionChanges: blsChanges,
-			BlobKzgCommitments:    blobKzgCommitments,
+			ExecutionPayloadHeader: payload,
+			BlsToExecutionChanges:  blsChanges,
+			BlobKzgCommitments:     blobKzgCommitments,
 		},
 	}, nil
 }
@@ -2312,19 +1696,14 @@ func SignedBlindedBeaconBlockDenebFromConsensus(b *eth.SignedBlindedBeaconBlockD
 }
 
 func BeaconBlockDenebFromConsensus(b *eth.BeaconBlockDeneb) (*BeaconBlockDeneb, error) {
-	baseFeePerGas, err := sszBytesToUint256String(b.Body.ExecutionPayload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-	transactions := make([]string, len(b.Body.ExecutionPayload.Transactions))
-	for i, tx := range b.Body.ExecutionPayload.Transactions {
-		transactions[i] = hexutil.Encode(tx)
-	}
 	blobKzgCommitments := make([]string, len(b.Body.BlobKzgCommitments))
 	for i := range b.Body.BlobKzgCommitments {
 		blobKzgCommitments[i] = hexutil.Encode(b.Body.BlobKzgCommitments[i])
 	}
-
+	payload, err := ExecutionPayloadDenebFromConsensus(b.Body.ExecutionPayload)
+	if err != nil {
+		return nil, err
+	}
 	return &BeaconBlockDeneb{
 		Slot:          fmt.Sprintf("%d", b.Slot),
 		ProposerIndex: fmt.Sprintf("%d", b.ProposerIndex),
@@ -2343,25 +1722,7 @@ func BeaconBlockDenebFromConsensus(b *eth.BeaconBlockDeneb) (*BeaconBlockDeneb, 
 				SyncCommitteeBits:      hexutil.Encode(b.Body.SyncAggregate.SyncCommitteeBits),
 				SyncCommitteeSignature: hexutil.Encode(b.Body.SyncAggregate.SyncCommitteeSignature),
 			},
-			ExecutionPayload: &ExecutionPayloadDeneb{
-				ParentHash:    hexutil.Encode(b.Body.ExecutionPayload.ParentHash),
-				FeeRecipient:  hexutil.Encode(b.Body.ExecutionPayload.FeeRecipient),
-				StateRoot:     hexutil.Encode(b.Body.ExecutionPayload.StateRoot),
-				ReceiptsRoot:  hexutil.Encode(b.Body.ExecutionPayload.ReceiptsRoot),
-				LogsBloom:     hexutil.Encode(b.Body.ExecutionPayload.LogsBloom),
-				PrevRandao:    hexutil.Encode(b.Body.ExecutionPayload.PrevRandao),
-				BlockNumber:   fmt.Sprintf("%d", b.Body.ExecutionPayload.BlockNumber),
-				GasLimit:      fmt.Sprintf("%d", b.Body.ExecutionPayload.GasLimit),
-				GasUsed:       fmt.Sprintf("%d", b.Body.ExecutionPayload.GasUsed),
-				Timestamp:     fmt.Sprintf("%d", b.Body.ExecutionPayload.Timestamp),
-				ExtraData:     hexutil.Encode(b.Body.ExecutionPayload.ExtraData),
-				BaseFeePerGas: baseFeePerGas,
-				BlockHash:     hexutil.Encode(b.Body.ExecutionPayload.BlockHash),
-				Transactions:  transactions,
-				Withdrawals:   WithdrawalsFromConsensus(b.Body.ExecutionPayload.Withdrawals),
-				BlobGasUsed:   fmt.Sprintf("%d", b.Body.ExecutionPayload.BlobGasUsed),
-				ExcessBlobGas: fmt.Sprintf("%d", b.Body.ExecutionPayload.ExcessBlobGas),
-			},
+			ExecutionPayload:      payload,
 			BLSToExecutionChanges: SignedBLSChangesFromConsensus(b.Body.BlsToExecutionChanges),
 			BlobKzgCommitments:    blobKzgCommitments,
 		},
@@ -2376,64 +1737,6 @@ func SignedBeaconBlockDenebFromConsensus(b *eth.SignedBeaconBlockDeneb) (*Signed
 	return &SignedBeaconBlockDeneb{
 		Message:   block,
 		Signature: hexutil.Encode(b.Signature),
-	}, nil
-}
-
-func ExecutionPayloadDenebFromConsensus(payload *enginev1.ExecutionPayloadDeneb) (*ExecutionPayloadDeneb, error) {
-	baseFeePerGas, err := sszBytesToUint256String(payload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-	transactions := make([]string, len(payload.Transactions))
-	for i, tx := range payload.Transactions {
-		transactions[i] = hexutil.Encode(tx)
-	}
-
-	return &ExecutionPayloadDeneb{
-		ParentHash:    hexutil.Encode(payload.ParentHash),
-		FeeRecipient:  hexutil.Encode(payload.FeeRecipient),
-		StateRoot:     hexutil.Encode(payload.StateRoot),
-		ReceiptsRoot:  hexutil.Encode(payload.ReceiptsRoot),
-		LogsBloom:     hexutil.Encode(payload.LogsBloom),
-		PrevRandao:    hexutil.Encode(payload.PrevRandao),
-		BlockNumber:   fmt.Sprintf("%d", payload.BlockNumber),
-		GasLimit:      fmt.Sprintf("%d", payload.GasLimit),
-		GasUsed:       fmt.Sprintf("%d", payload.GasUsed),
-		Timestamp:     fmt.Sprintf("%d", payload.Timestamp),
-		ExtraData:     hexutil.Encode(payload.ExtraData),
-		BaseFeePerGas: baseFeePerGas,
-		BlockHash:     hexutil.Encode(payload.BlockHash),
-		Transactions:  transactions,
-		Withdrawals:   WithdrawalsFromConsensus(payload.Withdrawals),
-		BlobGasUsed:   fmt.Sprintf("%d", payload.BlobGasUsed),
-		ExcessBlobGas: fmt.Sprintf("%d", payload.ExcessBlobGas),
-	}, nil
-}
-
-func ExecutionPayloadHeaderDenebFromConsensus(payload *enginev1.ExecutionPayloadHeaderDeneb) (*ExecutionPayloadHeaderDeneb, error) {
-	baseFeePerGas, err := sszBytesToUint256String(payload.BaseFeePerGas)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ExecutionPayloadHeaderDeneb{
-		ParentHash:       hexutil.Encode(payload.ParentHash),
-		FeeRecipient:     hexutil.Encode(payload.FeeRecipient),
-		StateRoot:        hexutil.Encode(payload.StateRoot),
-		ReceiptsRoot:     hexutil.Encode(payload.ReceiptsRoot),
-		LogsBloom:        hexutil.Encode(payload.LogsBloom),
-		PrevRandao:       hexutil.Encode(payload.PrevRandao),
-		BlockNumber:      fmt.Sprintf("%d", payload.BlockNumber),
-		GasLimit:         fmt.Sprintf("%d", payload.GasLimit),
-		GasUsed:          fmt.Sprintf("%d", payload.GasUsed),
-		Timestamp:        fmt.Sprintf("%d", payload.Timestamp),
-		ExtraData:        hexutil.Encode(payload.ExtraData),
-		BaseFeePerGas:    baseFeePerGas,
-		BlockHash:        hexutil.Encode(payload.BlockHash),
-		TransactionsRoot: hexutil.Encode(payload.TransactionsRoot),
-		WithdrawalsRoot:  hexutil.Encode(payload.WithdrawalsRoot),
-		BlobGasUsed:      fmt.Sprintf("%d", payload.BlobGasUsed),
-		ExcessBlobGas:    fmt.Sprintf("%d", payload.ExcessBlobGas),
 	}, nil
 }
 
@@ -2535,6 +1838,9 @@ func (b *BeaconBlockElectra) ToConsensus() (*eth.BeaconBlockElectra, error) {
 	if b.Body.ExecutionPayload == nil {
 		return nil, server.NewDecodeError(errNilValue, "Body.ExecutionPayload")
 	}
+	if b.Body.ExecutionRequests == nil {
+		return nil, server.NewDecodeError(errNilValue, "Body.ExecutionRequests")
+	}
 
 	slot, err := strconv.ParseUint(b.Slot, 10, 64)
 	if err != nil {
@@ -2600,134 +1906,10 @@ func (b *BeaconBlockElectra) ToConsensus() (*eth.BeaconBlockElectra, error) {
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
 	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ParentHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ParentHash")
-	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayload.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayload.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayload.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayload.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayload.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockHash")
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Transactions, fieldparams.MaxTxsPerPayloadLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Transactions")
-	}
-	txs := make([][]byte, len(b.Body.ExecutionPayload.Transactions))
-	for i, tx := range b.Body.ExecutionPayload.Transactions {
-		txs[i], err = bytesutil.DecodeHexWithMaxLength(tx, fieldparams.MaxBytesPerTxLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Transactions[%d]", i))
-		}
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Withdrawals, fieldparams.MaxWithdrawalsPerPayload)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Withdrawals")
-	}
-	withdrawals := make([]*enginev1.Withdrawal, len(b.Body.ExecutionPayload.Withdrawals))
-	for i, w := range b.Body.ExecutionPayload.Withdrawals {
-		withdrawalIndex, err := strconv.ParseUint(w.WithdrawalIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].WithdrawalIndex", i))
-		}
-		validatorIndex, err := strconv.ParseUint(w.ValidatorIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ValidatorIndex", i))
-		}
-		address, err := bytesutil.DecodeHexWithLength(w.ExecutionAddress, common.AddressLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ExecutionAddress", i))
-		}
-		amount, err := strconv.ParseUint(w.Amount, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].Amount", i))
-		}
-		withdrawals[i] = &enginev1.Withdrawal{
-			Index:          withdrawalIndex,
-			ValidatorIndex: primitives.ValidatorIndex(validatorIndex),
-			Address:        address,
-			Amount:         amount,
-		}
-	}
 
-	payloadBlobGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.BlobGasUsed, 10, 64)
+	payload, err := b.Body.ExecutionPayload.ToConsensus()
 	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlobGasUsed")
-	}
-	payloadExcessBlobGas, err := strconv.ParseUint(b.Body.ExecutionPayload.ExcessBlobGas, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExcessBlobGas")
-	}
-
-	if b.Body.ExecutionRequests == nil {
-		return nil, server.NewDecodeError(errors.New("nil execution requests"), "Body.ExequtionRequests")
-	}
-
-	depositRequests := make([]*enginev1.DepositRequest, len(b.Body.ExecutionRequests.Deposits))
-	for i, d := range b.Body.ExecutionRequests.Deposits {
-		depositRequests[i], err = d.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Deposits[%d]", i))
-		}
-	}
-
-	withdrawalRequests := make([]*enginev1.WithdrawalRequest, len(b.Body.ExecutionRequests.Withdrawals))
-	for i, w := range b.Body.ExecutionRequests.Withdrawals {
-		withdrawalRequests[i], err = w.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Withdrawals[%d]", i))
-		}
-	}
-
-	consolidationRequests := make([]*enginev1.ConsolidationRequest, len(b.Body.ExecutionRequests.Consolidations))
-	for i, c := range b.Body.ExecutionRequests.Consolidations {
-		consolidationRequests[i], err = c.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Consolidations[%d]", i))
-		}
+		return nil, server.NewDecodeError(err, "Body.ExecutionPayload")
 	}
 
 	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
@@ -2746,6 +1928,12 @@ func (b *BeaconBlockElectra) ToConsensus() (*eth.BeaconBlockElectra, error) {
 		}
 		blobKzgCommitments[i] = kzg
 	}
+
+	requests, err := b.Body.ExecutionRequests.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Body.ExecutionRequests")
+	}
+
 	return &eth.BeaconBlockElectra{
 		Slot:          primitives.Slot(slot),
 		ProposerIndex: primitives.ValidatorIndex(proposerIndex),
@@ -2768,32 +1956,10 @@ func (b *BeaconBlockElectra) ToConsensus() (*eth.BeaconBlockElectra, error) {
 				SyncCommitteeBits:      syncCommitteeBits,
 				SyncCommitteeSignature: syncCommitteeSig,
 			},
-			ExecutionPayload: &enginev1.ExecutionPayloadDeneb{
-				ParentHash:    payloadParentHash,
-				FeeRecipient:  payloadFeeRecipient,
-				StateRoot:     payloadStateRoot,
-				ReceiptsRoot:  payloadReceiptsRoot,
-				LogsBloom:     payloadLogsBloom,
-				PrevRandao:    payloadPrevRandao,
-				BlockNumber:   payloadBlockNumber,
-				GasLimit:      payloadGasLimit,
-				GasUsed:       payloadGasUsed,
-				Timestamp:     payloadTimestamp,
-				ExtraData:     payloadExtraData,
-				BaseFeePerGas: payloadBaseFeePerGas,
-				BlockHash:     payloadBlockHash,
-				Transactions:  txs,
-				Withdrawals:   withdrawals,
-				BlobGasUsed:   payloadBlobGasUsed,
-				ExcessBlobGas: payloadExcessBlobGas,
-			},
+			ExecutionPayload:      payload,
 			BlsToExecutionChanges: blsChanges,
 			BlobKzgCommitments:    blobKzgCommitments,
-			ExecutionRequests: &enginev1.ExecutionRequests{
-				Deposits:       depositRequests,
-				Withdrawals:    withdrawalRequests,
-				Consolidations: consolidationRequests,
-			},
+			ExecutionRequests:     requests,
 		},
 	}, nil
 }
@@ -2869,6 +2035,9 @@ func (b *BlindedBeaconBlockElectra) ToConsensus() (*eth.BlindedBeaconBlockElectr
 	}
 	if b.Body.ExecutionPayloadHeader == nil {
 		return nil, server.NewDecodeError(errNilValue, "Body.ExecutionPayloadHeader")
+	}
+	if b.Body.ExecutionRequests == nil {
+		return nil, server.NewDecodeError(errNilValue, "Body.ExecutionRequests")
 	}
 
 	slot, err := strconv.ParseUint(b.Slot, 10, 64)
@@ -3003,32 +2172,6 @@ func (b *BlindedBeaconBlockElectra) ToConsensus() (*eth.BlindedBeaconBlockElectr
 	if err != nil {
 		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExcessBlobGas")
 	}
-	if b.Body.ExecutionRequests == nil {
-		return nil, server.NewDecodeError(errors.New("nil execution requests"), "Body.ExecutionRequests")
-	}
-	depositRequests := make([]*enginev1.DepositRequest, len(b.Body.ExecutionRequests.Deposits))
-	for i, d := range b.Body.ExecutionRequests.Deposits {
-		depositRequests[i], err = d.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Deposits[%d]", i))
-		}
-	}
-
-	withdrawalRequests := make([]*enginev1.WithdrawalRequest, len(b.Body.ExecutionRequests.Withdrawals))
-	for i, w := range b.Body.ExecutionRequests.Withdrawals {
-		withdrawalRequests[i], err = w.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Withdrawals[%d]", i))
-		}
-	}
-
-	consolidationRequests := make([]*enginev1.ConsolidationRequest, len(b.Body.ExecutionRequests.Consolidations))
-	for i, c := range b.Body.ExecutionRequests.Consolidations {
-		consolidationRequests[i], err = c.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Consolidations[%d]", i))
-		}
-	}
 
 	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
 	if err != nil {
@@ -3045,6 +2188,11 @@ func (b *BlindedBeaconBlockElectra) ToConsensus() (*eth.BlindedBeaconBlockElectr
 			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.BlobKzgCommitments[%d]", i))
 		}
 		blobKzgCommitments[i] = kzg
+	}
+
+	requests, err := b.Body.ExecutionRequests.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Body.ExecutionRequests")
 	}
 
 	return &eth.BlindedBeaconBlockElectra{
@@ -3090,11 +2238,7 @@ func (b *BlindedBeaconBlockElectra) ToConsensus() (*eth.BlindedBeaconBlockElectr
 			},
 			BlsToExecutionChanges: blsChanges,
 			BlobKzgCommitments:    blobKzgCommitments,
-			ExecutionRequests: &enginev1.ExecutionRequests{
-				Deposits:       depositRequests,
-				Withdrawals:    withdrawalRequests,
-				Consolidations: consolidationRequests,
-			},
+			ExecutionRequests:     requests,
 		},
 	}, nil
 }
@@ -3190,14 +2334,6 @@ func BeaconBlockContentsElectraFromConsensus(b *eth.BeaconBlockContentsElectra) 
 	}, nil
 }
 
-func ExecutionRequestsFromConsensus(er *enginev1.ExecutionRequests) *ExecutionRequests {
-	return &ExecutionRequests{
-		Deposits:       DepositRequestsFromConsensus(er.Deposits),
-		Withdrawals:    WithdrawalRequestsFromConsensus(er.Withdrawals),
-		Consolidations: ConsolidationRequestsFromConsensus(er.Consolidations),
-	}
-}
-
 func SignedBlindedBeaconBlockElectraFromConsensus(b *eth.SignedBlindedBeaconBlockElectra) (*SignedBlindedBeaconBlockElectra, error) {
 	block, err := BlindedBeaconBlockElectraFromConsensus(b.Message)
 	if err != nil {
@@ -3255,11 +2391,6 @@ func SignedBeaconBlockElectraFromConsensus(b *eth.SignedBeaconBlockElectra) (*Si
 		Signature: hexutil.Encode(b.Signature),
 	}, nil
 }
-
-var (
-	ExecutionPayloadElectraFromConsensus       = ExecutionPayloadDenebFromConsensus
-	ExecutionPayloadHeaderElectraFromConsensus = ExecutionPayloadHeaderDenebFromConsensus
-)
 
 // ----------------------------------------------------------------------------
 // Fulu
@@ -3340,285 +2471,6 @@ func (b *BeaconBlockContentsFulu) ToConsensus() (*eth.BeaconBlockContentsFulu, e
 		Block:     fuluBlock,
 		KzgProofs: proofs,
 		Blobs:     blbs,
-	}, nil
-}
-
-func (b *BeaconBlockFulu) ToConsensus() (*eth.BeaconBlockFulu, error) {
-	if b == nil {
-		return nil, errNilValue
-	}
-	if b.Body == nil {
-		return nil, server.NewDecodeError(errNilValue, "Body")
-	}
-	if b.Body.Eth1Data == nil {
-		return nil, server.NewDecodeError(errNilValue, "Body.Eth1Data")
-	}
-	if b.Body.SyncAggregate == nil {
-		return nil, server.NewDecodeError(errNilValue, "Body.SyncAggregate")
-	}
-	if b.Body.ExecutionPayload == nil {
-		return nil, server.NewDecodeError(errNilValue, "Body.ExecutionPayload")
-	}
-
-	slot, err := strconv.ParseUint(b.Slot, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Slot")
-	}
-	proposerIndex, err := strconv.ParseUint(b.ProposerIndex, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "ProposerIndex")
-	}
-	parentRoot, err := bytesutil.DecodeHexWithLength(b.ParentRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "ParentRoot")
-	}
-	stateRoot, err := bytesutil.DecodeHexWithLength(b.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "StateRoot")
-	}
-	randaoReveal, err := bytesutil.DecodeHexWithLength(b.Body.RandaoReveal, fieldparams.BLSSignatureLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.RandaoReveal")
-	}
-	depositRoot, err := bytesutil.DecodeHexWithLength(b.Body.Eth1Data.DepositRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.Eth1Data.DepositRoot")
-	}
-	depositCount, err := strconv.ParseUint(b.Body.Eth1Data.DepositCount, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.Eth1Data.DepositCount")
-	}
-	blockHash, err := bytesutil.DecodeHexWithLength(b.Body.Eth1Data.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.Eth1Data.BlockHash")
-	}
-	graffiti, err := bytesutil.DecodeHexWithLength(b.Body.Graffiti, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.Graffiti")
-	}
-	proposerSlashings, err := ProposerSlashingsToConsensus(b.Body.ProposerSlashings)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ProposerSlashings")
-	}
-	attesterSlashings, err := AttesterSlashingsElectraToConsensus(b.Body.AttesterSlashings)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.AttesterSlashings")
-	}
-	atts, err := AttsElectraToConsensus(b.Body.Attestations)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.Attestations")
-	}
-	deposits, err := DepositsToConsensus(b.Body.Deposits)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.Deposits")
-	}
-	exits, err := SignedExitsToConsensus(b.Body.VoluntaryExits)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.VoluntaryExits")
-	}
-	syncCommitteeBits, err := bytesutil.DecodeHexWithLength(b.Body.SyncAggregate.SyncCommitteeBits, fieldparams.SyncAggregateSyncCommitteeBytesLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeBits")
-	}
-	syncCommitteeSig, err := bytesutil.DecodeHexWithLength(b.Body.SyncAggregate.SyncCommitteeSignature, fieldparams.BLSSignatureLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.SyncAggregate.SyncCommitteeSignature")
-	}
-	payloadParentHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ParentHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ParentHash")
-	}
-	payloadFeeRecipient, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.FeeRecipient, fieldparams.FeeRecipientLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.FeeRecipient")
-	}
-	payloadStateRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.StateRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.StateRoot")
-	}
-	payloadReceiptsRoot, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.ReceiptsRoot, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ReceiptsRoot")
-	}
-	payloadLogsBloom, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.LogsBloom, fieldparams.LogsBloomLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.LogsBloom")
-	}
-	payloadPrevRandao, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.PrevRandao, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.PrevRandao")
-	}
-	payloadBlockNumber, err := strconv.ParseUint(b.Body.ExecutionPayload.BlockNumber, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockNumber")
-	}
-	payloadGasLimit, err := strconv.ParseUint(b.Body.ExecutionPayload.GasLimit, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasLimit")
-	}
-	payloadGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.GasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.GasUsed")
-	}
-	payloadTimestamp, err := strconv.ParseUint(b.Body.ExecutionPayload.Timestamp, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayloadHeader.Timestamp")
-	}
-	payloadExtraData, err := bytesutil.DecodeHexWithMaxLength(b.Body.ExecutionPayload.ExtraData, fieldparams.RootLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExtraData")
-	}
-	payloadBaseFeePerGas, err := bytesutil.Uint256ToSSZBytes(b.Body.ExecutionPayload.BaseFeePerGas)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BaseFeePerGas")
-	}
-	payloadBlockHash, err := bytesutil.DecodeHexWithLength(b.Body.ExecutionPayload.BlockHash, common.HashLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlockHash")
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Transactions, fieldparams.MaxTxsPerPayloadLength)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Transactions")
-	}
-	txs := make([][]byte, len(b.Body.ExecutionPayload.Transactions))
-	for i, tx := range b.Body.ExecutionPayload.Transactions {
-		txs[i], err = bytesutil.DecodeHexWithMaxLength(tx, fieldparams.MaxBytesPerTxLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Transactions[%d]", i))
-		}
-	}
-	err = slice.VerifyMaxLength(b.Body.ExecutionPayload.Withdrawals, fieldparams.MaxWithdrawalsPerPayload)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.Withdrawals")
-	}
-	withdrawals := make([]*enginev1.Withdrawal, len(b.Body.ExecutionPayload.Withdrawals))
-	for i, w := range b.Body.ExecutionPayload.Withdrawals {
-		withdrawalIndex, err := strconv.ParseUint(w.WithdrawalIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].WithdrawalIndex", i))
-		}
-		validatorIndex, err := strconv.ParseUint(w.ValidatorIndex, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ValidatorIndex", i))
-		}
-		address, err := bytesutil.DecodeHexWithLength(w.ExecutionAddress, common.AddressLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].ExecutionAddress", i))
-		}
-		amount, err := strconv.ParseUint(w.Amount, 10, 64)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionPayload.Withdrawals[%d].Amount", i))
-		}
-		withdrawals[i] = &enginev1.Withdrawal{
-			Index:          withdrawalIndex,
-			ValidatorIndex: primitives.ValidatorIndex(validatorIndex),
-			Address:        address,
-			Amount:         amount,
-		}
-	}
-
-	payloadBlobGasUsed, err := strconv.ParseUint(b.Body.ExecutionPayload.BlobGasUsed, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.BlobGasUsed")
-	}
-	payloadExcessBlobGas, err := strconv.ParseUint(b.Body.ExecutionPayload.ExcessBlobGas, 10, 64)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.ExecutionPayload.ExcessBlobGas")
-	}
-
-	if b.Body.ExecutionRequests == nil {
-		return nil, server.NewDecodeError(errors.New("nil execution requests"), "Body.ExequtionRequests")
-	}
-
-	depositRequests := make([]*enginev1.DepositRequest, len(b.Body.ExecutionRequests.Deposits))
-	for i, d := range b.Body.ExecutionRequests.Deposits {
-		depositRequests[i], err = d.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Deposits[%d]", i))
-		}
-	}
-
-	withdrawalRequests := make([]*enginev1.WithdrawalRequest, len(b.Body.ExecutionRequests.Withdrawals))
-	for i, w := range b.Body.ExecutionRequests.Withdrawals {
-		withdrawalRequests[i], err = w.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Withdrawals[%d]", i))
-		}
-	}
-
-	consolidationRequests := make([]*enginev1.ConsolidationRequest, len(b.Body.ExecutionRequests.Consolidations))
-	for i, c := range b.Body.ExecutionRequests.Consolidations {
-		consolidationRequests[i], err = c.ToConsensus()
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.ExecutionRequests.Consolidations[%d]", i))
-		}
-	}
-
-	blsChanges, err := SignedBLSChangesToConsensus(b.Body.BLSToExecutionChanges)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.BLSToExecutionChanges")
-	}
-	err = slice.VerifyMaxLength(b.Body.BlobKzgCommitments, fieldparams.MaxBlobCommitmentsPerBlock)
-	if err != nil {
-		return nil, server.NewDecodeError(err, "Body.BlobKzgCommitments")
-	}
-	blobKzgCommitments := make([][]byte, len(b.Body.BlobKzgCommitments))
-	for i, b := range b.Body.BlobKzgCommitments {
-		kzg, err := bytesutil.DecodeHexWithLength(b, fieldparams.BLSPubkeyLength)
-		if err != nil {
-			return nil, server.NewDecodeError(err, fmt.Sprintf("Body.BlobKzgCommitments[%d]", i))
-		}
-		blobKzgCommitments[i] = kzg
-	}
-	return &eth.BeaconBlockFulu{
-		Slot:          primitives.Slot(slot),
-		ProposerIndex: primitives.ValidatorIndex(proposerIndex),
-		ParentRoot:    parentRoot,
-		StateRoot:     stateRoot,
-		Body: &eth.BeaconBlockBodyFulu{
-			RandaoReveal: randaoReveal,
-			Eth1Data: &eth.Eth1Data{
-				DepositRoot:  depositRoot,
-				DepositCount: depositCount,
-				BlockHash:    blockHash,
-			},
-			Graffiti:          graffiti,
-			ProposerSlashings: proposerSlashings,
-			AttesterSlashings: attesterSlashings,
-			Attestations:      atts,
-			Deposits:          deposits,
-			VoluntaryExits:    exits,
-			SyncAggregate: &eth.SyncAggregate{
-				SyncCommitteeBits:      syncCommitteeBits,
-				SyncCommitteeSignature: syncCommitteeSig,
-			},
-			ExecutionPayload: &enginev1.ExecutionPayloadDeneb{
-				ParentHash:    payloadParentHash,
-				FeeRecipient:  payloadFeeRecipient,
-				StateRoot:     payloadStateRoot,
-				ReceiptsRoot:  payloadReceiptsRoot,
-				LogsBloom:     payloadLogsBloom,
-				PrevRandao:    payloadPrevRandao,
-				BlockNumber:   payloadBlockNumber,
-				GasLimit:      payloadGasLimit,
-				GasUsed:       payloadGasUsed,
-				Timestamp:     payloadTimestamp,
-				ExtraData:     payloadExtraData,
-				BaseFeePerGas: payloadBaseFeePerGas,
-				BlockHash:     payloadBlockHash,
-				Transactions:  txs,
-				Withdrawals:   withdrawals,
-				BlobGasUsed:   payloadBlobGasUsed,
-				ExcessBlobGas: payloadExcessBlobGas,
-			},
-			BlsToExecutionChanges: blsChanges,
-			BlobKzgCommitments:    blobKzgCommitments,
-			ExecutionRequests: &enginev1.ExecutionRequests{
-				Deposits:       depositRequests,
-				Withdrawals:    withdrawalRequests,
-				Consolidations: consolidationRequests,
-			},
-		},
 	}, nil
 }
 
@@ -3876,7 +2728,7 @@ func (b *BlindedBeaconBlockFulu) ToConsensus() (*eth.BlindedBeaconBlockFulu, err
 		ProposerIndex: primitives.ValidatorIndex(proposerIndex),
 		ParentRoot:    parentRoot,
 		StateRoot:     stateRoot,
-		Body: &eth.BlindedBeaconBlockBodyFulu{
+		Body: &eth.BlindedBeaconBlockBodyElectra{
 			RandaoReveal: randaoReveal,
 			Eth1Data: &eth.Eth1Data{
 				DepositRoot:  depositRoot,
@@ -3993,7 +2845,7 @@ func BlindedBeaconBlockFuluFromConsensus(b *eth.BlindedBeaconBlockFulu) (*Blinde
 		ProposerIndex: fmt.Sprintf("%d", b.ProposerIndex),
 		ParentRoot:    hexutil.Encode(b.ParentRoot),
 		StateRoot:     hexutil.Encode(b.StateRoot),
-		Body: &BlindedBeaconBlockBodyFulu{
+		Body: &BlindedBeaconBlockBodyElectra{
 			RandaoReveal:      hexutil.Encode(b.Body.RandaoReveal),
 			Eth1Data:          Eth1DataFromConsensus(b.Body.Eth1Data),
 			Graffiti:          hexutil.Encode(b.Body.Graffiti),
@@ -4025,42 +2877,6 @@ func SignedBlindedBeaconBlockFuluFromConsensus(b *eth.SignedBlindedBeaconBlockFu
 	}, nil
 }
 
-func BeaconBlockFuluFromConsensus(b *eth.BeaconBlockFulu) (*BeaconBlockFulu, error) {
-	payload, err := ExecutionPayloadFuluFromConsensus(b.Body.ExecutionPayload)
-	if err != nil {
-		return nil, err
-	}
-	blobKzgCommitments := make([]string, len(b.Body.BlobKzgCommitments))
-	for i := range b.Body.BlobKzgCommitments {
-		blobKzgCommitments[i] = hexutil.Encode(b.Body.BlobKzgCommitments[i])
-	}
-
-	return &BeaconBlockFulu{
-		Slot:          fmt.Sprintf("%d", b.Slot),
-		ProposerIndex: fmt.Sprintf("%d", b.ProposerIndex),
-		ParentRoot:    hexutil.Encode(b.ParentRoot),
-		StateRoot:     hexutil.Encode(b.StateRoot),
-		Body: &BeaconBlockBodyFulu{
-			RandaoReveal:      hexutil.Encode(b.Body.RandaoReveal),
-			Eth1Data:          Eth1DataFromConsensus(b.Body.Eth1Data),
-			Graffiti:          hexutil.Encode(b.Body.Graffiti),
-			ProposerSlashings: ProposerSlashingsFromConsensus(b.Body.ProposerSlashings),
-			AttesterSlashings: AttesterSlashingsElectraFromConsensus(b.Body.AttesterSlashings),
-			Attestations:      AttsElectraFromConsensus(b.Body.Attestations),
-			Deposits:          DepositsFromConsensus(b.Body.Deposits),
-			VoluntaryExits:    SignedExitsFromConsensus(b.Body.VoluntaryExits),
-			SyncAggregate: &SyncAggregate{
-				SyncCommitteeBits:      hexutil.Encode(b.Body.SyncAggregate.SyncCommitteeBits),
-				SyncCommitteeSignature: hexutil.Encode(b.Body.SyncAggregate.SyncCommitteeSignature),
-			},
-			ExecutionPayload:      payload,
-			BLSToExecutionChanges: SignedBLSChangesFromConsensus(b.Body.BlsToExecutionChanges),
-			BlobKzgCommitments:    blobKzgCommitments,
-			ExecutionRequests:     ExecutionRequestsFromConsensus(b.Body.ExecutionRequests),
-		},
-	}, nil
-}
-
 func SignedBeaconBlockFuluFromConsensus(b *eth.SignedBeaconBlockFulu) (*SignedBeaconBlockFulu, error) {
 	block, err := BeaconBlockFuluFromConsensus(b.Block)
 	if err != nil {
@@ -4072,7 +2888,599 @@ func SignedBeaconBlockFuluFromConsensus(b *eth.SignedBeaconBlockFulu) (*SignedBe
 	}, nil
 }
 
-var (
-	ExecutionPayloadFuluFromConsensus       = ExecutionPayloadDenebFromConsensus
-	ExecutionPayloadHeaderFuluFromConsensus = ExecutionPayloadHeaderDenebFromConsensus
-)
+// ----------------------------------------------------------------------------
+// Gloas
+// ----------------------------------------------------------------------------
+
+func SignedBeaconBlockGloasFromConsensus(b *eth.SignedBeaconBlockGloas) (*SignedBeaconBlockGloas, error) {
+	block, err := BeaconBlockGloasFromConsensus(b.Block)
+	if err != nil {
+		return nil, err
+	}
+	return &SignedBeaconBlockGloas{
+		Message:   block,
+		Signature: hexutil.Encode(b.Signature),
+	}, nil
+}
+
+func BeaconBlockGloasFromConsensus(b *eth.BeaconBlockGloas) (*BeaconBlockGloas, error) {
+	payloadAttestations := make([]*PayloadAttestation, len(b.Body.PayloadAttestations))
+	for i, pa := range b.Body.PayloadAttestations {
+		payloadAttestations[i] = PayloadAttestationFromConsensus(pa)
+	}
+
+	return &BeaconBlockGloas{
+		Slot:          fmt.Sprintf("%d", b.Slot),
+		ProposerIndex: fmt.Sprintf("%d", b.ProposerIndex),
+		ParentRoot:    hexutil.Encode(b.ParentRoot),
+		StateRoot:     hexutil.Encode(b.StateRoot),
+		Body: &BeaconBlockBodyGloas{
+			RandaoReveal:              hexutil.Encode(b.Body.RandaoReveal),
+			Eth1Data:                  Eth1DataFromConsensus(b.Body.Eth1Data),
+			Graffiti:                  hexutil.Encode(b.Body.Graffiti),
+			ProposerSlashings:         ProposerSlashingsFromConsensus(b.Body.ProposerSlashings),
+			AttesterSlashings:         AttesterSlashingsElectraFromConsensus(b.Body.AttesterSlashings),
+			Attestations:              AttsElectraFromConsensus(b.Body.Attestations),
+			Deposits:                  DepositsFromConsensus(b.Body.Deposits),
+			VoluntaryExits:            SignedExitsFromConsensus(b.Body.VoluntaryExits),
+			SyncAggregate:             SyncAggregateFromConsensus(b.Body.SyncAggregate),
+			BLSToExecutionChanges:     SignedBLSChangesFromConsensus(b.Body.BlsToExecutionChanges),
+			SignedExecutionPayloadBid: SignedExecutionPayloadBidFromConsensus(b.Body.SignedExecutionPayloadBid),
+			PayloadAttestations:       payloadAttestations,
+			ParentExecutionRequests:   ExecutionRequestsFromConsensus(b.Body.ParentExecutionRequests),
+		},
+	}, nil
+}
+
+func SignedExecutionPayloadBidFromConsensus(b *eth.SignedExecutionPayloadBid) *SignedExecutionPayloadBid {
+	return &SignedExecutionPayloadBid{
+		Message:   ExecutionPayloadBidFromConsensus(b.Message),
+		Signature: hexutil.Encode(b.Signature),
+	}
+}
+
+func ExecutionPayloadBidFromConsensus(b *eth.ExecutionPayloadBid) *ExecutionPayloadBid {
+	blobKzgCommitments := make([]string, len(b.BlobKzgCommitments))
+	for i := range b.BlobKzgCommitments {
+		blobKzgCommitments[i] = hexutil.Encode(b.BlobKzgCommitments[i])
+	}
+	return &ExecutionPayloadBid{
+		ParentBlockHash:       hexutil.Encode(b.ParentBlockHash),
+		ParentBlockRoot:       hexutil.Encode(b.ParentBlockRoot),
+		BlockHash:             hexutil.Encode(b.BlockHash),
+		PrevRandao:            hexutil.Encode(b.PrevRandao),
+		FeeRecipient:          hexutil.Encode(b.FeeRecipient),
+		GasLimit:              fmt.Sprintf("%d", b.GasLimit),
+		BuilderIndex:          fmt.Sprintf("%d", b.BuilderIndex),
+		Slot:                  fmt.Sprintf("%d", b.Slot),
+		Value:                 fmt.Sprintf("%d", b.Value),
+		ExecutionPayment:      fmt.Sprintf("%d", b.ExecutionPayment),
+		BlobKzgCommitments:    blobKzgCommitments,
+		ExecutionRequestsRoot: hexutil.Encode(b.ExecutionRequestsRoot),
+	}
+}
+
+func PayloadAttestationFromConsensus(pa *eth.PayloadAttestation) *PayloadAttestation {
+	return &PayloadAttestation{
+		AggregationBits: hexutil.Encode(pa.AggregationBits),
+		Data:            PayloadAttestationDataFromConsensus(pa.Data),
+		Signature:       hexutil.Encode(pa.Signature),
+	}
+}
+
+func PayloadAttestationMessageFromConsensus(m *eth.PayloadAttestationMessage) *PayloadAttestationMessage {
+	return &PayloadAttestationMessage{
+		ValidatorIndex: fmt.Sprintf("%d", m.ValidatorIndex),
+		Data:           PayloadAttestationDataFromConsensus(m.Data),
+		Signature:      hexutil.Encode(m.Signature),
+	}
+}
+
+func PayloadAttestationDataFromConsensus(d *eth.PayloadAttestationData) *PayloadAttestationData {
+	return &PayloadAttestationData{
+		BeaconBlockRoot:   hexutil.Encode(d.BeaconBlockRoot),
+		Slot:              fmt.Sprintf("%d", d.Slot),
+		PayloadPresent:    d.PayloadPresent,
+		BlobDataAvailable: d.BlobDataAvailable,
+	}
+}
+
+func (b *SignedBeaconBlockGloas) ToGeneric() (*eth.GenericSignedBeaconBlock, error) {
+	if b == nil {
+		return nil, errNilValue
+	}
+	signed, err := b.ToConsensus()
+	if err != nil {
+		return nil, err
+	}
+	return &eth.GenericSignedBeaconBlock{
+		Block: &eth.GenericSignedBeaconBlock_Gloas{Gloas: signed},
+	}, nil
+}
+
+func (b *SignedBeaconBlockGloas) ToConsensus() (*eth.SignedBeaconBlockGloas, error) {
+	if b == nil {
+		return nil, errNilValue
+	}
+
+	sig, err := bytesutil.DecodeHexWithLength(b.Signature, fieldparams.BLSSignatureLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Signature")
+	}
+	block, err := b.Message.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Message")
+	}
+	return &eth.SignedBeaconBlockGloas{
+		Block:     block,
+		Signature: sig,
+	}, nil
+}
+
+func (b *BeaconBlockGloas) ToConsensus() (*eth.BeaconBlockGloas, error) {
+	if b == nil {
+		return nil, errNilValue
+	}
+	if b.Body == nil {
+		return nil, server.NewDecodeError(errNilValue, "Body")
+	}
+	if b.Body.Eth1Data == nil {
+		return nil, server.NewDecodeError(errNilValue, "Body.Eth1Data")
+	}
+	if b.Body.SyncAggregate == nil {
+		return nil, server.NewDecodeError(errNilValue, "Body.SyncAggregate")
+	}
+	if b.Body.SignedExecutionPayloadBid == nil {
+		return nil, server.NewDecodeError(errNilValue, "Body.SignedExecutionPayloadBid")
+	}
+
+	slot, err := strconv.ParseUint(b.Slot, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Slot")
+	}
+	proposerIndex, err := strconv.ParseUint(b.ProposerIndex, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ProposerIndex")
+	}
+	parentRoot, err := bytesutil.DecodeHexWithLength(b.ParentRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ParentRoot")
+	}
+	stateRoot, err := bytesutil.DecodeHexWithLength(b.StateRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "StateRoot")
+	}
+	body, err := b.Body.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Body")
+	}
+	return &eth.BeaconBlockGloas{
+		Slot:          primitives.Slot(slot),
+		ProposerIndex: primitives.ValidatorIndex(proposerIndex),
+		ParentRoot:    parentRoot,
+		StateRoot:     stateRoot,
+		Body:          body,
+	}, nil
+}
+
+func (b *BeaconBlockBodyGloas) ToConsensus() (*eth.BeaconBlockBodyGloas, error) {
+	if b == nil {
+		return nil, errNilValue
+	}
+
+	randaoReveal, err := bytesutil.DecodeHexWithLength(b.RandaoReveal, fieldparams.BLSSignatureLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "RandaoReveal")
+	}
+	depositRoot, err := bytesutil.DecodeHexWithLength(b.Eth1Data.DepositRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Eth1Data.DepositRoot")
+	}
+	depositCount, err := strconv.ParseUint(b.Eth1Data.DepositCount, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Eth1Data.DepositCount")
+	}
+	blockHash, err := bytesutil.DecodeHexWithLength(b.Eth1Data.BlockHash, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Eth1Data.BlockHash")
+	}
+	graffiti, err := bytesutil.DecodeHexWithLength(b.Graffiti, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Graffiti")
+	}
+	proposerSlashings, err := ProposerSlashingsToConsensus(b.ProposerSlashings)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ProposerSlashings")
+	}
+	attesterSlashings, err := AttesterSlashingsElectraToConsensus(b.AttesterSlashings)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "AttesterSlashings")
+	}
+	atts, err := AttsElectraToConsensus(b.Attestations)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Attestations")
+	}
+	deposits, err := DepositsToConsensus(b.Deposits)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Deposits")
+	}
+	exits, err := SignedExitsToConsensus(b.VoluntaryExits)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "VoluntaryExits")
+	}
+	syncCommitteeBits, err := bytesutil.DecodeHexWithLength(b.SyncAggregate.SyncCommitteeBits, fieldparams.SyncAggregateSyncCommitteeBytesLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "SyncAggregate.SyncCommitteeBits")
+	}
+	syncCommitteeSig, err := bytesutil.DecodeHexWithLength(b.SyncAggregate.SyncCommitteeSignature, fieldparams.BLSSignatureLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "SyncAggregate.SyncCommitteeSignature")
+	}
+	blsChanges, err := SignedBLSChangesToConsensus(b.BLSToExecutionChanges)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BLSToExecutionChanges")
+	}
+	signedBid, err := b.SignedExecutionPayloadBid.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "SignedExecutionPayloadBid")
+	}
+	payloadAttestations, err := PayloadAttestationsToConsensus(b.PayloadAttestations)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "PayloadAttestations")
+	}
+	var parentExecutionRequests *enginev1.ExecutionRequests
+	if b.ParentExecutionRequests != nil {
+		parentExecutionRequests, err = b.ParentExecutionRequests.ToConsensus()
+		if err != nil {
+			return nil, server.NewDecodeError(err, "ParentExecutionRequests")
+		}
+	}
+
+	return &eth.BeaconBlockBodyGloas{
+		RandaoReveal: randaoReveal,
+		Eth1Data: &eth.Eth1Data{
+			DepositRoot:  depositRoot,
+			DepositCount: depositCount,
+			BlockHash:    blockHash,
+		},
+		Graffiti:          graffiti,
+		ProposerSlashings: proposerSlashings,
+		AttesterSlashings: attesterSlashings,
+		Attestations:      atts,
+		Deposits:          deposits,
+		VoluntaryExits:    exits,
+		SyncAggregate: &eth.SyncAggregate{
+			SyncCommitteeBits:      syncCommitteeBits,
+			SyncCommitteeSignature: syncCommitteeSig,
+		},
+		BlsToExecutionChanges:     blsChanges,
+		SignedExecutionPayloadBid: signedBid,
+		PayloadAttestations:       payloadAttestations,
+		ParentExecutionRequests:   parentExecutionRequests,
+	}, nil
+}
+
+func (b *BeaconBlockGloas) ToGeneric() (*eth.GenericBeaconBlock, error) {
+	block, err := b.ToConsensus()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not convert gloas block to consensus")
+	}
+	return &eth.GenericBeaconBlock{Block: &eth.GenericBeaconBlock_Gloas{Gloas: block}}, nil
+}
+
+func (b *SignedExecutionPayloadBid) ToConsensus() (*eth.SignedExecutionPayloadBid, error) {
+	if b == nil {
+		return nil, errNilValue
+	}
+	sig, err := bytesutil.DecodeHexWithLength(b.Signature, fieldparams.BLSSignatureLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Signature")
+	}
+	message, err := b.Message.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Message")
+	}
+	return &eth.SignedExecutionPayloadBid{
+		Message:   message,
+		Signature: sig,
+	}, nil
+}
+
+func (b *ExecutionPayloadBid) ToConsensus() (*eth.ExecutionPayloadBid, error) {
+	if b == nil {
+		return nil, errNilValue
+	}
+	parentBlockHash, err := bytesutil.DecodeHexWithLength(b.ParentBlockHash, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ParentBlockHash")
+	}
+	parentBlockRoot, err := bytesutil.DecodeHexWithLength(b.ParentBlockRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ParentBlockRoot")
+	}
+	blockHash, err := bytesutil.DecodeHexWithLength(b.BlockHash, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BlockHash")
+	}
+	prevRandao, err := bytesutil.DecodeHexWithLength(b.PrevRandao, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "PrevRandao")
+	}
+	feeRecipient, err := bytesutil.DecodeHexWithLength(b.FeeRecipient, fieldparams.FeeRecipientLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "FeeRecipient")
+	}
+	gasLimit, err := strconv.ParseUint(b.GasLimit, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "GasLimit")
+	}
+	builderIndex, err := strconv.ParseUint(b.BuilderIndex, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BuilderIndex")
+	}
+	slot, err := strconv.ParseUint(b.Slot, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Slot")
+	}
+	value, err := strconv.ParseUint(b.Value, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Value")
+	}
+	executionPayment, err := strconv.ParseUint(b.ExecutionPayment, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ExecutionPayment")
+	}
+	err = slice.VerifyMaxLength(b.BlobKzgCommitments, fieldparams.MaxBlobCommitmentsPerBlock)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BlobKzgCommitments")
+	}
+	blobKzgCommitments := make([][]byte, len(b.BlobKzgCommitments))
+	for i, commitment := range b.BlobKzgCommitments {
+		kzg, err := bytesutil.DecodeHexWithLength(commitment, fieldparams.BLSPubkeyLength)
+		if err != nil {
+			return nil, server.NewDecodeError(err, fmt.Sprintf("BlobKzgCommitments[%d]", i))
+		}
+		blobKzgCommitments[i] = kzg
+	}
+	executionRequestsRoot, err := bytesutil.DecodeHexWithLength(b.ExecutionRequestsRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ExecutionRequestsRoot")
+	}
+	return &eth.ExecutionPayloadBid{
+		ParentBlockHash:       parentBlockHash,
+		ParentBlockRoot:       parentBlockRoot,
+		BlockHash:             blockHash,
+		PrevRandao:            prevRandao,
+		FeeRecipient:          feeRecipient,
+		GasLimit:              gasLimit,
+		BuilderIndex:          primitives.BuilderIndex(builderIndex),
+		Slot:                  primitives.Slot(slot),
+		Value:                 primitives.Gwei(value),
+		ExecutionPayment:      primitives.Gwei(executionPayment),
+		BlobKzgCommitments:    blobKzgCommitments,
+		ExecutionRequestsRoot: executionRequestsRoot,
+	}, nil
+}
+
+func PayloadAttestationsToConsensus(pa []*PayloadAttestation) ([]*eth.PayloadAttestation, error) {
+	if pa == nil {
+		return nil, errNilValue
+	}
+	result := make([]*eth.PayloadAttestation, len(pa))
+	for i, p := range pa {
+		converted, err := p.ToConsensus()
+		if err != nil {
+			return nil, server.NewDecodeError(err, fmt.Sprintf("[%d]", i))
+		}
+		result[i] = converted
+	}
+	return result, nil
+}
+
+func (p *PayloadAttestation) ToConsensus() (*eth.PayloadAttestation, error) {
+	if p == nil {
+		return nil, errNilValue
+	}
+	aggregationBits, err := hexutil.Decode(p.AggregationBits)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "AggregationBits")
+	}
+	data, err := p.Data.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Data")
+	}
+	sig, err := bytesutil.DecodeHexWithLength(p.Signature, fieldparams.BLSSignatureLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Signature")
+	}
+	return &eth.PayloadAttestation{
+		AggregationBits: aggregationBits,
+		Data:            data,
+		Signature:       sig,
+	}, nil
+}
+
+func (d *PayloadAttestationData) ToConsensus() (*eth.PayloadAttestationData, error) {
+	if d == nil {
+		return nil, errNilValue
+	}
+	beaconBlockRoot, err := bytesutil.DecodeHexWithLength(d.BeaconBlockRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BeaconBlockRoot")
+	}
+	slot, err := strconv.ParseUint(d.Slot, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Slot")
+	}
+	return &eth.PayloadAttestationData{
+		BeaconBlockRoot:   beaconBlockRoot,
+		Slot:              primitives.Slot(slot),
+		PayloadPresent:    d.PayloadPresent,
+		BlobDataAvailable: d.BlobDataAvailable,
+	}, nil
+}
+
+// ExecutionPayloadEnvelopeFromConsensus converts a proto envelope to the API struct.
+func ExecutionPayloadEnvelopeFromConsensus(e *eth.ExecutionPayloadEnvelope) (*ExecutionPayloadEnvelope, error) {
+	payload, err := ExecutionPayloadGloasFromConsensus(e.Payload)
+	if err != nil {
+		return nil, err
+	}
+	var requests *ExecutionRequests
+	if e.ExecutionRequests != nil {
+		requests = ExecutionRequestsFromConsensus(e.ExecutionRequests)
+	}
+	return &ExecutionPayloadEnvelope{
+		Payload:               payload,
+		ExecutionRequests:     requests,
+		BuilderIndex:          fmt.Sprintf("%d", e.BuilderIndex),
+		BeaconBlockRoot:       hexutil.Encode(e.BeaconBlockRoot),
+		ParentBeaconBlockRoot: hexutil.Encode(e.ParentBeaconBlockRoot),
+	}, nil
+}
+
+// SignedExecutionPayloadEnvelopeFromConsensus converts a signed proto envelope to the API struct.
+func SignedExecutionPayloadEnvelopeFromConsensus(e *eth.SignedExecutionPayloadEnvelope) (*SignedExecutionPayloadEnvelope, error) {
+	envelope, err := ExecutionPayloadEnvelopeFromConsensus(e.Message)
+	if err != nil {
+		return nil, err
+	}
+	return &SignedExecutionPayloadEnvelope{
+		Message:   envelope,
+		Signature: hexutil.Encode(e.Signature),
+	}, nil
+}
+
+// BlockContentsGloasFromConsensus converts a proto Gloas block, envelope, and
+// blob data to the API struct.
+func BlockContentsGloasFromConsensus(block *eth.BeaconBlockGloas, envelope *eth.ExecutionPayloadEnvelope, kzgProofs [][]byte, blobs [][]byte) (*BlockContentsGloas, error) {
+	b, err := BeaconBlockGloasFromConsensus(block)
+	if err != nil {
+		return nil, err
+	}
+	env, err := ExecutionPayloadEnvelopeFromConsensus(envelope)
+	if err != nil {
+		return nil, err
+	}
+	encodedProofs := make([]string, len(kzgProofs))
+	for i, p := range kzgProofs {
+		encodedProofs[i] = hexutil.Encode(p)
+	}
+	encodedBlobs := make([]string, len(blobs))
+	for i, b := range blobs {
+		encodedBlobs[i] = hexutil.Encode(b)
+	}
+	return &BlockContentsGloas{
+		Block:                    b,
+		ExecutionPayloadEnvelope: env,
+		KzgProofs:                encodedProofs,
+		Blobs:                    encodedBlobs,
+	}, nil
+}
+
+// ToConsensus converts the API struct to a proto ExecutionPayloadEnvelope.
+func (e *ExecutionPayloadEnvelope) ToConsensus() (*eth.ExecutionPayloadEnvelope, error) {
+	if e == nil {
+		return nil, server.NewDecodeError(errNilValue, "ExecutionPayloadEnvelope")
+	}
+	payload, err := e.Payload.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Payload")
+	}
+	var requests *enginev1.ExecutionRequests
+	if e.ExecutionRequests != nil {
+		requests, err = e.ExecutionRequests.ToConsensus()
+		if err != nil {
+			return nil, server.NewDecodeError(err, "ExecutionRequests")
+		}
+	}
+	builderIndex, err := strconv.ParseUint(e.BuilderIndex, 10, 64)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BuilderIndex")
+	}
+	beaconBlockRoot, err := bytesutil.DecodeHexWithLength(e.BeaconBlockRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "BeaconBlockRoot")
+	}
+	parentBeaconBlockRoot, err := bytesutil.DecodeHexWithLength(e.ParentBeaconBlockRoot, fieldparams.RootLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "ParentBeaconBlockRoot")
+	}
+	return &eth.ExecutionPayloadEnvelope{
+		Payload:               payload,
+		ExecutionRequests:     requests,
+		BuilderIndex:          primitives.BuilderIndex(builderIndex),
+		BeaconBlockRoot:       beaconBlockRoot,
+		ParentBeaconBlockRoot: parentBeaconBlockRoot,
+	}, nil
+}
+
+// ToConsensus converts the API struct to a proto SignedExecutionPayloadEnvelope.
+func (e *SignedExecutionPayloadEnvelope) ToConsensus() (*eth.SignedExecutionPayloadEnvelope, error) {
+	if e == nil {
+		return nil, server.NewDecodeError(errNilValue, "SignedExecutionPayloadEnvelope")
+	}
+	msg, err := e.Message.ToConsensus()
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Message")
+	}
+	sig, err := bytesutil.DecodeHexWithLength(e.Signature, fieldparams.BLSSignatureLength)
+	if err != nil {
+		return nil, server.NewDecodeError(err, "Signature")
+	}
+	return &eth.SignedExecutionPayloadEnvelope{
+		Message:   msg,
+		Signature: sig,
+	}, nil
+}
+
+// SignedExecutionPayloadEnvelopeContentsFromConsensus builds the API struct
+// used for stateless envelope publishing from native components.
+func SignedExecutionPayloadEnvelopeContentsFromConsensus(signed *eth.SignedExecutionPayloadEnvelope, kzgProofs [][]byte, blobs [][]byte) (*SignedExecutionPayloadEnvelopeContents, error) {
+	signedJSON, err := SignedExecutionPayloadEnvelopeFromConsensus(signed)
+	if err != nil {
+		return nil, err
+	}
+	encodedProofs := make([]string, len(kzgProofs))
+	for i, p := range kzgProofs {
+		encodedProofs[i] = hexutil.Encode(p)
+	}
+	encodedBlobs := make([]string, len(blobs))
+	for i, b := range blobs {
+		encodedBlobs[i] = hexutil.Encode(b)
+	}
+	return &SignedExecutionPayloadEnvelopeContents{
+		SignedExecutionPayloadEnvelope: signedJSON,
+		KzgProofs:                      encodedProofs,
+		Blobs:                          encodedBlobs,
+	}, nil
+}
+
+// ToConsensus decodes the API struct into the signed envelope plus raw blob and
+// KZG proof bytes used by the stateless publish path.
+func (c *SignedExecutionPayloadEnvelopeContents) ToConsensus() (*eth.SignedExecutionPayloadEnvelope, [][]byte, [][]byte, error) {
+	if c == nil {
+		return nil, nil, nil, server.NewDecodeError(errNilValue, "SignedExecutionPayloadEnvelopeContents")
+	}
+	signed, err := c.SignedExecutionPayloadEnvelope.ToConsensus()
+	if err != nil {
+		return nil, nil, nil, server.NewDecodeError(err, "SignedExecutionPayloadEnvelope")
+	}
+	proofs := make([][]byte, len(c.KzgProofs))
+	for i, p := range c.KzgProofs {
+		proof, err := bytesutil.DecodeHexWithLength(p, 48)
+		if err != nil {
+			return nil, nil, nil, server.NewDecodeError(err, fmt.Sprintf("KzgProofs[%d]", i))
+		}
+		proofs[i] = proof
+	}
+	blobs := make([][]byte, len(c.Blobs))
+	for i, b := range c.Blobs {
+		blob, err := bytesutil.DecodeHexWithLength(b, fieldparams.BlobSize)
+		if err != nil {
+			return nil, nil, nil, server.NewDecodeError(err, fmt.Sprintf("Blobs[%d]", i))
+		}
+		blobs[i] = blob
+	}
+	return signed, proofs, blobs, nil
+}

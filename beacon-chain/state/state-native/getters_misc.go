@@ -1,9 +1,11 @@
 package state_native
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+	"time"
+
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 )
 
 // Id is the identifier of the beacon state.
@@ -11,12 +13,12 @@ func (b *BeaconState) Id() uint64 {
 	return b.id
 }
 
-// GenesisTime of the beacon state as a uint64.
-func (b *BeaconState) GenesisTime() uint64 {
+// GenesisTime of the beacon state as a time.Time.
+func (b *BeaconState) GenesisTime() time.Time {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
 
-	return b.genesisTime
+	return time.Unix(int64(b.genesisTime), 0)
 }
 
 // GenesisValidatorsRoot of the beacon state.
@@ -73,15 +75,15 @@ func (b *BeaconState) forkVal() *ethpb.Fork {
 }
 
 // HistoricalRoots based on epochs stored in the beacon state.
-func (b *BeaconState) HistoricalRoots() ([][]byte, error) {
+func (b *BeaconState) HistoricalRoots() [][]byte {
 	if b.historicalRoots == nil {
-		return nil, nil
+		return nil
 	}
 
 	b.lock.RLock()
 	defer b.lock.RUnlock()
 
-	return b.historicalRoots.Slice(), nil
+	return b.historicalRoots.Slice()
 }
 
 // HistoricalSummaries of the beacon state.

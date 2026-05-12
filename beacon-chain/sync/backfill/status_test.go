@@ -5,17 +5,17 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/das"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	blocktest "github.com/OffchainLabs/prysm/v7/consensus-types/blocks/testing"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/proto/dbval"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/das"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	blocktest "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks/testing"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/proto/dbval"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 var errEmptyMockDBMethod = errors.New("uninitialized mock db method called")
@@ -130,7 +130,7 @@ func TestSlotCovered(t *testing.T) {
 }
 
 func TestStatusUpdater_FillBack(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	mdb := &mockBackfillDB{}
 	b, err := setupTestBlock(90)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func setupTestBlock(slot primitives.Slot) (interfaces.ReadOnlySignedBeaconBlock,
 }
 
 func TestNewUpdater(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	originSlot := primitives.Slot(100)
 	var originRoot [32]byte

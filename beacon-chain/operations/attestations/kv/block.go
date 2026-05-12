@@ -1,9 +1,11 @@
 package kv
 
 import (
+	"fmt"
+
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
 	"github.com/pkg/errors"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
 )
 
 // SaveBlockAttestation saves an block attestation in cache.
@@ -63,6 +65,16 @@ func (c *AttCaches) DeleteBlockAttestation(att ethpb.Att) error {
 
 	c.blockAttLock.Lock()
 	defer c.blockAttLock.Unlock()
+
+	// Insert all attestations into the seen aggregated cache before deleting
+	if cacheAtts, ok := c.blockAtt[id]; ok {
+		for _, cacheAtt := range cacheAtts {
+			if err := c.insertSeenAggregatedAtt(cacheAtt); err != nil {
+				return fmt.Errorf("insert seen aggregated att: %w", err)
+			}
+		}
+	}
+
 	delete(c.blockAtt, id)
 
 	return nil

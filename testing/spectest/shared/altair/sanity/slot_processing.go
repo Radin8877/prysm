@@ -5,14 +5,14 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/spectest/utils"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/golang/snappy"
 	"github.com/google/go-cmp/cmp"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/spectest/utils"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -38,7 +38,7 @@ func RunSlotProcessingTests(t *testing.T, config string) {
 			require.NoError(t, err, "Failed to decompress")
 			base := &ethpb.BeaconStateAltair{}
 			require.NoError(t, base.UnmarshalSSZ(preBeaconStateSSZ), "Failed to unmarshal")
-			beaconState, err := state_native.InitializeFromProtoAltair(base)
+			beaconState, err := state_native.InitializeFromProtoUnsafeAltair(base)
 			require.NoError(t, err)
 
 			file, err := util.BazelFileBytes(testsFolderPath, folder.Name(), "slots.yaml")

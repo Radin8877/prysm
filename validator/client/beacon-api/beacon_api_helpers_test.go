@@ -2,92 +2,16 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"net/url"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
-
-func TestBeaconApiHelpers(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		valid bool
-	}{
-		{
-			name:  "correct format",
-			input: "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2",
-			valid: true,
-		},
-		{
-			name:  "root too small",
-			input: "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f",
-			valid: false,
-		},
-		{
-			name:  "root too big",
-			input: "0xcf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f22",
-			valid: false,
-		},
-		{
-			name:  "empty root",
-			input: "",
-			valid: false,
-		},
-		{
-			name:  "no 0x prefix",
-			input: "cf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2",
-			valid: false,
-		},
-		{
-			name:  "invalid characters",
-			input: "0xzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
-			valid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.valid, validRoot(tt.input))
-		})
-	}
-}
-
-func TestBeaconApiHelpers_TestUint64ToString(t *testing.T) {
-	const expectedResult = "1234"
-	const val = uint64(1234)
-
-	assert.Equal(t, expectedResult, uint64ToString(val))
-	assert.Equal(t, expectedResult, uint64ToString(primitives.Slot(val)))
-	assert.Equal(t, expectedResult, uint64ToString(primitives.ValidatorIndex(val)))
-	assert.Equal(t, expectedResult, uint64ToString(primitives.CommitteeIndex(val)))
-	assert.Equal(t, expectedResult, uint64ToString(primitives.Epoch(val)))
-}
-
-func TestBuildURL_NoParams(t *testing.T) {
-	wanted := "/aaa/bbb/ccc"
-	actual := buildURL("/aaa/bbb/ccc")
-	assert.Equal(t, wanted, actual)
-}
-
-func TestBuildURL_WithParams(t *testing.T) {
-	params := url.Values{}
-	params.Add("xxxx", "1")
-	params.Add("yyyy", "2")
-	params.Add("zzzz", "3")
-
-	wanted := "/aaa/bbb/ccc?xxxx=1&yyyy=2&zzzz=3"
-	actual := buildURL("/aaa/bbb/ccc", params)
-	assert.Equal(t, wanted, actual)
-}
 
 const forkEndpoint = "/eth/v1/beacon/states/head/fork"
 
@@ -96,7 +20,7 @@ func TestGetFork_Nominal(t *testing.T) {
 	defer ctrl.Finish()
 
 	stateForkResponseJson := structs.GetStateForkResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
 	expected := structs.GetStateForkResponse{
 		Data: &structs.Fork{
@@ -106,9 +30,9 @@ func TestGetFork_Nominal(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		forkEndpoint,
 		&stateForkResponseJson,
@@ -120,7 +44,7 @@ func TestGetFork_Nominal(t *testing.T) {
 	).Times(1)
 
 	validatorClient := beaconApiValidatorClient{
-		jsonRestHandler: jsonRestHandler,
+		handler: handler,
 	}
 
 	fork, err := validatorClient.fork(ctx)
@@ -132,11 +56,11 @@ func TestGetFork_Invalid(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		forkEndpoint,
 		gomock.Any(),
@@ -145,7 +69,7 @@ func TestGetFork_Invalid(t *testing.T) {
 	).Times(1)
 
 	validatorClient := beaconApiValidatorClient{
-		jsonRestHandler: jsonRestHandler,
+		handler: handler,
 	}
 
 	_, err := validatorClient.fork(ctx)
@@ -159,7 +83,7 @@ func TestGetHeaders_Nominal(t *testing.T) {
 	defer ctrl.Finish()
 
 	blockHeadersResponseJson := structs.GetBlockHeadersResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
 	expected := structs.GetBlockHeadersResponse{
 		Data: []*structs.SignedBeaconBlockHeaderContainer{
@@ -173,9 +97,9 @@ func TestGetHeaders_Nominal(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		headersEndpoint,
 		&blockHeadersResponseJson,
@@ -187,7 +111,7 @@ func TestGetHeaders_Nominal(t *testing.T) {
 	).Times(1)
 
 	validatorClient := beaconApiValidatorClient{
-		jsonRestHandler: jsonRestHandler,
+		handler: handler,
 	}
 
 	headers, err := validatorClient.headers(ctx)
@@ -199,11 +123,11 @@ func TestGetHeaders_Invalid(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		headersEndpoint,
 		gomock.Any(),
@@ -212,7 +136,7 @@ func TestGetHeaders_Invalid(t *testing.T) {
 	).Times(1)
 
 	validatorClient := beaconApiValidatorClient{
-		jsonRestHandler: jsonRestHandler,
+		handler: handler,
 	}
 
 	_, err := validatorClient.headers(ctx)
@@ -244,10 +168,10 @@ func TestGetLiveness_Nominal(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Post(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Post(
 		gomock.Any(),
 		livenessEndpoint,
 		nil,
@@ -260,7 +184,7 @@ func TestGetLiveness_Nominal(t *testing.T) {
 		nil,
 	).Times(1)
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+	validatorClient := &beaconApiValidatorClient{handler: handler}
 	liveness, err := validatorClient.liveness(ctx, 42, indexes)
 
 	require.NoError(t, err)
@@ -271,10 +195,10 @@ func TestGetLiveness_Invalid(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Post(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Post(
 		gomock.Any(),
 		livenessEndpoint,
 		nil,
@@ -284,7 +208,7 @@ func TestGetLiveness_Invalid(t *testing.T) {
 		errors.New("custom error"),
 	).Times(1)
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+	validatorClient := &beaconApiValidatorClient{handler: handler}
 	_, err := validatorClient.liveness(ctx, 42, nil)
 
 	require.ErrorContains(t, "custom error", err)
@@ -313,7 +237,7 @@ func TestGetIsSyncing_Nominal(t *testing.T) {
 			defer ctrl.Finish()
 
 			syncingResponseJson := structs.SyncStatusResponse{}
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+			handler := mock.NewMockJsonRestHandler(ctrl)
 
 			expected := structs.SyncStatusResponse{
 				Data: &structs.SyncStatusResponseData{
@@ -321,9 +245,9 @@ func TestGetIsSyncing_Nominal(t *testing.T) {
 				},
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 
-			jsonRestHandler.EXPECT().Get(
+			handler.EXPECT().Get(
 				gomock.Any(),
 				syncingEndpoint,
 				&syncingResponseJson,
@@ -335,7 +259,7 @@ func TestGetIsSyncing_Nominal(t *testing.T) {
 			).Times(1)
 
 			validatorClient := beaconApiValidatorClient{
-				jsonRestHandler: jsonRestHandler,
+				handler: handler,
 			}
 
 			isSyncing, err := validatorClient.isSyncing(ctx)
@@ -350,11 +274,11 @@ func TestGetIsSyncing_Invalid(t *testing.T) {
 	defer ctrl.Finish()
 
 	syncingResponseJson := structs.SyncStatusResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		syncingEndpoint,
 		&syncingResponseJson,
@@ -363,7 +287,7 @@ func TestGetIsSyncing_Invalid(t *testing.T) {
 	).Times(1)
 
 	validatorClient := beaconApiValidatorClient{
-		jsonRestHandler: jsonRestHandler,
+		handler: handler,
 	}
 
 	isSyncing, err := validatorClient.isSyncing(ctx)

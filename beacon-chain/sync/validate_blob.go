@@ -7,20 +7,21 @@ import (
 	"path"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/verification"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/verification"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -34,7 +35,7 @@ func (s *Service) validateBlob(ctx context.Context, pid peer.ID, msg *pubsub.Mes
 		return pubsub.ValidationIgnore, nil
 	}
 	if msg.Topic == nil {
-		return pubsub.ValidationReject, errInvalidTopic
+		return pubsub.ValidationReject, p2p.ErrInvalidTopic
 	}
 	m, err := s.decodePubsubMessage(msg)
 	if err != nil {
@@ -68,7 +69,7 @@ func (s *Service) validateBlob(ctx context.Context, pid peer.ID, msg *pubsub.Mes
 		return pubsub.ValidationIgnore, err
 	}
 
-	startTime, err := slots.ToTime(uint64(s.cfg.chain.GenesisTime().Unix()), blob.Slot())
+	startTime, err := slots.StartTime(s.cfg.clock.GenesisTime(), blob.Slot())
 	if err != nil {
 		return pubsub.ValidationIgnore, err
 	}
@@ -92,11 +93,11 @@ func (s *Service) validateBlob(ctx context.Context, pid peer.ID, msg *pubsub.Mes
 		return pubsub.ValidationIgnore, err
 	}
 
-	if err := vf.ValidProposerSignature(ctx); err != nil {
+	if err := vf.SidecarParentValid(s.hasBadBlock); err != nil {
 		return pubsub.ValidationReject, err
 	}
 
-	if err := vf.SidecarParentValid(s.hasBadBlock); err != nil {
+	if err := vf.ValidProposerSignature(ctx); err != nil {
 		return pubsub.ValidationReject, err
 	}
 

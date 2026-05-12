@@ -1,19 +1,23 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	validatormock "github.com/OffchainLabs/prysm/v7/testing/validator-mock"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSubmitValidatorRegistrations(t *testing.T) {
@@ -22,7 +26,7 @@ func TestSubmitValidatorRegistrations(t *testing.T) {
 			_, m, validatorKey, finish := setup(t, isSlashingProtectionMinimal)
 			defer finish()
 
-			ctx := context.Background()
+			ctx := t.Context()
 			validatorRegsBatchSize := 2
 			require.NoError(t, nil, SubmitValidatorRegistrations(ctx, m.validatorClient, []*ethpb.SignedValidatorRegistrationV1{}, validatorRegsBatchSize))
 
@@ -103,7 +107,7 @@ func TestSubmitValidatorRegistration_CantSign(t *testing.T) {
 			_, m, validatorKey, finish := setup(t, isSlashingProtectionMinimal)
 			defer finish()
 
-			ctx := context.Background()
+			ctx := t.Context()
 			validatorRegsBatchSize := 500
 			reg := &ethpb.ValidatorRegistrationV1{
 				FeeRecipient: bytesutil.PadTo([]byte("fee"), 20),
@@ -134,7 +138,7 @@ func Test_signValidatorRegistration(t *testing.T) {
 			_, m, validatorKey, finish := setup(t, isSlashingProtectionMinimal)
 			defer finish()
 
-			ctx := context.Background()
+			ctx := t.Context()
 			reg := &ethpb.ValidatorRegistrationV1{
 				FeeRecipient: bytesutil.PadTo([]byte("fee"), 20),
 				GasLimit:     123456,
@@ -147,11 +151,59 @@ func Test_signValidatorRegistration(t *testing.T) {
 	}
 }
 
+func Test_signProposerPreferences(t *testing.T) {
+	kp := randKeypair(t)
+	km := newMockKeymanager(t, kp)
+	pref := &ethpb.ProposerPreferences{
+		DependentRoot:  bytesutil.PadTo([]byte("dep"), 32),
+		ProposalSlot:   123,
+		ValidatorIndex: 456,
+		FeeRecipient:   bytesutil.PadTo([]byte("fee"), 20),
+		GasLimit:       789,
+	}
+
+	domain, err := signing.ComputeDomain(
+		params.BeaconConfig().DomainProposerPreferences,
+		params.BeaconConfig().GenesisForkVersion,
+		params.BeaconConfig().GenesisValidatorsRoot[:],
+	)
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	client := validatormock.NewMockValidatorClient(ctrl)
+	client.EXPECT().
+		DomainData(gomock.Any(), gomock.Any()).
+		Return(&ethpb.DomainResponse{SignatureDomain: domain}, nil)
+
+	cache, err := ristretto.NewCache(&ristretto.Config[string, proto.Message]{
+		NumCounters: 1920,
+		MaxCost:     192,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+
+	v := validator{
+		validatorClient: client,
+		domainDataCache: cache,
+	}
+
+	signed, err := v.signProposerPreferences(t.Context(), km, kp.pub, pref)
+	require.NoError(t, err)
+	require.Equal(t, pref, signed.Message)
+
+	root, err := signing.ComputeSigningRoot(pref, domain)
+	require.NoError(t, err)
+
+	sig, err := bls.SignatureFromBytes(signed.Signature)
+	require.NoError(t, err)
+	require.Equal(t, true, sig.Verify(kp.pri.PublicKey(), root[:]))
+}
+
 func TestValidator_SignValidatorRegistrationRequest(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range [...]bool{false, true} {
 		_, m, validatorKey, finish := setup(t, isSlashingProtectionMinimal)
 		defer finish()
-		ctx := context.Background()
+		ctx := t.Context()
 		byteval, err := hexutil.Decode("0x878705ba3f8bc32fcf7f4caa1a35e72af65cf766")
 		require.NoError(t, err)
 		tests := []struct {
@@ -173,8 +225,8 @@ func TestValidator_SignValidatorRegistrationRequest(t *testing.T) {
 					v := validator{
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						useWeb:                       false,
-						genesisTime:                  0,
+						enableAPI:                    false,
+						genesisTime:                  time.Unix(0, 0),
 					}
 					v.signedValidatorRegistrations[bytesutil.ToBytes48(validatorKey.PublicKey().Marshal())] = &ethpb.SignedValidatorRegistrationV1{
 						Message: &ethpb.ValidatorRegistrationV1{
@@ -201,8 +253,8 @@ func TestValidator_SignValidatorRegistrationRequest(t *testing.T) {
 					v := validator{
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						useWeb:                       false,
-						genesisTime:                  0,
+						enableAPI:                    false,
+						genesisTime:                  time.Unix(0, 0),
 					}
 					v.signedValidatorRegistrations[bytesutil.ToBytes48(validatorKey.PublicKey().Marshal())] = &ethpb.SignedValidatorRegistrationV1{
 						Message: &ethpb.ValidatorRegistrationV1{
@@ -229,8 +281,8 @@ func TestValidator_SignValidatorRegistrationRequest(t *testing.T) {
 					v := validator{
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						useWeb:                       false,
-						genesisTime:                  0,
+						enableAPI:                    false,
+						genesisTime:                  time.Unix(0, 0),
 					}
 					v.signedValidatorRegistrations[bytesutil.ToBytes48(validatorKey.PublicKey().Marshal())] = &ethpb.SignedValidatorRegistrationV1{
 						Message: &ethpb.ValidatorRegistrationV1{
@@ -257,8 +309,8 @@ func TestValidator_SignValidatorRegistrationRequest(t *testing.T) {
 					v := validator{
 						pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
 						signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-						useWeb:                       false,
-						genesisTime:                  0,
+						enableAPI:                    false,
+						genesisTime:                  time.Unix(0, 0),
 					}
 					return &v
 				},

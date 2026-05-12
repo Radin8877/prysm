@@ -4,13 +4,13 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	depositcontract "github.com/OffchainLabs/prysm/v7/contracts/deposit/mock"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	depositcontract "github.com/prysmaticlabs/prysm/v5/contracts/deposit/mock"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestDepositTrieRoot_OK(t *testing.T) {
@@ -34,7 +34,7 @@ func TestDepositTrieRoot_OK(t *testing.T) {
 
 	testAcc.TxOpts.Value = depositcontract.Amount32Eth()
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		data := depositDataItems[i]
 		var dataRoot [32]byte
 		copy(dataRoot[:], depositDataRoots[i])
@@ -75,7 +75,7 @@ func TestDepositTrieRoot_Fail(t *testing.T) {
 	require.NoError(t, err)
 	testAcc.TxOpts.Value = depositcontract.Amount32Eth()
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		data := depositDataItems[i]
 		var dataRoot [32]byte
 		copy(dataRoot[:], depositDataRoots[i])

@@ -6,18 +6,18 @@ import (
 	"strconv"
 	"testing"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	mockslashings "github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/slashings/mock"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	slashersimulator "github.com/prysmaticlabs/prysm/v5/testing/slasher/simulator"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	mockslashings "github.com/OffchainLabs/prysm/v7/beacon-chain/operations/slashings/mock"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	slashersimulator "github.com/OffchainLabs/prysm/v7/testing/slasher/simulator"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -50,9 +50,10 @@ func (mockSyncChecker) IsSynced(_ context.Context) (bool, error) {
 func TestEndToEnd_SlasherSimulator(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	params.OverrideBeaconConfig(params.E2ETestConfig().Copy())
+	params.BeaconConfig().InitializeForkSchedule()
 
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run for 10 epochs if not in long-running to confirm long-running has no issues.
 	simulatorParams := slashersimulator.DefaultParams()

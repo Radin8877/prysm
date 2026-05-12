@@ -2,9 +2,9 @@
 package eth
 
 import (
+	github_com_OffchainLabs_prysm_v7_consensus_types_primitives "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	v1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
 	ssz "github.com/prysmaticlabs/fastssz"
-	github_com_prysmaticlabs_prysm_v5_consensus_types_primitives "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	v1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
 )
 
 // MarshalSSZ ssz marshals the SignedBeaconBlockCapella object
@@ -127,10 +127,10 @@ func (b *BeaconBlockCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	offset := int(84)
 
 	// Field (0) 'Slot'
-	dst = ssz.MarshalUint64(dst, uint64(b.Slot))
+	dst = ssz.MarshalUint(dst, b.Slot)
 
 	// Field (1) 'ProposerIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.ProposerIndex))
+	dst = ssz.MarshalUint(dst, b.ProposerIndex)
 
 	// Field (2) 'ParentRoot'
 	if size := len(b.ParentRoot); size != 32 {
@@ -173,10 +173,10 @@ func (b *BeaconBlockCapella) UnmarshalSSZ(buf []byte) error {
 	var o4 uint64
 
 	// Field (0) 'Slot'
-	b.Slot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[0:8]))
+	b.Slot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[0:8])
 
 	// Field (1) 'ProposerIndex'
-	b.ProposerIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[8:16]))
+	b.ProposerIndex = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[8:16])
 
 	// Field (2) 'ParentRoot'
 	if cap(b.ParentRoot) == 0 {
@@ -235,10 +235,10 @@ func (b *BeaconBlockCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Slot'
-	hh.PutUint64(uint64(b.Slot))
+	ssz.PutUint(hh, b.Slot)
 
 	// Field (1) 'ProposerIndex'
-	hh.PutUint64(uint64(b.ProposerIndex))
+	ssz.PutUint(hh, b.ProposerIndex)
 
 	// Field (2) 'ParentRoot'
 	if size := len(b.ParentRoot); size != 32 {
@@ -930,10 +930,10 @@ func (b *BlindedBeaconBlockCapella) MarshalSSZTo(buf []byte) (dst []byte, err er
 	offset := int(84)
 
 	// Field (0) 'Slot'
-	dst = ssz.MarshalUint64(dst, uint64(b.Slot))
+	dst = ssz.MarshalUint(dst, b.Slot)
 
 	// Field (1) 'ProposerIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.ProposerIndex))
+	dst = ssz.MarshalUint(dst, b.ProposerIndex)
 
 	// Field (2) 'ParentRoot'
 	if size := len(b.ParentRoot); size != 32 {
@@ -976,10 +976,10 @@ func (b *BlindedBeaconBlockCapella) UnmarshalSSZ(buf []byte) error {
 	var o4 uint64
 
 	// Field (0) 'Slot'
-	b.Slot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[0:8]))
+	b.Slot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[0:8])
 
 	// Field (1) 'ProposerIndex'
-	b.ProposerIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[8:16]))
+	b.ProposerIndex = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[8:16])
 
 	// Field (2) 'ParentRoot'
 	if cap(b.ParentRoot) == 0 {
@@ -1038,10 +1038,10 @@ func (b *BlindedBeaconBlockCapella) HashTreeRootWith(hh *ssz.Hasher) (err error)
 	indx := hh.Index()
 
 	// Field (0) 'Slot'
-	hh.PutUint64(uint64(b.Slot))
+	ssz.PutUint(hh, b.Slot)
 
 	// Field (1) 'ProposerIndex'
-	hh.PutUint64(uint64(b.ProposerIndex))
+	ssz.PutUint(hh, b.ProposerIndex)
 
 	// Field (2) 'ParentRoot'
 	if size := len(b.ParentRoot); size != 32 {
@@ -1613,6 +1613,115 @@ func (b *BlindedBeaconBlockBodyCapella) HashTreeRootWith(hh *ssz.Hasher) (err er
 	return
 }
 
+// MarshalSSZ ssz marshals the SignedBuilderBidCapella object
+func (s *SignedBuilderBidCapella) MarshalSSZ() ([]byte, error) {
+	return ssz.MarshalSSZ(s)
+}
+
+// MarshalSSZTo ssz marshals the SignedBuilderBidCapella object to a target array
+func (s *SignedBuilderBidCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+	dst = buf
+	offset := int(100)
+
+	// Offset (0) 'Message'
+	dst = ssz.WriteOffset(dst, offset)
+	if s.Message == nil {
+		s.Message = new(BuilderBidCapella)
+	}
+	offset += s.Message.SizeSSZ()
+
+	// Field (1) 'Signature'
+	if size := len(s.Signature); size != 96 {
+		err = ssz.ErrBytesLengthFn("--.Signature", size, 96)
+		return
+	}
+	dst = append(dst, s.Signature...)
+
+	// Field (0) 'Message'
+	if dst, err = s.Message.MarshalSSZTo(dst); err != nil {
+		return
+	}
+
+	return
+}
+
+// UnmarshalSSZ ssz unmarshals the SignedBuilderBidCapella object
+func (s *SignedBuilderBidCapella) UnmarshalSSZ(buf []byte) error {
+	var err error
+	size := uint64(len(buf))
+	if size < 100 {
+		return ssz.ErrSize
+	}
+
+	tail := buf
+	var o0 uint64
+
+	// Offset (0) 'Message'
+	if o0 = ssz.ReadOffset(buf[0:4]); o0 > size {
+		return ssz.ErrOffset
+	}
+
+	if o0 != 100 {
+		return ssz.ErrInvalidVariableOffset
+	}
+
+	// Field (1) 'Signature'
+	if cap(s.Signature) == 0 {
+		s.Signature = make([]byte, 0, len(buf[4:100]))
+	}
+	s.Signature = append(s.Signature, buf[4:100]...)
+
+	// Field (0) 'Message'
+	{
+		buf = tail[o0:]
+		if s.Message == nil {
+			s.Message = new(BuilderBidCapella)
+		}
+		if err = s.Message.UnmarshalSSZ(buf); err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+// SizeSSZ returns the ssz encoded size in bytes for the SignedBuilderBidCapella object
+func (s *SignedBuilderBidCapella) SizeSSZ() (size int) {
+	size = 100
+
+	// Field (0) 'Message'
+	if s.Message == nil {
+		s.Message = new(BuilderBidCapella)
+	}
+	size += s.Message.SizeSSZ()
+
+	return
+}
+
+// HashTreeRoot ssz hashes the SignedBuilderBidCapella object
+func (s *SignedBuilderBidCapella) HashTreeRoot() ([32]byte, error) {
+	return ssz.HashWithDefaultHasher(s)
+}
+
+// HashTreeRootWith ssz hashes the SignedBuilderBidCapella object with a hasher
+func (s *SignedBuilderBidCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
+	indx := hh.Index()
+
+	// Field (0) 'Message'
+	if err = s.Message.HashTreeRootWith(hh); err != nil {
+		return
+	}
+
+	// Field (1) 'Signature'
+	if size := len(s.Signature); size != 96 {
+		err = ssz.ErrBytesLengthFn("--.Signature", size, 96)
+		return
+	}
+	hh.PutBytes(s.Signature)
+
+	hh.Merkleize(indx)
+	return
+}
+
 // MarshalSSZ ssz marshals the BuilderBidCapella object
 func (b *BuilderBidCapella) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
@@ -1742,6 +1851,88 @@ func (b *BuilderBidCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	return
 }
 
+// MarshalSSZ ssz marshals the HistoricalSummary object
+func (h *HistoricalSummary) MarshalSSZ() ([]byte, error) {
+	return ssz.MarshalSSZ(h)
+}
+
+// MarshalSSZTo ssz marshals the HistoricalSummary object to a target array
+func (h *HistoricalSummary) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+	dst = buf
+
+	// Field (0) 'BlockSummaryRoot'
+	if size := len(h.BlockSummaryRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.BlockSummaryRoot", size, 32)
+		return
+	}
+	dst = append(dst, h.BlockSummaryRoot...)
+
+	// Field (1) 'StateSummaryRoot'
+	if size := len(h.StateSummaryRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.StateSummaryRoot", size, 32)
+		return
+	}
+	dst = append(dst, h.StateSummaryRoot...)
+
+	return
+}
+
+// UnmarshalSSZ ssz unmarshals the HistoricalSummary object
+func (h *HistoricalSummary) UnmarshalSSZ(buf []byte) error {
+	var err error
+	size := uint64(len(buf))
+	if size != 64 {
+		return ssz.ErrSize
+	}
+
+	// Field (0) 'BlockSummaryRoot'
+	if cap(h.BlockSummaryRoot) == 0 {
+		h.BlockSummaryRoot = make([]byte, 0, len(buf[0:32]))
+	}
+	h.BlockSummaryRoot = append(h.BlockSummaryRoot, buf[0:32]...)
+
+	// Field (1) 'StateSummaryRoot'
+	if cap(h.StateSummaryRoot) == 0 {
+		h.StateSummaryRoot = make([]byte, 0, len(buf[32:64]))
+	}
+	h.StateSummaryRoot = append(h.StateSummaryRoot, buf[32:64]...)
+
+	return err
+}
+
+// SizeSSZ returns the ssz encoded size in bytes for the HistoricalSummary object
+func (h *HistoricalSummary) SizeSSZ() (size int) {
+	size = 64
+	return
+}
+
+// HashTreeRoot ssz hashes the HistoricalSummary object
+func (h *HistoricalSummary) HashTreeRoot() ([32]byte, error) {
+	return ssz.HashWithDefaultHasher(h)
+}
+
+// HashTreeRootWith ssz hashes the HistoricalSummary object with a hasher
+func (h *HistoricalSummary) HashTreeRootWith(hh *ssz.Hasher) (err error) {
+	indx := hh.Index()
+
+	// Field (0) 'BlockSummaryRoot'
+	if size := len(h.BlockSummaryRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.BlockSummaryRoot", size, 32)
+		return
+	}
+	hh.PutBytes(h.BlockSummaryRoot)
+
+	// Field (1) 'StateSummaryRoot'
+	if size := len(h.StateSummaryRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.StateSummaryRoot", size, 32)
+		return
+	}
+	hh.PutBytes(h.StateSummaryRoot)
+
+	hh.Merkleize(indx)
+	return
+}
+
 // MarshalSSZ ssz marshals the BeaconStateCapella object
 func (b *BeaconStateCapella) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
@@ -1753,7 +1944,7 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	offset := int(2736653)
 
 	// Field (0) 'GenesisTime'
-	dst = ssz.MarshalUint64(dst, b.GenesisTime)
+	dst = ssz.MarshalUint(dst, b.GenesisTime)
 
 	// Field (1) 'GenesisValidatorsRoot'
 	if size := len(b.GenesisValidatorsRoot); size != 32 {
@@ -1763,7 +1954,7 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = append(dst, b.GenesisValidatorsRoot...)
 
 	// Field (2) 'Slot'
-	dst = ssz.MarshalUint64(dst, uint64(b.Slot))
+	dst = ssz.MarshalUint(dst, b.Slot)
 
 	// Field (3) 'Fork'
 	if b.Fork == nil {
@@ -1824,7 +2015,7 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	offset += len(b.Eth1DataVotes) * 72
 
 	// Field (10) 'Eth1DepositIndex'
-	dst = ssz.MarshalUint64(dst, b.Eth1DepositIndex)
+	dst = ssz.MarshalUint(dst, b.Eth1DepositIndex)
 
 	// Offset (11) 'Validators'
 	dst = ssz.WriteOffset(dst, offset)
@@ -1853,7 +2044,7 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		return
 	}
 	for ii := 0; ii < 8192; ii++ {
-		dst = ssz.MarshalUint64(dst, b.Slashings[ii])
+		dst = ssz.MarshalUint(dst, b.Slashings[ii])
 	}
 
 	// Offset (15) 'PreviousEpochParticipation'
@@ -1923,10 +2114,10 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	offset += b.LatestExecutionPayloadHeader.SizeSSZ()
 
 	// Field (25) 'NextWithdrawalIndex'
-	dst = ssz.MarshalUint64(dst, b.NextWithdrawalIndex)
+	dst = ssz.MarshalUint(dst, b.NextWithdrawalIndex)
 
 	// Field (26) 'NextWithdrawalValidatorIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.NextWithdrawalValidatorIndex))
+	dst = ssz.MarshalUint(dst, b.NextWithdrawalValidatorIndex)
 
 	// Offset (27) 'HistoricalSummaries'
 	dst = ssz.WriteOffset(dst, offset)
@@ -1973,7 +2164,7 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		return
 	}
 	for ii := 0; ii < len(b.Balances); ii++ {
-		dst = ssz.MarshalUint64(dst, b.Balances[ii])
+		dst = ssz.MarshalUint(dst, b.Balances[ii])
 	}
 
 	// Field (15) 'PreviousEpochParticipation'
@@ -1996,7 +2187,7 @@ func (b *BeaconStateCapella) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		return
 	}
 	for ii := 0; ii < len(b.InactivityScores); ii++ {
-		dst = ssz.MarshalUint64(dst, b.InactivityScores[ii])
+		dst = ssz.MarshalUint(dst, b.InactivityScores[ii])
 	}
 
 	// Field (24) 'LatestExecutionPayloadHeader'
@@ -2030,7 +2221,7 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 	var o7, o9, o11, o12, o15, o16, o21, o24, o27 uint64
 
 	// Field (0) 'GenesisTime'
-	b.GenesisTime = ssz.UnmarshallUint64(buf[0:8])
+	b.GenesisTime = ssz.UnmarshallUint[uint64](buf[0:8])
 
 	// Field (1) 'GenesisValidatorsRoot'
 	if cap(b.GenesisValidatorsRoot) == 0 {
@@ -2039,7 +2230,7 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 	b.GenesisValidatorsRoot = append(b.GenesisValidatorsRoot, buf[8:40]...)
 
 	// Field (2) 'Slot'
-	b.Slot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[40:48]))
+	b.Slot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[40:48])
 
 	// Field (3) 'Fork'
 	if b.Fork == nil {
@@ -2098,7 +2289,7 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (10) 'Eth1DepositIndex'
-	b.Eth1DepositIndex = ssz.UnmarshallUint64(buf[524544:524552])
+	b.Eth1DepositIndex = ssz.UnmarshallUint[uint64](buf[524544:524552])
 
 	// Offset (11) 'Validators'
 	if o11 = ssz.ReadOffset(buf[524552:524556]); o11 > size || o9 > o11 {
@@ -2120,9 +2311,9 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (14) 'Slashings'
-	b.Slashings = ssz.ExtendUint64(b.Slashings, 8192)
+	b.Slashings = ssz.ExtendUint(b.Slashings, 8192)
 	for ii := 0; ii < 8192; ii++ {
-		b.Slashings[ii] = ssz.UnmarshallUint64(buf[2621712:2687248][ii*8 : (ii+1)*8])
+		b.Slashings[ii] = ssz.UnmarshallUint[uint64](buf[2621712:2687248][ii*8 : (ii+1)*8])
 	}
 
 	// Offset (15) 'PreviousEpochParticipation'
@@ -2192,10 +2383,10 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (25) 'NextWithdrawalIndex'
-	b.NextWithdrawalIndex = ssz.UnmarshallUint64(buf[2736633:2736641])
+	b.NextWithdrawalIndex = ssz.UnmarshallUint[uint64](buf[2736633:2736641])
 
 	// Field (26) 'NextWithdrawalValidatorIndex'
-	b.NextWithdrawalValidatorIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[2736641:2736649]))
+	b.NextWithdrawalValidatorIndex = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[2736641:2736649])
 
 	// Offset (27) 'HistoricalSummaries'
 	if o27 = ssz.ReadOffset(buf[2736649:2736653]); o27 > size || o24 > o27 {
@@ -2261,9 +2452,9 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		b.Balances = ssz.ExtendUint64(b.Balances, num)
+		b.Balances = ssz.ExtendUint(b.Balances, num)
 		for ii := 0; ii < num; ii++ {
-			b.Balances[ii] = ssz.UnmarshallUint64(buf[ii*8 : (ii+1)*8])
+			b.Balances[ii] = ssz.UnmarshallUint[uint64](buf[ii*8 : (ii+1)*8])
 		}
 	}
 
@@ -2298,9 +2489,9 @@ func (b *BeaconStateCapella) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		b.InactivityScores = ssz.ExtendUint64(b.InactivityScores, num)
+		b.InactivityScores = ssz.ExtendUint(b.InactivityScores, num)
 		for ii := 0; ii < num; ii++ {
-			b.InactivityScores[ii] = ssz.UnmarshallUint64(buf[ii*8 : (ii+1)*8])
+			b.InactivityScores[ii] = ssz.UnmarshallUint[uint64](buf[ii*8 : (ii+1)*8])
 		}
 	}
 
@@ -2382,7 +2573,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'GenesisTime'
-	hh.PutUint64(b.GenesisTime)
+	ssz.PutUint(hh, b.GenesisTime)
 
 	// Field (1) 'GenesisValidatorsRoot'
 	if size := len(b.GenesisValidatorsRoot); size != 32 {
@@ -2392,7 +2583,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	hh.PutBytes(b.GenesisValidatorsRoot)
 
 	// Field (2) 'Slot'
-	hh.PutUint64(uint64(b.Slot))
+	ssz.PutUint(hh, b.Slot)
 
 	// Field (3) 'Fork'
 	if err = b.Fork.HashTreeRootWith(hh); err != nil {
@@ -2479,7 +2670,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	}
 
 	// Field (10) 'Eth1DepositIndex'
-	hh.PutUint64(b.Eth1DepositIndex)
+	ssz.PutUint(hh, b.Eth1DepositIndex)
 
 	// Field (11) 'Validators'
 	{
@@ -2505,7 +2696,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		subIndx := hh.Index()
 		for _, i := range b.Balances {
-			hh.AppendUint64(i)
+			ssz.AppendUint(hh, i)
 		}
 		hh.FillUpTo32()
 
@@ -2538,7 +2729,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		subIndx := hh.Index()
 		for _, i := range b.Slashings {
-			hh.AppendUint64(i)
+			ssz.AppendUint(hh, i)
 		}
 		hh.Merkleize(subIndx)
 	}
@@ -2551,7 +2742,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 			err = ssz.ErrIncorrectListSize
 			return
 		}
-		hh.PutBytes(b.PreviousEpochParticipation)
+		hh.AppendBytes32(b.PreviousEpochParticipation)
 		hh.MerkleizeWithMixin(elemIndx, byteLen, (1099511627776+31)/32)
 	}
 
@@ -2563,7 +2754,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 			err = ssz.ErrIncorrectListSize
 			return
 		}
-		hh.PutBytes(b.CurrentEpochParticipation)
+		hh.AppendBytes32(b.CurrentEpochParticipation)
 		hh.MerkleizeWithMixin(elemIndx, byteLen, (1099511627776+31)/32)
 	}
 
@@ -2597,7 +2788,7 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		subIndx := hh.Index()
 		for _, i := range b.InactivityScores {
-			hh.AppendUint64(i)
+			ssz.AppendUint(hh, i)
 		}
 		hh.FillUpTo32()
 
@@ -2621,10 +2812,10 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	}
 
 	// Field (25) 'NextWithdrawalIndex'
-	hh.PutUint64(b.NextWithdrawalIndex)
+	ssz.PutUint(hh, b.NextWithdrawalIndex)
 
 	// Field (26) 'NextWithdrawalValidatorIndex'
-	hh.PutUint64(uint64(b.NextWithdrawalValidatorIndex))
+	ssz.PutUint(hh, b.NextWithdrawalValidatorIndex)
 
 	// Field (27) 'HistoricalSummaries'
 	{
@@ -2641,88 +2832,6 @@ func (b *BeaconStateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		hh.MerkleizeWithMixin(subIndx, num, 16777216)
 	}
-
-	hh.Merkleize(indx)
-	return
-}
-
-// MarshalSSZ ssz marshals the HistoricalSummary object
-func (h *HistoricalSummary) MarshalSSZ() ([]byte, error) {
-	return ssz.MarshalSSZ(h)
-}
-
-// MarshalSSZTo ssz marshals the HistoricalSummary object to a target array
-func (h *HistoricalSummary) MarshalSSZTo(buf []byte) (dst []byte, err error) {
-	dst = buf
-
-	// Field (0) 'BlockSummaryRoot'
-	if size := len(h.BlockSummaryRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.BlockSummaryRoot", size, 32)
-		return
-	}
-	dst = append(dst, h.BlockSummaryRoot...)
-
-	// Field (1) 'StateSummaryRoot'
-	if size := len(h.StateSummaryRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.StateSummaryRoot", size, 32)
-		return
-	}
-	dst = append(dst, h.StateSummaryRoot...)
-
-	return
-}
-
-// UnmarshalSSZ ssz unmarshals the HistoricalSummary object
-func (h *HistoricalSummary) UnmarshalSSZ(buf []byte) error {
-	var err error
-	size := uint64(len(buf))
-	if size != 64 {
-		return ssz.ErrSize
-	}
-
-	// Field (0) 'BlockSummaryRoot'
-	if cap(h.BlockSummaryRoot) == 0 {
-		h.BlockSummaryRoot = make([]byte, 0, len(buf[0:32]))
-	}
-	h.BlockSummaryRoot = append(h.BlockSummaryRoot, buf[0:32]...)
-
-	// Field (1) 'StateSummaryRoot'
-	if cap(h.StateSummaryRoot) == 0 {
-		h.StateSummaryRoot = make([]byte, 0, len(buf[32:64]))
-	}
-	h.StateSummaryRoot = append(h.StateSummaryRoot, buf[32:64]...)
-
-	return err
-}
-
-// SizeSSZ returns the ssz encoded size in bytes for the HistoricalSummary object
-func (h *HistoricalSummary) SizeSSZ() (size int) {
-	size = 64
-	return
-}
-
-// HashTreeRoot ssz hashes the HistoricalSummary object
-func (h *HistoricalSummary) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(h)
-}
-
-// HashTreeRootWith ssz hashes the HistoricalSummary object with a hasher
-func (h *HistoricalSummary) HashTreeRootWith(hh *ssz.Hasher) (err error) {
-	indx := hh.Index()
-
-	// Field (0) 'BlockSummaryRoot'
-	if size := len(h.BlockSummaryRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.BlockSummaryRoot", size, 32)
-		return
-	}
-	hh.PutBytes(h.BlockSummaryRoot)
-
-	// Field (1) 'StateSummaryRoot'
-	if size := len(h.StateSummaryRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.StateSummaryRoot", size, 32)
-		return
-	}
-	hh.PutBytes(h.StateSummaryRoot)
 
 	hh.Merkleize(indx)
 	return
@@ -2944,7 +3053,7 @@ func (l *LightClientUpdateCapella) MarshalSSZTo(buf []byte) (dst []byte, err err
 	}
 
 	// Field (6) 'SignatureSlot'
-	dst = ssz.MarshalUint64(dst, uint64(l.SignatureSlot))
+	dst = ssz.MarshalUint(dst, l.SignatureSlot)
 
 	// Field (0) 'AttestedHeader'
 	if dst, err = l.AttestedHeader.MarshalSSZTo(dst); err != nil {
@@ -3019,7 +3128,7 @@ func (l *LightClientUpdateCapella) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (6) 'SignatureSlot'
-	l.SignatureSlot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[25144:25152]))
+	l.SignatureSlot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[25144:25152])
 
 	// Field (0) 'AttestedHeader'
 	{
@@ -3128,7 +3237,7 @@ func (l *LightClientUpdateCapella) HashTreeRootWith(hh *ssz.Hasher) (err error) 
 	}
 
 	// Field (6) 'SignatureSlot'
-	hh.PutUint64(uint64(l.SignatureSlot))
+	ssz.PutUint(hh, l.SignatureSlot)
 
 	hh.Merkleize(indx)
 	return
@@ -3180,7 +3289,7 @@ func (l *LightClientFinalityUpdateCapella) MarshalSSZTo(buf []byte) (dst []byte,
 	}
 
 	// Field (4) 'SignatureSlot'
-	dst = ssz.MarshalUint64(dst, uint64(l.SignatureSlot))
+	dst = ssz.MarshalUint(dst, l.SignatureSlot)
 
 	// Field (0) 'AttestedHeader'
 	if dst, err = l.AttestedHeader.MarshalSSZTo(dst); err != nil {
@@ -3238,7 +3347,7 @@ func (l *LightClientFinalityUpdateCapella) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (4) 'SignatureSlot'
-	l.SignatureSlot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[360:368]))
+	l.SignatureSlot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[360:368])
 
 	// Field (0) 'AttestedHeader'
 	{
@@ -3325,7 +3434,7 @@ func (l *LightClientFinalityUpdateCapella) HashTreeRootWith(hh *ssz.Hasher) (err
 	}
 
 	// Field (4) 'SignatureSlot'
-	hh.PutUint64(uint64(l.SignatureSlot))
+	ssz.PutUint(hh, l.SignatureSlot)
 
 	hh.Merkleize(indx)
 	return
@@ -3357,7 +3466,7 @@ func (l *LightClientOptimisticUpdateCapella) MarshalSSZTo(buf []byte) (dst []byt
 	}
 
 	// Field (2) 'SignatureSlot'
-	dst = ssz.MarshalUint64(dst, uint64(l.SignatureSlot))
+	dst = ssz.MarshalUint(dst, l.SignatureSlot)
 
 	// Field (0) 'AttestedHeader'
 	if dst, err = l.AttestedHeader.MarshalSSZTo(dst); err != nil {
@@ -3396,7 +3505,7 @@ func (l *LightClientOptimisticUpdateCapella) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (2) 'SignatureSlot'
-	l.SignatureSlot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[164:172]))
+	l.SignatureSlot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[164:172])
 
 	// Field (0) 'AttestedHeader'
 	{
@@ -3444,7 +3553,7 @@ func (l *LightClientOptimisticUpdateCapella) HashTreeRootWith(hh *ssz.Hasher) (e
 	}
 
 	// Field (2) 'SignatureSlot'
-	hh.PutUint64(uint64(l.SignatureSlot))
+	ssz.PutUint(hh, l.SignatureSlot)
 
 	hh.Merkleize(indx)
 	return
@@ -3692,7 +3801,7 @@ func (b *BLSToExecutionChange) MarshalSSZTo(buf []byte) (dst []byte, err error) 
 	dst = buf
 
 	// Field (0) 'ValidatorIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.ValidatorIndex))
+	dst = ssz.MarshalUint(dst, b.ValidatorIndex)
 
 	// Field (1) 'FromBlsPubkey'
 	if size := len(b.FromBlsPubkey); size != 48 {
@@ -3720,7 +3829,7 @@ func (b *BLSToExecutionChange) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (0) 'ValidatorIndex'
-	b.ValidatorIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[0:8]))
+	b.ValidatorIndex = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[0:8])
 
 	// Field (1) 'FromBlsPubkey'
 	if cap(b.FromBlsPubkey) == 0 {
@@ -3753,7 +3862,7 @@ func (b *BLSToExecutionChange) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'ValidatorIndex'
-	hh.PutUint64(uint64(b.ValidatorIndex))
+	ssz.PutUint(hh, b.ValidatorIndex)
 
 	// Field (1) 'FromBlsPubkey'
 	if size := len(b.FromBlsPubkey); size != 48 {

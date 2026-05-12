@@ -11,13 +11,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/testing/endtoend/helpers"
+	e2e "github.com/OffchainLabs/prysm/v7/testing/endtoend/params"
+	e2etypes "github.com/OffchainLabs/prysm/v7/testing/endtoend/types"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/testing/endtoend/helpers"
-	e2e "github.com/prysmaticlabs/prysm/v5/testing/endtoend/params"
-	e2etypes "github.com/prysmaticlabs/prysm/v5/testing/endtoend/types"
 )
 
 var _ e2etypes.ComponentRunner = (*LighthouseBeaconNode)(nil)
@@ -189,7 +189,6 @@ func (node *LighthouseBeaconNode) Start(ctx context.Context) error {
 		fmt.Sprintf("--metrics-port=%d", e2e.TestParams.Ports.LighthouseBeaconNodeMetricsPort+index),
 		"--metrics",
 		"--http",
-		"--http-allow-sync-stalled",
 		"--enable-private-discovery",
 		"--debug-level=debug",
 		"--suggested-fee-recipient=0x878705ba3f8bc32fcf7f4caa1a35e72af65cf766",
@@ -247,7 +246,11 @@ func (node *LighthouseBeaconNode) Resume() error {
 
 // Stop stops the component and its underlying process.
 func (node *LighthouseBeaconNode) Stop() error {
-	return node.cmd.Process.Kill()
+	return helpers.GracefulStop(node.cmd.Process)
+}
+
+func (node *LighthouseBeaconNode) UnderlyingProcess() *os.Process {
+	return node.cmd.Process
 }
 
 func (node *LighthouseBeaconNode) createTestnetDir(ctx context.Context, index int) (string, error) {
@@ -262,11 +265,11 @@ func (node *LighthouseBeaconNode) createTestnetDir(ctx context.Context, index in
 		return "", err
 	}
 	bootPath := filepath.Join(testNetDir, "boot_enr.yaml")
-	enrYaml := []byte(fmt.Sprintf("[%s]", node.enr))
+	enrYaml := fmt.Appendf(nil, "[%s]", node.enr)
 	if err := file.WriteFile(bootPath, enrYaml); err != nil {
 		return "", err
 	}
-	deployPath := filepath.Join(testNetDir, "deploy_block.txt")
+	deployPath := filepath.Join(testNetDir, "deposit_contract_block.txt")
 	deployYaml := []byte("0")
 	if err := file.WriteFile(deployPath, deployYaml); err != nil {
 		return "", err
@@ -277,7 +280,7 @@ func (node *LighthouseBeaconNode) createTestnetDir(ctx context.Context, index in
 
 func (node *LighthouseBeaconNode) saveGenesis(ctx context.Context, testNetDir string) error {
 	// The deposit contract starts with an empty trie, we use the BeaconState to "pre-mine" the validator registry,
-	g, err := generateGenesis(ctx)
+	g, err := GenerateGenesis(ctx)
 	if err != nil {
 		return err
 	}

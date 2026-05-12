@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/encoder"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
 )
 
 func TestSubTopicHandler_CRUD(t *testing.T) {
@@ -18,8 +19,8 @@ func TestSubTopicHandler_CRUD(t *testing.T) {
 	assert.Equal(t, false, h.topicExists("junk"))
 	assert.Equal(t, false, h.digestExists([4]byte{}))
 
-	digest, err := forks.CreateForkDigest(time.Now(), make([]byte, 32))
-	assert.NoError(t, err)
+	clock := startup.NewClock(time.Now(), [32]byte{})
+	digest := params.ForkDigest(clock.CurrentEpoch())
 	enc := encoder.SszNetworkEncoder{}
 
 	// Valid topic added in.

@@ -1,28 +1,27 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/async"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/async"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
 	"github.com/sirupsen/logrus"
 )
 
@@ -37,7 +36,7 @@ func (v *validator) SubmitAttestation(ctx context.Context, slot primitives.Slot,
 	defer span.End()
 	span.SetAttributes(trace.StringAttribute("validator", fmt.Sprintf("%#x", pubKey)))
 
-	v.waitOneThirdOrValidBlock(ctx, slot)
+	v.waitUntilAttestationDueOrValidBlock(ctx, slot)
 
 	var b strings.Builder
 	if err := b.WriteByte(byte(iface.RoleAttester)); err != nil {
@@ -66,16 +65,14 @@ func (v *validator) SubmitAttestation(ctx context.Context, slot primitives.Slot,
 		tracing.AnnotateError(span, err)
 		return
 	}
-	if len(duty.Committee) == 0 {
+	if duty.CommitteeLength == 0 {
 		log.Debug("Empty committee for validator duty, not attesting")
 		return
 	}
 
-	req := &ethpb.AttestationDataRequest{
-		Slot:           slot,
-		CommitteeIndex: duty.CommitteeIndex,
-	}
-	data, err := v.validatorClient.AttestationData(ctx, req)
+	postElectra := slots.ToEpoch(slot) >= params.BeaconConfig().ElectraForkEpoch
+
+	data, err := v.getAttestationData(ctx, slot, duty.CommitteeIndex)
 	if err != nil {
 		log.WithError(err).Error("Could not request attestation to sign at slot")
 		if v.emitAccountMetrics {
@@ -94,8 +91,6 @@ func (v *validator) SubmitAttestation(ctx context.Context, slot primitives.Slot,
 		tracing.AnnotateError(span, err)
 		return
 	}
-
-	postElectra := slots.ToEpoch(slot) >= params.BeaconConfig().ElectraForkEpoch
 
 	var indexedAtt ethpb.IndexedAtt
 	if postElectra {
@@ -122,56 +117,38 @@ func (v *validator) SubmitAttestation(ctx context.Context, slot primitives.Slot,
 		return
 	}
 
-	// TODO: Extend to Electra
-	phase0Att, ok := indexedAtt.(*ethpb.IndexedAttestation)
-	if ok {
-		// Send the attestation to the beacon node.
-		if err := v.db.SlashableAttestationCheck(ctx, phase0Att, pubKey, signingRoot, v.emitAccountMetrics, ValidatorAttestFailVec); err != nil {
-			log.WithError(err).Error("Failed attestation slashing protection check")
-			log.WithFields(
-				attestationLogFields(pubKey, indexedAtt),
-			).Debug("Attempted slashable attestation details")
-			tracing.AnnotateError(span, err)
-			return
-		}
+	// Send the attestation to the beacon node.
+	if err := v.db.SlashableAttestationCheck(ctx, indexedAtt, pubKey, signingRoot, v.emitAccountMetrics, ValidatorAttestFailVec); err != nil {
+		log.WithError(err).Error("Failed attestation slashing protection check")
+		log.WithFields(
+			attestationLogFields(pubKey, indexedAtt),
+		).Debug("Attempted slashable attestation details")
+		tracing.AnnotateError(span, err)
+		return
 	}
 
 	var aggregationBitfield bitfield.Bitlist
-
+	var attestation ethpb.Att
 	var attResp *ethpb.AttestResponse
 	if postElectra {
-		attestation := &ethpb.SingleAttestation{
+		sa := &ethpb.SingleAttestation{
 			Data:          data,
 			AttesterIndex: duty.ValidatorIndex,
 			CommitteeId:   duty.CommitteeIndex,
 			Signature:     sig,
 		}
-		attResp, err = v.validatorClient.ProposeAttestationElectra(ctx, attestation)
+		attestation = sa
+		attResp, err = v.validatorClient.ProposeAttestationElectra(ctx, sa)
 	} else {
-		var indexInCommittee uint64
-		var found bool
-		for i, vID := range duty.Committee {
-			if vID == duty.ValidatorIndex {
-				indexInCommittee = uint64(i)
-				found = true
-				break
-			}
-		}
-		if !found {
-			log.Errorf("Validator ID %d not found in committee of %v", duty.ValidatorIndex, duty.Committee)
-			if v.emitAccountMetrics {
-				ValidatorAttestFailVec.WithLabelValues(fmtKey).Inc()
-			}
-			return
-		}
-		aggregationBitfield = bitfield.NewBitlist(uint64(len(duty.Committee)))
-		aggregationBitfield.SetBitAt(indexInCommittee, true)
-		attestation := &ethpb.Attestation{
+		aggregationBitfield = bitfield.NewBitlist(duty.CommitteeLength)
+		aggregationBitfield.SetBitAt(duty.ValidatorCommitteeIndex, true)
+		a := &ethpb.Attestation{
 			Data:            data,
 			AggregationBits: aggregationBitfield,
 			Signature:       sig,
 		}
-		attResp, err = v.validatorClient.ProposeAttestation(ctx, attestation)
+		attestation = a
+		attResp, err = v.validatorClient.ProposeAttestation(ctx, a)
 	}
 	if err != nil {
 		log.WithError(err).Error("Could not submit attestation to beacon node")
@@ -182,7 +159,7 @@ func (v *validator) SubmitAttestation(ctx context.Context, slot primitives.Slot,
 		return
 	}
 
-	if err := v.saveSubmittedAtt(data, pubKey[:], false); err != nil {
+	if err := v.saveSubmittedAtt(attestation, pubKey[:], false); err != nil {
 		log.WithError(err).Error("Could not save validator index for logging")
 		if v.emitAccountMetrics {
 			ValidatorAttestFailVec.WithLabelValues(fmtKey).Inc()
@@ -213,20 +190,17 @@ func (v *validator) SubmitAttestation(ctx context.Context, slot primitives.Slot,
 }
 
 // Given the validator public key, this gets the validator assignment.
-func (v *validator) duty(pubKey [fieldparams.BLSPubkeyLength]byte) (*ethpb.DutiesResponse_Duty, error) {
+func (v *validator) duty(pubKey [fieldparams.BLSPubkeyLength]byte) (*ethpb.ValidatorDuty, error) {
 	v.dutiesLock.RLock()
 	defer v.dutiesLock.RUnlock()
-	if v.duties == nil {
+	if !v.duties.IsInitialized() {
 		return nil, errors.New("no duties for validators")
 	}
-
-	for _, duty := range v.duties.CurrentEpochDuties {
-		if bytes.Equal(pubKey[:], duty.PublicKey) {
-			return duty, nil
-		}
+	d, ok := v.duties.CurrentDuty(pubKey)
+	if !ok {
+		return nil, fmt.Errorf("pubkey %#x not in duties", bytesutil.Trunc(pubKey[:]))
 	}
-
-	return nil, fmt.Errorf("pubkey %#x not in duties", bytesutil.Trunc(pubKey[:]))
+	return d, nil
 }
 
 // Given validator's public key, this function returns the signature of an attestation data and its signing root.
@@ -281,12 +255,12 @@ func (v *validator) setHighestSlot(slot primitives.Slot) {
 	}
 }
 
-// waitOneThirdOrValidBlock waits until (a) or (b) whichever comes first:
+// waitUntilAttestationDueOrValidBlock waits until (a) or (b) whichever comes first:
 //
 //	(a) the validator has received a valid block that is the same slot as input slot
-//	(b) one-third of the slot has transpired (SECONDS_PER_SLOT / 3 seconds after the start of slot)
-func (v *validator) waitOneThirdOrValidBlock(ctx context.Context, slot primitives.Slot) {
-	ctx, span := trace.StartSpan(ctx, "validator.waitOneThirdOrValidBlock")
+//	(b) the configured attestation due time has transpired (as basis points of the slot duration)
+func (v *validator) waitUntilAttestationDueOrValidBlock(ctx context.Context, slot primitives.Slot) {
+	ctx, span := trace.StartSpan(ctx, "validator.waitUntilAttestationDueOrValidBlock")
 	defer span.End()
 
 	// Don't need to wait if requested slot is the same as highest valid slot.
@@ -294,9 +268,16 @@ func (v *validator) waitOneThirdOrValidBlock(ctx context.Context, slot primitive
 		return
 	}
 
-	delay := slots.DivideSlotBy(3 /* a third of the slot duration */)
-	startTime := slots.StartTime(v.genesisTime, slot)
-	finalTime := startTime.Add(delay)
+	cfg := params.BeaconConfig()
+	component := cfg.AttestationDueBPS
+	if slots.ToEpoch(slot) >= cfg.GloasForkEpoch {
+		component = cfg.AttestationDueBPSGloas
+	}
+	finalTime, err := v.slotComponentDeadline(slot, component)
+	if err != nil {
+		log.WithError(err).WithField("slot", slot).Error("Slot overflows, unable to wait for attestation deadline")
+		return
+	}
 	wait := prysmTime.Until(finalTime)
 	if wait <= 0 {
 		return

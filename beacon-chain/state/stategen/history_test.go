@@ -6,19 +6,19 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/mock"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/mock"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestBlockForSlotFuture(t *testing.T) {
 	ch := &CanonicalHistory{
 		cs: &mockCurrentSlotter{Slot: 0},
 	}
-	_, err := ch.BlockRootForSlot(context.Background(), 1)
+	_, err := ch.BlockRootForSlot(t.Context(), 1)
 	require.ErrorIs(t, err, ErrFutureSlotRequested)
 }
 
@@ -26,7 +26,7 @@ func TestChainForSlotFuture(t *testing.T) {
 	ch := &CanonicalHistory{
 		cs: &mockCurrentSlotter{Slot: 0},
 	}
-	_, _, err := ch.chainForSlot(context.Background(), 1)
+	_, _, err := ch.chainForSlot(t.Context(), 1)
 	require.ErrorIs(t, err, ErrFutureSlotRequested)
 }
 
@@ -88,7 +88,7 @@ func TestBestForSlot(t *testing.T) {
 				chk = c.cc
 			}
 			ch := &CanonicalHistory{cc: chk}
-			r, err := ch.bestForSlot(context.Background(), c.roots)
+			r, err := ch.bestForSlot(t.Context(), c.roots)
 			if c.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, c.root, r)
@@ -101,7 +101,7 @@ func TestBestForSlot(t *testing.T) {
 
 // happy path tests
 func TestCanonicalBlockForSlotHappy(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var begin, middle, end primitives.Slot = 100, 150, 155
 	specs := []mockHistorySpec{
 		{slot: begin},
@@ -142,7 +142,7 @@ func TestCanonicalBlockForSlotHappy(t *testing.T) {
 }
 
 func TestCanonicalBlockForSlotNonHappy(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var begin, middle, end primitives.Slot = 100, 150, 155
 	specs := []mockHistorySpec{
 		{slot: begin},
@@ -271,7 +271,7 @@ func (c *mockCurrentSlotter) CurrentSlot() primitives.Slot {
 var _ CurrentSlotter = &mockCurrentSlotter{}
 
 func TestAncestorChainCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var begin, middle, end primitives.Slot = 100, 150, 155
 	specs := []mockHistorySpec{
 		{slot: begin, canonicalBlock: true},
@@ -344,7 +344,7 @@ func TestAncestorChainCache(t *testing.T) {
 }
 
 func TestAncestorChainOK(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var begin, middle, end primitives.Slot = 100, 150, 155
 	specs := []mockHistorySpec{
 		{slot: begin},
@@ -377,7 +377,7 @@ func TestAncestorChainOK(t *testing.T) {
 }
 
 func TestChainForSlot(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var zero, one, two, three primitives.Slot = 50, 51, 150, 151
 	specs := []mockHistorySpec{
 		{slot: zero, canonicalBlock: true, savedState: true},
@@ -446,7 +446,7 @@ func TestChainForSlot(t *testing.T) {
 }
 
 func TestAncestorChainOrdering(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var zero, one, two, three, four, five primitives.Slot = 50, 51, 150, 151, 152, 200
 	specs := []mockHistorySpec{
 		{slot: zero},
@@ -530,7 +530,7 @@ func (m *mockCanonicalChecker) IsCanonical(_ context.Context, root [32]byte) (bo
 
 func TestReverseChain(t *testing.T) {
 	// test 0,1,2,3 elements to handle: zero case; single element; even number; odd number
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		t.Run(fmt.Sprintf("reverseChain with %d elements", i), func(t *testing.T) {
 			actual := mockBlocks(i, incrFwd)
 			expected := mockBlocks(i, incrBwd)
@@ -538,7 +538,7 @@ func TestReverseChain(t *testing.T) {
 			if len(actual) != len(expected) {
 				t.Errorf("different list lengths")
 			}
-			for i := 0; i < len(actual); i++ {
+			for i := range actual {
 				sblockA, ok := actual[i].(*mock.SignedBeaconBlock)
 				require.Equal(t, true, ok)
 				blockA, ok := sblockA.BeaconBlock.(*mock.BeaconBlock)
@@ -561,7 +561,7 @@ func incrBwd(n int, c chan uint32) {
 }
 
 func incrFwd(n int, c chan uint32) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c <- uint32(i)
 	}
 	close(c)

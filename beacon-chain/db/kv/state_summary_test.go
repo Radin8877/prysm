@@ -1,19 +1,18 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestStateSummary_CanSaveRetrieve(t *testing.T) {
 	db := setupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	r1 := bytesutil.ToBytes32([]byte{'A'})
 	r2 := bytesutil.ToBytes32([]byte{'B'})
 	s1 := &ethpb.StateSummary{Slot: 1, Root: r1[:]}
@@ -48,24 +47,24 @@ func TestStateSummary_CacheToDB(t *testing.T) {
 		summaries[i] = &ethpb.StateSummary{Slot: primitives.Slot(i), Root: bytesutil.PadTo(bytesutil.Uint64ToBytesLittleEndian(uint64(i)), 32)}
 	}
 
-	require.NoError(t, db.SaveStateSummaries(context.Background(), summaries))
+	require.NoError(t, db.SaveStateSummaries(t.Context(), summaries))
 	require.Equal(t, db.stateSummaryCache.len(), stateSummaryCachePruneCount-1)
 
-	require.NoError(t, db.SaveStateSummary(context.Background(), &ethpb.StateSummary{Slot: 1000, Root: []byte{'a', 'b'}}))
+	require.NoError(t, db.SaveStateSummary(t.Context(), &ethpb.StateSummary{Slot: 1000, Root: []byte{'a', 'b'}}))
 	require.Equal(t, db.stateSummaryCache.len(), stateSummaryCachePruneCount)
 
-	require.NoError(t, db.SaveStateSummary(context.Background(), &ethpb.StateSummary{Slot: 1001, Root: []byte{'c', 'd'}}))
+	require.NoError(t, db.SaveStateSummary(t.Context(), &ethpb.StateSummary{Slot: 1001, Root: []byte{'c', 'd'}}))
 	require.Equal(t, db.stateSummaryCache.len(), 1)
 
 	for i := range summaries {
 		r := bytesutil.Uint64ToBytesLittleEndian(uint64(i))
-		require.Equal(t, true, db.HasStateSummary(context.Background(), bytesutil.ToBytes32(r)))
+		require.Equal(t, true, db.HasStateSummary(t.Context(), bytesutil.ToBytes32(r)))
 	}
 }
 
 func TestStateSummary_CanDelete(t *testing.T) {
 	db := setupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	r1 := bytesutil.ToBytes32([]byte{'A'})
 	s1 := &ethpb.StateSummary{Slot: 1, Root: r1[:]}
 

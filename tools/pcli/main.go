@@ -10,20 +10,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz/detect"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz/equality"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	prefixed "github.com/OffchainLabs/prysm/v7/runtime/logging/logrus-prefixed-formatter"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/kr/pretty"
 	"github.com/pkg/errors"
 	fssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz/detect"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz/equality"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	prefixed "github.com/prysmaticlabs/prysm/v5/runtime/logging/logrus-prefixed-formatter"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/d4l3k/messagediff.v1"
@@ -217,6 +217,10 @@ var stateTransitionCommand = &cli.Command{
 				if err := params.SetActive(params.HoleskyConfig()); err != nil {
 					log.Fatal(err)
 				}
+			case params.HoodiName:
+				if err := params.SetActive(params.HoodiConfig()); err != nil {
+					log.Fatal(err)
+				}
 			default:
 				log.Fatalf("Unknown network provided: %s", network)
 			}
@@ -299,7 +303,7 @@ var stateTransitionCommand = &cli.Command{
 
 func main() {
 	customFormatter := new(prefixed.TextFormatter)
-	customFormatter.TimestampFormat = time.DateTime
+	customFormatter.TimestampFormat = "2006-01-02 15:04:05.00"
 	customFormatter.FullTimestamp = true
 	log.SetFormatter(customFormatter)
 	app := cli.App{}
@@ -380,7 +384,7 @@ func benchmarkHash(sszPath string, sszType string) {
 		}
 		deserializeDuration := time.Since(startDeserialize)
 
-		stateTrieState, err := state_native.InitializeFromProtoCapella(st)
+		stateTrieState, err := state_native.InitializeFromProtoUnsafeCapella(st)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -389,7 +393,7 @@ func benchmarkHash(sszPath string, sszType string) {
 		runtime.ReadMemStats(stat)
 		root, err := stateTrieState.HashTreeRoot(context.Background())
 		if err != nil {
-			log.Fatal("couldn't hash")
+			log.Fatal("Couldn't hash")
 		}
 		newStat := &runtime.MemStats{}
 		runtime.ReadMemStats(newStat)
@@ -420,7 +424,8 @@ func debugStateTransition(
 		return st, errors.Wrap(err, "could not process block")
 	}
 	var valid bool
-	valid, err = set.VerifyVerbosely()
+	sigSet := set.Batch()
+	valid, err = sigSet.VerifyVerbosely()
 	if err != nil {
 		return st, errors.Wrap(err, "could not batch verify signature")
 	}

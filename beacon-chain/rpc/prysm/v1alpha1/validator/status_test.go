@@ -1,37 +1,36 @@
 package validator
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
 
+	mockChain "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache/depositsnapshot"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/d4l3k/messagediff"
-	mockChain "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestValidatorStatus_DepositedEth1(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	deposits, _, err := util.DeterministicDepositsAndKeys(1)
 	require.NoError(t, err, "Could not generate deposits and keys")
 	deposit := deposits[0]
@@ -63,13 +62,13 @@ func TestValidatorStatus_DepositedEth1(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey1,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_DEPOSITED, resp.Status)
 }
 
 func TestValidatorStatus_Deposited(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	deps, keys, err := util.DeterministicDepositsAndKeys(1)
 	require.NoError(t, err)
@@ -105,13 +104,13 @@ func TestValidatorStatus_Deposited(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey1,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_DEPOSITED, resp.Status)
 }
 
 func TestValidatorStatus_PartiallyDeposited(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKey1 := pubKey(1)
 	depData := &ethpb.Deposit_Data{
@@ -158,13 +157,13 @@ func TestValidatorStatus_PartiallyDeposited(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey1,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_PARTIALLY_DEPOSITED, resp.Status)
 }
 
 func TestValidatorStatus_Pending_MultipleDeposits(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKey1 := pubKey(1)
 	depData := &ethpb.Deposit_Data{
@@ -217,13 +216,13 @@ func TestValidatorStatus_Pending_MultipleDeposits(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey1,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_PENDING, resp.Status)
 }
 
 func TestValidatorStatus_Pending(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKey := pubKey(1)
 	block := util.NewBeaconBlock()
@@ -278,13 +277,13 @@ func TestValidatorStatus_Pending(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_PENDING, resp.Status)
 }
 
 func TestValidatorStatus_Exiting(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKey := pubKey(1)
 
@@ -340,13 +339,13 @@ func TestValidatorStatus_Exiting(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_EXITING, resp.Status)
 }
 
 func TestValidatorStatus_Slashing(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKey := pubKey(1)
 
@@ -399,13 +398,13 @@ func TestValidatorStatus_Slashing(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_EXITED, resp.Status)
 }
 
 func TestValidatorStatus_Exited(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubKey := pubKey(1)
 
@@ -457,7 +456,7 @@ func TestValidatorStatus_Exited(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_EXITED, resp.Status)
 }
@@ -481,13 +480,13 @@ func TestValidatorStatus_UnknownStatus(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_UNKNOWN_STATUS, resp.Status)
 }
 
 func TestActivationStatus_OK(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	deposits, _, err := util.DeterministicDepositsAndKeys(4)
 	require.NoError(t, err)
@@ -531,17 +530,17 @@ func TestActivationStatus_OK(t *testing.T) {
 	assert.NoError(t, depositTrie.Insert(dep.Data.Signature, 15))
 	root, err = depositTrie.HashTreeRoot()
 	require.NoError(t, err)
-	assert.NoError(t, depositCache.InsertDeposit(context.Background(), dep, 0, 1, root))
+	assert.NoError(t, depositCache.InsertDeposit(t.Context(), dep, 0, 1, root))
 
 	vs := &Server{
-		Ctx:               context.Background(),
+		Ctx:               t.Context(),
 		ChainStartFetcher: &mockExecution.Chain{},
 		BlockFetcher:      &mockExecution.Chain{},
 		Eth1InfoFetcher:   &mockExecution.Chain{},
 		DepositFetcher:    depositCache,
 		HeadFetcher:       &mockChain.ChainService{State: stateObj, Root: genesisRoot[:]},
 	}
-	activeExists, response, err := vs.activationStatus(context.Background(), pubKeys)
+	activeExists, response, err := vs.activationStatus(t.Context(), pubKeys)
 	require.NoError(t, err)
 	require.Equal(t, true, activeExists, "No activated validator exists when there was supposed to be 2")
 	if response[0].Status.Status != ethpb.ValidatorStatus_ACTIVE {
@@ -580,7 +579,7 @@ func TestActivationStatus_OK(t *testing.T) {
 func TestOptimisticStatus(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	server := &Server{OptimisticModeFetcher: &mockChain.ChainService{}, TimeFetcher: &mockChain.ChainService{}}
-	err := server.optimisticStatus(context.Background())
+	err := server.optimisticStatus(t.Context())
 	require.NoError(t, err)
 
 	cfg := params.BeaconConfig().Copy()
@@ -588,19 +587,19 @@ func TestOptimisticStatus(t *testing.T) {
 	params.OverrideBeaconConfig(cfg)
 
 	server = &Server{OptimisticModeFetcher: &mockChain.ChainService{Optimistic: true}, TimeFetcher: &mockChain.ChainService{}}
-	err = server.optimisticStatus(context.Background())
+	err = server.optimisticStatus(t.Context())
 	s, ok := status.FromError(err)
 	require.Equal(t, true, ok)
 	require.DeepEqual(t, codes.Unavailable, s.Code())
 	require.ErrorContains(t, errOptimisticMode.Error(), err)
 
 	server = &Server{OptimisticModeFetcher: &mockChain.ChainService{Optimistic: false}, TimeFetcher: &mockChain.ChainService{}}
-	err = server.optimisticStatus(context.Background())
+	err = server.optimisticStatus(t.Context())
 	require.NoError(t, err)
 }
 
 func TestValidatorStatus_CorrectActivationQueue(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pbKey := pubKey(5)
 	block := util.NewBeaconBlock()
@@ -662,7 +661,7 @@ func TestValidatorStatus_CorrectActivationQueue(t *testing.T) {
 	depositCache, err := depositsnapshot.New()
 	require.NoError(t, err)
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		depData := &ethpb.Deposit_Data{
 			PublicKey:             pubKey(uint64(i)),
 			Signature:             bytesutil.PadTo([]byte("hi"), 96),
@@ -694,14 +693,14 @@ func TestValidatorStatus_CorrectActivationQueue(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pbKey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_PENDING, resp.Status)
 	assert.Equal(t, uint64(2), resp.PositionInActivationQueue, "Unexpected position in activation queue")
 }
 
 func TestMultipleValidatorStatus_Pubkeys(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	deposits, _, err := util.DeterministicDepositsAndKeys(6)
 	require.NoError(t, err)
@@ -762,10 +761,10 @@ func TestMultipleValidatorStatus_Pubkeys(t *testing.T) {
 	assert.NoError(t, depositTrie.Insert(dep.Data.Signature, 15))
 	root, err = depositTrie.HashTreeRoot()
 	require.NoError(t, err)
-	assert.NoError(t, depositCache.InsertDeposit(context.Background(), dep, 0, 1, root))
+	assert.NoError(t, depositCache.InsertDeposit(t.Context(), dep, 0, 1, root))
 
 	vs := &Server{
-		Ctx:               context.Background(),
+		Ctx:               t.Context(),
 		ChainStartFetcher: &mockExecution.Chain{},
 		BlockFetcher:      &mockExecution.Chain{},
 		Eth1InfoFetcher:   &mockExecution.Chain{},
@@ -797,7 +796,7 @@ func TestMultipleValidatorStatus_Pubkeys(t *testing.T) {
 	}
 
 	req := &ethpb.MultipleValidatorStatusRequest{PublicKeys: pubKeys}
-	response, err := vs.MultipleValidatorStatus(context.Background(), req)
+	response, err := vs.MultipleValidatorStatus(t.Context(), req)
 	require.NoError(t, err)
 
 	assert.Equal(t, len(response.PublicKeys), len(pubKeys))
@@ -860,7 +859,7 @@ func TestMultipleValidatorStatus_Indices(t *testing.T) {
 	require.NoError(t, err, "Could not get signing root")
 
 	vs := &Server{
-		Ctx:               context.Background(),
+		Ctx:               t.Context(),
 		ChainStartFetcher: &mockExecution.Chain{},
 		BlockFetcher:      &mockExecution.Chain{},
 		Eth1InfoFetcher:   &mockExecution.Chain{},
@@ -891,7 +890,7 @@ func TestMultipleValidatorStatus_Indices(t *testing.T) {
 
 	// Note: Index 6 should be skipped.
 	req := &ethpb.MultipleValidatorStatusRequest{Indices: []int64{0, 1, 2, 3, 4, 5, 6}}
-	response, err := vs.MultipleValidatorStatus(context.Background(), req)
+	response, err := vs.MultipleValidatorStatus(t.Context(), req)
 	require.NoError(t, err)
 
 	assert.Equal(t, len(beaconState.Validators), len(response.PublicKeys))
@@ -908,7 +907,7 @@ func TestMultipleValidatorStatus_Indices(t *testing.T) {
 }
 
 func TestValidatorStatus_Invalid(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	deposits, _, err := util.DeterministicDepositsAndKeys(1)
 	require.NoError(t, err, "Could not generate deposits and keys")
 	deposit := deposits[0]
@@ -941,7 +940,7 @@ func TestValidatorStatus_Invalid(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubKey1,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 	assert.Equal(t, ethpb.ValidatorStatus_INVALID, resp.Status)
 }
@@ -976,7 +975,7 @@ func TestServer_CheckDoppelGanger(t *testing.T) {
 					ValidatorRequests: make([]*ethpb.DoppelGangerRequest_ValidatorRequest, 0),
 				}
 				response := &ethpb.DoppelGangerResponse{Responses: make([]*ethpb.DoppelGangerResponse_ValidatorResponse, 0)}
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					request.ValidatorRequests = append(request.ValidatorRequests, &ethpb.DoppelGangerRequest_ValidatorRequest{
 						PublicKey:  keys[i].PublicKey().Marshal(),
 						Epoch:      1,
@@ -1012,7 +1011,7 @@ func TestServer_CheckDoppelGanger(t *testing.T) {
 					ValidatorRequests: make([]*ethpb.DoppelGangerRequest_ValidatorRequest, 0),
 				}
 				response := &ethpb.DoppelGangerResponse{Responses: make([]*ethpb.DoppelGangerResponse_ValidatorResponse, 0)}
-				for i := 0; i < 2; i++ {
+				for i := range 2 {
 					request.ValidatorRequests = append(request.ValidatorRequests, &ethpb.DoppelGangerRequest_ValidatorRequest{
 						PublicKey:  keys[i].PublicKey().Marshal(),
 						Epoch:      1,
@@ -1059,7 +1058,7 @@ func TestServer_CheckDoppelGanger(t *testing.T) {
 					ValidatorRequests: make([]*ethpb.DoppelGangerRequest_ValidatorRequest, 0),
 				}
 				response := &ethpb.DoppelGangerResponse{Responses: make([]*ethpb.DoppelGangerResponse_ValidatorResponse, 0)}
-				for i := 0; i < 2; i++ {
+				for i := range 2 {
 					request.ValidatorRequests = append(request.ValidatorRequests, &ethpb.DoppelGangerRequest_ValidatorRequest{
 						PublicKey:  keys[i].PublicKey().Marshal(),
 						Epoch:      1,
@@ -1162,7 +1161,7 @@ func TestServer_CheckDoppelGanger(t *testing.T) {
 					ValidatorRequests: make([]*ethpb.DoppelGangerRequest_ValidatorRequest, 0),
 				}
 				response := &ethpb.DoppelGangerResponse{Responses: make([]*ethpb.DoppelGangerResponse_ValidatorResponse, 0)}
-				for i := 0; i < 15; i++ {
+				for i := range 15 {
 					request.ValidatorRequests = append(request.ValidatorRequests, &ethpb.DoppelGangerRequest_ValidatorRequest{
 						PublicKey:  keys[i].PublicKey().Marshal(),
 						Epoch:      2,
@@ -1199,7 +1198,7 @@ func TestServer_CheckDoppelGanger(t *testing.T) {
 					ValidatorRequests: make([]*ethpb.DoppelGangerRequest_ValidatorRequest, 0),
 				}
 				response := &ethpb.DoppelGangerResponse{Responses: make([]*ethpb.DoppelGangerResponse_ValidatorResponse, 0)}
-				for i := 0; i < 15; i++ {
+				for i := range 15 {
 					request.ValidatorRequests = append(request.ValidatorRequests, &ethpb.DoppelGangerRequest_ValidatorRequest{
 						PublicKey:  keys[i].PublicKey().Marshal(),
 						Epoch:      1,
@@ -1251,7 +1250,7 @@ func TestServer_CheckDoppelGanger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			vs, req, resp := tt.svSetup(t)
-			got, err := vs.CheckDoppelGanger(context.Background(), req)
+			got, err := vs.CheckDoppelGanger(t.Context(), req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CheckDoppelGanger() error = %v, wantErr %v", err, tt.wantErr)
 				return

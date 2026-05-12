@@ -5,11 +5,13 @@ go_library(
     srcs = [
         "beacon_block.go",
         "error.go",
+        "execution_payload_envelope.go",
         "light_client.go",
+        "signed_execution_payload_bid.go",
         "utils.go",
         "validator.go",
     ],
-    importpath = "github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces",
+    importpath = "github.com/OffchainLabs/prysm/v7/consensus-types/interfaces",
     visibility = ["//visibility:public"],
     deps = [
         "//config/fieldparams:go_default_library",

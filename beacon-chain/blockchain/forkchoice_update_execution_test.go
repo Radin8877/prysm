@@ -1,64 +1,68 @@
 package blockchain
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	testDB "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	testDB "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestService_isNewHead(t *testing.T) {
 	beaconDB := testDB.SetupDB(t)
 	service := setupBeaconChain(t, beaconDB)
-	require.Equal(t, true, service.isNewHead([32]byte{}))
 
+	// Zero root is always a new head
+	require.Equal(t, true, service.isNewHead([32]byte{}, false))
+
+	// Different root is a new head
 	service.head = &head{root: [32]byte{1}}
-	require.Equal(t, true, service.isNewHead([32]byte{2}))
-	require.Equal(t, false, service.isNewHead([32]byte{1}))
+	require.Equal(t, true, service.isNewHead([32]byte{2}, false))
+
+	// Same root is not a new head.
+	require.Equal(t, false, service.isNewHead([32]byte{1}, false))
 
 	// Nil head should use origin root
 	service.head = nil
 	service.originBlockRoot = [32]byte{3}
-	require.Equal(t, true, service.isNewHead([32]byte{2}))
-	require.Equal(t, false, service.isNewHead([32]byte{3}))
+	require.Equal(t, true, service.isNewHead([32]byte{2}, false))
+	require.Equal(t, false, service.isNewHead([32]byte{3}, false))
 }
 
 func TestService_getHeadStateAndBlock(t *testing.T) {
 	beaconDB := testDB.SetupDB(t)
 	service := setupBeaconChain(t, beaconDB)
-	_, _, err := service.getStateAndBlock(context.Background(), [32]byte{})
+	_, _, err := service.getStateAndBlock(t.Context(), [32]byte{}, [32]byte{})
 	require.ErrorContains(t, "block does not exist", err)
 
 	blk, err := blocks.NewSignedBeaconBlock(util.HydrateSignedBeaconBlock(&ethpb.SignedBeaconBlock{Signature: []byte{1}}))
 	require.NoError(t, err)
-	require.NoError(t, service.cfg.BeaconDB.SaveBlock(context.Background(), blk))
+	require.NoError(t, service.cfg.BeaconDB.SaveBlock(t.Context(), blk))
 
 	st, _ := util.DeterministicGenesisState(t, 1)
 	r, err := blk.Block().HashTreeRoot()
 	require.NoError(t, err)
-	require.NoError(t, service.cfg.BeaconDB.SaveState(context.Background(), st, r))
+	require.NoError(t, service.cfg.BeaconDB.SaveState(t.Context(), st, r))
 
-	gotState, err := service.cfg.BeaconDB.State(context.Background(), r)
+	gotState, err := service.cfg.BeaconDB.State(t.Context(), r)
 	require.NoError(t, err)
 	require.DeepEqual(t, st.ToProto(), gotState.ToProto())
 
-	gotBlk, err := service.cfg.BeaconDB.Block(context.Background(), r)
+	gotBlk, err := service.cfg.BeaconDB.Block(t.Context(), r)
 	require.NoError(t, err)
 	require.DeepEqual(t, blk, gotBlk)
 }
 
 func TestService_forkchoiceUpdateWithExecution_exceptionalCases(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := testServiceOptsWithDB(t)
 
 	service, err := NewService(ctx, opts...)
@@ -98,7 +102,7 @@ func TestService_forkchoiceUpdateWithExecution_exceptionalCases(t *testing.T) {
 		headBlock:     wsb,
 		proposingSlot: service.CurrentSlot() + 1,
 	}
-	require.NoError(t, service.forkchoiceUpdateWithExecution(ctx, args))
+	service.forkchoiceUpdateWithExecution(ctx, args)
 
 	payloadID, has := service.cfg.PayloadIDCache.PayloadID(2, [32]byte{2})
 	require.Equal(t, true, has)
@@ -152,7 +156,7 @@ func TestService_forkchoiceUpdateWithExecution_SameHeadRootNewProposer(t *testin
 		headRoot:      r,
 		proposingSlot: service.CurrentSlot() + 1,
 	}
-	require.NoError(t, service.forkchoiceUpdateWithExecution(ctx, args))
+	service.forkchoiceUpdateWithExecution(ctx, args)
 }
 
 func TestShouldOverrideFCU(t *testing.T) {
@@ -161,6 +165,7 @@ func TestShouldOverrideFCU(t *testing.T) {
 	ctx, fcs := tr.ctx, tr.fcs
 
 	service.SetGenesisTime(time.Now().Add(-time.Duration(2*params.BeaconConfig().SecondsPerSlot) * time.Second))
+	fcs.SetGenesisTime(time.Now().Add(-time.Duration(2*params.BeaconConfig().SecondsPerSlot) * time.Second))
 	headRoot := [32]byte{'b'}
 	parentRoot := [32]byte{'a'}
 	ojc := &ethpb.Checkpoint{}
@@ -181,11 +186,12 @@ func TestShouldOverrideFCU(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, headRoot, head)
 
-	fcs.SetGenesisTime(uint64(time.Now().Unix()) - 29)
+	wantLog := "aborted due to attestations after threshold"
+	fcs.SetGenesisTime(time.Now().Add(-29 * time.Second))
 	require.Equal(t, true, service.shouldOverrideFCU(parentRoot, 3))
-	require.LogsDoNotContain(t, hook, "10 seconds")
-	fcs.SetGenesisTime(uint64(time.Now().Unix()) - 24)
+	require.LogsDoNotContain(t, hook, wantLog)
+	fcs.SetGenesisTime(time.Now().Add(-24 * time.Second))
 	service.SetGenesisTime(time.Now().Add(-time.Duration(2*params.BeaconConfig().SecondsPerSlot+10) * time.Second))
 	require.Equal(t, false, service.shouldOverrideFCU(parentRoot, 3))
-	require.LogsContain(t, hook, "10 seconds")
+	require.LogsContain(t, hook, wantLog)
 }

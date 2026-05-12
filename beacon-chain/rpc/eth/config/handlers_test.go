@@ -5,19 +5,23 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strconv"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	log "github.com/sirupsen/logrus"
+	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestGetDepositContract(t *testing.T) {
@@ -81,10 +85,16 @@ func TestGetSpec(t *testing.T) {
 	config.ElectraForkEpoch = 107
 	config.FuluForkVersion = []byte("FuluForkVersion")
 	config.FuluForkEpoch = 109
+	config.GloasForkVersion = []byte("GloasForkVersion")
+	config.GloasForkEpoch = 110
+	config.MinBuilderWithdrawabilityDelay = 111
+	config.MaxBuildersPerWithdrawalsSweep = 112
 	config.BLSWithdrawalPrefixByte = byte('b')
 	config.ETH1AddressWithdrawalPrefixByte = byte('c')
+	config.BuilderWithdrawalPrefixByte = byte('e')
 	config.GenesisDelay = 24
 	config.SecondsPerSlot = 25
+	config.SlotDurationMilliseconds = 120
 	config.MinAttestationInclusionDelay = 26
 	config.SlotsPerEpoch = 27
 	config.MinSeedLookahead = 28
@@ -127,6 +137,15 @@ func TestGetSpec(t *testing.T) {
 	config.ProportionalSlashingMultiplierAltair = 69
 	config.InactivityScoreRecoveryRate = 70
 	config.MinSyncCommitteeParticipants = 71
+	config.ProposerReorgCutoffBPS = primitives.BP(121)
+	config.AttestationDueBPS = primitives.BP(122)
+	config.AggregateDueBPS = primitives.BP(123)
+	config.ContributionDueBPS = primitives.BP(124)
+	config.AttestationDueBPSGloas = primitives.BP(126)
+	config.AggregateDueBPSGloas = primitives.BP(127)
+	config.SyncMessageDueBPSGloas = primitives.BP(128)
+	config.ContributionDueBPSGloas = primitives.BP(129)
+	config.PayloadAttestationDueBPS = primitives.BP(130)
 	config.TerminalBlockHash = common.HexToHash("TerminalBlockHash")
 	config.TerminalBlockHashActivationEpoch = 72
 	config.TerminalTotalDifficulty = "73"
@@ -140,19 +159,35 @@ func TestGetSpec(t *testing.T) {
 	config.WhistleBlowerRewardQuotientElectra = 79
 	config.PendingPartialWithdrawalsLimit = 80
 	config.MinActivationBalance = 81
-	config.PendingDepositLimit = 82
+	config.PendingDepositsLimit = 82
 	config.MaxPendingPartialsPerWithdrawalsSweep = 83
 	config.PendingConsolidationsLimit = 84
-	config.MaxPartialWithdrawalsPerPayload = 85
 	config.FullExitRequestAmount = 86
 	config.MaxConsolidationsRequestsPerPayload = 87
 	config.MaxAttesterSlashingsElectra = 88
 	config.MaxAttestationsElectra = 89
 	config.MaxWithdrawalRequestsPerPayload = 90
-	config.MaxCellsInExtendedMatrix = 91
-	config.UnsetDepositRequestsStartIndex = 92
-	config.MaxDepositRequestsPerPayload = 93
-	config.MaxPendingDepositsPerEpoch = 94
+	config.UnsetDepositRequestsStartIndex = 91
+	config.MaxDepositRequestsPerPayload = 92
+	config.MaxPendingDepositsPerEpoch = 93
+	config.MaxBlobCommitmentsPerBlock = 94
+	config.MaxBytesPerTransaction = 95
+	config.MaxExtraDataBytes = 96
+	config.BytesPerLogsBloom = 97
+	config.MaxTransactionsPerPayload = 98
+	config.FieldElementsPerBlob = 99
+	config.KzgCommitmentInclusionProofDepth = 100
+	config.BlobsidecarSubnetCount = 101
+	config.BlobsidecarSubnetCountElectra = 102
+	config.SyncMessageDueBPS = 103
+	config.BuilderWithdrawalPrefixByte = byte('b')
+	config.BuilderIndexSelfBuild = primitives.BuilderIndex(125)
+	config.BuilderPaymentThresholdNumerator = 104
+	config.BuilderPaymentThresholdDenominator = 105
+	config.MaxRequestPayloads = 106
+	config.ChurnLimitQuotientGloas = 107
+	config.ConsolidationChurnLimitQuotient = 108
+	config.MaxPerEpochActivationChurnLimitGloas = 109
 
 	var dbp [4]byte
 	copy(dbp[:], []byte{'0', '0', '0', '1'})
@@ -175,6 +210,15 @@ func TestGetSpec(t *testing.T) {
 	var daap [4]byte
 	copy(daap[:], []byte{'0', '0', '0', '7'})
 	config.DomainAggregateAndProof = daap
+	var dbb [4]byte
+	copy(dbb[:], []byte{'0', '0', '0', '8'})
+	config.DomainBeaconBuilder = dbb
+	var dptc [4]byte
+	copy(dptc[:], []byte{'0', '0', '0', '8'})
+	config.DomainPTCAttester = dptc
+	var dpp [4]byte
+	copy(dpp[:], []byte{'0', '0', '0', '9'})
+	config.DomainProposerPreferences = dpp
 	var dam [4]byte
 	copy(dam[:], []byte{'1', '0', '0', '0'})
 	config.DomainApplicationMask = dam
@@ -188,10 +232,9 @@ func TestGetSpec(t *testing.T) {
 	require.Equal(t, http.StatusOK, writer.Code)
 	resp := structs.GetSpecResponse{}
 	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &resp))
-	data, ok := resp.Data.(map[string]interface{})
+	data, ok := resp.Data.(map[string]any)
 	require.Equal(t, true, ok)
-
-	assert.Equal(t, 161, len(data))
+	assert.Equal(t, 205, len(data))
 	for k, v := range data {
 		t.Run(k, func(t *testing.T) {
 			switch k {
@@ -229,8 +272,6 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "14", v)
 			case "RANDOM_SUBNETS_PER_VALIDATOR":
 				assert.Equal(t, "15", v)
-			case "EPOCHS_PER_RANDOM_SUBNET_SUBSCRIPTION":
-				assert.Equal(t, "16", v)
 			case "SECONDS_PER_ETH1_BLOCK":
 				assert.Equal(t, "17", v)
 			case "DEPOSIT_CHAIN_ID":
@@ -273,6 +314,14 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "0x"+hex.EncodeToString([]byte("FuluForkVersion")), v)
 			case "FULU_FORK_EPOCH":
 				assert.Equal(t, "109", v)
+			case "GLOAS_FORK_VERSION":
+				assert.Equal(t, "0x"+hex.EncodeToString([]byte("GloasForkVersion")), v)
+			case "GLOAS_FORK_EPOCH":
+				assert.Equal(t, "110", v)
+			case "MIN_BUILDER_WITHDRAWABILITY_DELAY":
+				assert.Equal(t, "111", v)
+			case "MAX_BUILDERS_PER_WITHDRAWALS_SWEEP":
+				assert.Equal(t, "112", v)
 			case "MIN_ANCHOR_POW_BLOCK_DIFFICULTY":
 				assert.Equal(t, "1000", v)
 			case "BLS_WITHDRAWAL_PREFIX":
@@ -283,6 +332,8 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "24", v)
 			case "SECONDS_PER_SLOT":
 				assert.Equal(t, "25", v)
+			case "SLOT_DURATION_MS":
+				assert.Equal(t, "120", v)
 			case "MIN_ATTESTATION_INCLUSION_DELAY":
 				assert.Equal(t, "26", v)
 			case "SLOTS_PER_EPOCH":
@@ -393,6 +444,10 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "0x30303036", v)
 			case "DOMAIN_AGGREGATE_AND_PROOF":
 				assert.Equal(t, "0x30303037", v)
+			case "DOMAIN_PTC_ATTESTER":
+				assert.Equal(t, "0x30303038", v)
+			case "DOMAIN_PROPOSER_PREFERENCES":
+				assert.Equal(t, "0x30303039", v)
 			case "DOMAIN_APPLICATION_MASK":
 				assert.Equal(t, "0x31303030", v)
 			case "DOMAIN_SYNC_COMMITTEE":
@@ -405,8 +460,14 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "0x0a000000", v)
 			case "DOMAIN_APPLICATION_BUILDER":
 				assert.Equal(t, "0x00000001", v)
+			case "DOMAIN_BEACON_BUILDER":
+				assert.Equal(t, "0x30303038", v)
 			case "DOMAIN_BLOB_SIDECAR":
 				assert.Equal(t, "0x00000000", v)
+			case "BUILDER_WITHDRAWAL_PREFIX":
+				assert.Equal(t, "0x62", v)
+			case "BUILDER_INDEX_SELF_BUILD":
+				assert.Equal(t, "125", v)
 			case "TRANSITION_TOTAL_DIFFICULTY":
 				assert.Equal(t, "0", v)
 			case "TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH":
@@ -427,8 +488,6 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "16777216", v)
 			case "PROPOSER_SCORE_BOOST":
 				assert.Equal(t, "40", v)
-			case "INTERVALS_PER_SLOT":
-				assert.Equal(t, "3", v)
 			case "MAX_WITHDRAWALS_PER_PAYLOAD":
 				assert.Equal(t, "74", v)
 			case "MAX_BLS_TO_EXECUTION_CHANGES":
@@ -437,17 +496,32 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "76", v)
 			case "REORG_MAX_EPOCHS_SINCE_FINALIZATION":
 				assert.Equal(t, "2", v)
-			case "REORG_WEIGHT_THRESHOLD":
+			case "REORG_HEAD_WEIGHT_THRESHOLD":
 				assert.Equal(t, "20", v)
 			case "REORG_PARENT_WEIGHT_THRESHOLD":
 				assert.Equal(t, "160", v)
+			case "PROPOSER_REORG_CUTOFF_BPS":
+				assert.Equal(t, "121", v)
+			case "ATTESTATION_DUE_BPS":
+				assert.Equal(t, "122", v)
+			case "AGGREGATE_DUE_BPS":
+				assert.Equal(t, "123", v)
+			case "CONTRIBUTION_DUE_BPS":
+				assert.Equal(t, "124", v)
+			case "ATTESTATION_DUE_BPS_GLOAS":
+				assert.Equal(t, "126", v)
+			case "AGGREGATE_DUE_BPS_GLOAS":
+				assert.Equal(t, "127", v)
+			case "SYNC_MESSAGE_DUE_BPS_GLOAS":
+				assert.Equal(t, "128", v)
+			case "CONTRIBUTION_DUE_BPS_GLOAS":
+				assert.Equal(t, "129", v)
+			case "PAYLOAD_ATTESTATION_DUE_BPS":
+				assert.Equal(t, "130", v)
 			case "MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT":
 				assert.Equal(t, "8", v)
 			case "MAX_REQUEST_LIGHT_CLIENT_UPDATES":
 				assert.Equal(t, "128", v)
-			case "SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY":
-			case "NODE_ID_BITS":
-				assert.Equal(t, "256", v)
 			case "ATTESTATION_SUBNET_EXTRA_BITS":
 				assert.Equal(t, "0", v)
 			case "ATTESTATION_SUBNET_PREFIX_BITS":
@@ -472,9 +546,7 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "5", v)
 			case "MIN_EPOCHS_FOR_BLOCK_REQUESTS":
 				assert.Equal(t, "33024", v)
-			case "GOSSIP_MAX_SIZE":
-				assert.Equal(t, "10485760", v)
-			case "MAX_CHUNK_SIZE":
+			case "MAX_PAYLOAD_SIZE":
 				assert.Equal(t, "10485760", v)
 			case "ATTESTATION_SUBNET_COUNT":
 				assert.Equal(t, "64", v)
@@ -483,8 +555,6 @@ func TestGetSpec(t *testing.T) {
 			case "MAX_REQUEST_BLOCKS":
 				assert.Equal(t, "1024", v)
 			case "MAX_REQUEST_BLOCKS_DENEB":
-				assert.Equal(t, "128", v)
-			case "NUMBER_OF_COLUMNS":
 				assert.Equal(t, "128", v)
 			case "MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA":
 				assert.Equal(t, "128000000000", v)
@@ -512,8 +582,6 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "83", v)
 			case "PENDING_CONSOLIDATIONS_LIMIT":
 				assert.Equal(t, "84", v)
-			case "MAX_PARTIAL_WITHDRAWALS_PER_PAYLOAD":
-				assert.Equal(t, "85", v)
 			case "FULL_EXIT_REQUEST_AMOUNT":
 				assert.Equal(t, "86", v)
 			case "MAX_CONSOLIDATION_REQUESTS_PER_PAYLOAD":
@@ -524,20 +592,84 @@ func TestGetSpec(t *testing.T) {
 				assert.Equal(t, "89", v)
 			case "MAX_WITHDRAWAL_REQUESTS_PER_PAYLOAD":
 				assert.Equal(t, "90", v)
-			case "MAX_CELLS_IN_EXTENDED_MATRIX":
-				assert.Equal(t, "91", v)
 			case "UNSET_DEPOSIT_REQUESTS_START_INDEX":
-				assert.Equal(t, "92", v)
+				assert.Equal(t, "91", v)
 			case "MAX_DEPOSIT_REQUESTS_PER_PAYLOAD":
-				assert.Equal(t, "93", v)
+				assert.Equal(t, "92", v)
 			case "MAX_PENDING_DEPOSITS_PER_EPOCH":
-				assert.Equal(t, "94", v)
-			case "TARGET_BLOBS_PER_BLOCK_ELECTRA":
-				assert.Equal(t, "6", v)
+				assert.Equal(t, "93", v)
 			case "MAX_BLOBS_PER_BLOCK_ELECTRA":
 				assert.Equal(t, "9", v)
 			case "MAX_REQUEST_BLOB_SIDECARS_ELECTRA":
 				assert.Equal(t, "1152", v)
+			case "NUMBER_OF_CUSTODY_GROUPS":
+				assert.Equal(t, "128", v)
+			case "BALANCE_PER_ADDITIONAL_CUSTODY_GROUP":
+				assert.Equal(t, "32000000000", v)
+			case "CUSTODY_REQUIREMENT":
+				assert.Equal(t, "4", v)
+			case "SAMPLES_PER_SLOT":
+				assert.Equal(t, "8", v)
+			case "VALIDATOR_CUSTODY_REQUIREMENT":
+				assert.Equal(t, "8", v)
+			case "MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS":
+				assert.Equal(t, "4096", v)
+			case "MAX_BLOB_COMMITMENTS_PER_BLOCK":
+				assert.Equal(t, "94", v)
+			case "MAX_REQUEST_PAYLOADS":
+				assert.Equal(t, fmt.Sprintf("%d", config.MaxRequestPayloads), v)
+			case "MAX_BYTES_PER_TRANSACTION":
+				assert.Equal(t, "95", v)
+			case "MAX_EXTRA_DATA_BYTES":
+				assert.Equal(t, "96", v)
+			case "BYTES_PER_LOGS_BLOOM":
+				assert.Equal(t, "97", v)
+			case "MAX_TRANSACTIONS_PER_PAYLOAD":
+				assert.Equal(t, "98", v)
+			case "FIELD_ELEMENTS_PER_BLOB":
+				assert.Equal(t, "99", v)
+			case "KZG_COMMITMENT_INCLUSION_PROOF_DEPTH":
+				assert.Equal(t, "100", v)
+			case "BLOB_SIDECAR_SUBNET_COUNT":
+				assert.Equal(t, "101", v)
+			case "BLOB_SIDECAR_SUBNET_COUNT_ELECTRA":
+				assert.Equal(t, "102", v)
+			case "SYNC_MESSAGE_DUE_BPS":
+				assert.Equal(t, "103", v)
+			case "BUILDER_PAYMENT_THRESHOLD_NUMERATOR":
+				assert.Equal(t, "104", v)
+			case "BUILDER_PAYMENT_THRESHOLD_DENOMINATOR":
+				assert.Equal(t, "105", v)
+			case "CHURN_LIMIT_QUOTIENT_GLOAS":
+				assert.Equal(t, "107", v)
+			case "CONSOLIDATION_CHURN_LIMIT_QUOTIENT":
+				assert.Equal(t, "108", v)
+			case "MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS":
+				assert.Equal(t, "109", v)
+			case "BLOB_SCHEDULE":
+				blobSchedule, ok := v.([]any)
+				assert.Equal(t, true, ok)
+				assert.Equal(t, 2, len(blobSchedule))
+			case "FIELD_ELEMENTS_PER_CELL":
+				assert.Equal(t, "64", v) // From fieldparams.CellsPerBlob
+			case "FIELD_ELEMENTS_PER_EXT_BLOB":
+				assert.Equal(t, "198", v) // FieldElementsPerBlob (99) * 2
+			case "KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH":
+				assert.Equal(t, "4", v) // Preset value
+			case "CELLS_PER_EXT_BLOB":
+				assert.Equal(t, "128", v) // From fieldparams.NumberOfColumns
+			case "NUMBER_OF_COLUMNS":
+				assert.Equal(t, "128", v) // From fieldparams.NumberOfColumns
+			case "UPDATE_TIMEOUT":
+				assert.Equal(t, "1782", v) // SlotsPerEpoch (27) * EpochsPerSyncCommitteePeriod (66)
+			case "PTC_SIZE":
+				assert.Equal(t, strconv.FormatUint(uint64(fieldparams.PTCSize), 10), v)
+			case "MAX_PAYLOAD_ATTESTATIONS":
+				assert.Equal(t, strconv.FormatUint(uint64(fieldparams.MaxPayloadAttestations), 10), v)
+			case "BUILDER_REGISTRY_LIMIT":
+				assert.Equal(t, strconv.FormatUint(uint64(fieldparams.BuilderRegistryLimit), 10), v)
+			case "BUILDER_PENDING_WITHDRAWALS_LIMIT":
+				assert.Equal(t, strconv.FormatUint(uint64(fieldparams.BuilderPendingWithdrawalsLimit), 10), v)
 			default:
 				t.Errorf("Incorrect key: %s", k)
 			}
@@ -547,43 +679,34 @@ func TestGetSpec(t *testing.T) {
 
 func TestForkSchedule_Ok(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
-		genesisForkVersion := []byte("Genesis")
-		firstForkVersion, firstForkEpoch := []byte("Firs"), primitives.Epoch(100)
-		secondForkVersion, secondForkEpoch := []byte("Seco"), primitives.Epoch(200)
-		thirdForkVersion, thirdForkEpoch := []byte("Thir"), primitives.Epoch(300)
 
 		params.SetupTestConfigCleanup(t)
 		config := params.BeaconConfig().Copy()
-		config.GenesisForkVersion = genesisForkVersion
-		// Create fork schedule adding keys in non-sorted order.
-		schedule := make(map[[4]byte]primitives.Epoch, 3)
-		schedule[bytesutil.ToBytes4(secondForkVersion)] = secondForkEpoch
-		schedule[bytesutil.ToBytes4(firstForkVersion)] = firstForkEpoch
-		schedule[bytesutil.ToBytes4(thirdForkVersion)] = thirdForkEpoch
-		config.ForkVersionSchedule = schedule
-		params.OverrideBeaconConfig(config)
+		config.InitializeForkSchedule()
 
 		request := httptest.NewRequest(http.MethodGet, "http://example.com/eth/v1/config/fork_schedule", nil)
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
+		genesisStr, firstStr, secondStr := hexutil.Encode(config.GenesisForkVersion), hexutil.Encode(config.AltairForkVersion), hexutil.Encode(config.BellatrixForkVersion)
 		GetForkSchedule(writer, request)
 		require.Equal(t, http.StatusOK, writer.Code)
 		resp := &structs.GetForkScheduleResponse{}
 		require.NoError(t, json.Unmarshal(writer.Body.Bytes(), resp))
-		require.Equal(t, 3, len(resp.Data))
+		schedule := params.SortedForkSchedule()
+		require.Equal(t, len(schedule), len(resp.Data))
 		fork := resp.Data[0]
-		assert.DeepEqual(t, hexutil.Encode(genesisForkVersion), fork.PreviousVersion)
-		assert.DeepEqual(t, hexutil.Encode(firstForkVersion), fork.CurrentVersion)
-		assert.Equal(t, fmt.Sprintf("%d", firstForkEpoch), fork.Epoch)
+		assert.Equal(t, genesisStr, fork.PreviousVersion)
+		assert.Equal(t, genesisStr, fork.CurrentVersion)
+		assert.Equal(t, fmt.Sprintf("%d", config.GenesisEpoch), fork.Epoch)
 		fork = resp.Data[1]
-		assert.DeepEqual(t, hexutil.Encode(firstForkVersion), fork.PreviousVersion)
-		assert.DeepEqual(t, hexutil.Encode(secondForkVersion), fork.CurrentVersion)
-		assert.Equal(t, fmt.Sprintf("%d", secondForkEpoch), fork.Epoch)
+		assert.Equal(t, genesisStr, fork.PreviousVersion)
+		assert.Equal(t, firstStr, fork.CurrentVersion)
+		assert.Equal(t, fmt.Sprintf("%d", config.AltairForkEpoch), fork.Epoch)
 		fork = resp.Data[2]
-		assert.DeepEqual(t, hexutil.Encode(secondForkVersion), fork.PreviousVersion)
-		assert.DeepEqual(t, hexutil.Encode(thirdForkVersion), fork.CurrentVersion)
-		assert.Equal(t, fmt.Sprintf("%d", thirdForkEpoch), fork.Epoch)
+		assert.Equal(t, firstStr, fork.PreviousVersion)
+		assert.Equal(t, secondStr, fork.CurrentVersion)
+		assert.Equal(t, fmt.Sprintf("%d", config.BellatrixForkEpoch), fork.Epoch)
 	})
 	t.Run("correct number of forks", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "http://example.com/eth/v1/config/fork_schedule", nil)
@@ -594,7 +717,143 @@ func TestForkSchedule_Ok(t *testing.T) {
 		require.Equal(t, http.StatusOK, writer.Code)
 		resp := &structs.GetForkScheduleResponse{}
 		require.NoError(t, json.Unmarshal(writer.Body.Bytes(), resp))
-		os := forks.NewOrderedSchedule(params.BeaconConfig())
-		assert.Equal(t, os.Len(), len(resp.Data))
+		os := params.SortedForkSchedule()
+		assert.Equal(t, len(os), len(resp.Data))
 	})
+}
+
+func TestGetSpec_BlobSchedule(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	config := params.BeaconConfig().Copy()
+	config.FuluForkEpoch = 1
+
+	// Set up a blob schedule with test data
+	config.BlobSchedule = []params.BlobScheduleEntry{
+		{
+			Epoch:            primitives.Epoch(100),
+			MaxBlobsPerBlock: 6,
+		},
+		{
+			Epoch:            primitives.Epoch(200),
+			MaxBlobsPerBlock: 9,
+		},
+	}
+	params.OverrideBeaconConfig(config)
+
+	request := httptest.NewRequest(http.MethodGet, "http://example.com/eth/v1/config/spec", nil)
+	writer := httptest.NewRecorder()
+	writer.Body = &bytes.Buffer{}
+
+	GetSpec(writer, request)
+	require.Equal(t, http.StatusOK, writer.Code)
+	resp := structs.GetSpecResponse{}
+	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.Equal(t, true, ok)
+
+	// Verify BLOB_SCHEDULE is present and properly formatted
+	blobScheduleValue, exists := data["BLOB_SCHEDULE"]
+	require.Equal(t, true, exists)
+
+	// Verify it's a slice of maps (actual JSON object, not string)
+	// The JSON unmarshaling converts it to []interface{} with map[string]interface{} entries
+	blobScheduleSlice, ok := blobScheduleValue.([]any)
+	require.Equal(t, true, ok)
+
+	// Convert to generic interface for easier testing
+	var blobSchedule []map[string]any
+	for _, entry := range blobScheduleSlice {
+		entryMap, ok := entry.(map[string]any)
+		require.Equal(t, true, ok)
+		blobSchedule = append(blobSchedule, entryMap)
+	}
+
+	// Verify the blob schedule content
+	require.Equal(t, 2, len(blobSchedule))
+
+	// Check first entry - values should be strings for consistent API output
+	assert.Equal(t, "100", blobSchedule[0]["EPOCH"])
+	assert.Equal(t, "6", blobSchedule[0]["MAX_BLOBS_PER_BLOCK"])
+
+	// Check second entry - values should be strings for consistent API output
+	assert.Equal(t, "200", blobSchedule[1]["EPOCH"])
+	assert.Equal(t, "9", blobSchedule[1]["MAX_BLOBS_PER_BLOCK"])
+
+	// Verify that fields with json:"-" are NOT present in the blob schedule entries
+	for i, entry := range blobSchedule {
+		t.Run(fmt.Sprintf("entry_%d_omits_json_dash_fields", i), func(t *testing.T) {
+			// These fields have `json:"-"` in NetworkScheduleEntry and should be omitted
+			_, hasForkVersion := entry["ForkVersion"]
+			assert.Equal(t, false, hasForkVersion, "ForkVersion should be omitted due to json:\"-\"")
+
+			_, hasForkDigest := entry["ForkDigest"]
+			assert.Equal(t, false, hasForkDigest, "ForkDigest should be omitted due to json:\"-\"")
+
+			_, hasBPOEpoch := entry["BPOEpoch"]
+			assert.Equal(t, false, hasBPOEpoch, "BPOEpoch should be omitted due to json:\"-\"")
+
+			_, hasVersionEnum := entry["VersionEnum"]
+			assert.Equal(t, false, hasVersionEnum, "VersionEnum should be omitted due to json:\"-\"")
+
+			_, hasIsFork := entry["isFork"]
+			assert.Equal(t, false, hasIsFork, "isFork should be omitted due to json:\"-\"")
+		})
+	}
+}
+
+func TestGetSpec_BlobSchedule_NotFulu(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	config := params.BeaconConfig().Copy()
+	// Fulu not scheduled (default: math.MaxUint64)
+	config.FuluForkEpoch = math.MaxUint64
+	config.BlobSchedule = []params.BlobScheduleEntry{
+		{Epoch: primitives.Epoch(100), MaxBlobsPerBlock: 6},
+	}
+	params.OverrideBeaconConfig(config)
+
+	request := httptest.NewRequest(http.MethodGet, "http://example.com/eth/v1/config/spec", nil)
+	writer := httptest.NewRecorder()
+	writer.Body = &bytes.Buffer{}
+
+	GetSpec(writer, request)
+	require.Equal(t, http.StatusOK, writer.Code)
+	resp := structs.GetSpecResponse{}
+	require.NoError(t, json.Unmarshal(writer.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.Equal(t, true, ok)
+
+	_, exists := data["BLOB_SCHEDULE"]
+	require.Equal(t, false, exists)
+}
+
+func TestConvertValueForJSON_NoErrorLogsForStrings(t *testing.T) {
+	logHook := logTest.NewLocal(log.StandardLogger())
+	defer logHook.Reset()
+
+	stringTestCases := []struct {
+		tag   string
+		value string
+	}{
+		{"CONFIG_NAME", "mainnet"},
+		{"PRESET_BASE", "mainnet"},
+		{"DEPOSIT_CONTRACT_ADDRESS", "0x00000000219ab540356cBB839Cbe05303d7705Fa"},
+		{"TERMINAL_TOTAL_DIFFICULTY", "58750000000000000000000"},
+	}
+
+	for _, tc := range stringTestCases {
+		t.Run(tc.tag, func(t *testing.T) {
+			logHook.Reset()
+
+			// Convert the string value
+			v := reflect.ValueOf(tc.value)
+			result := convertValueForJSON(v, tc.tag)
+
+			// Verify the result is correct
+			require.Equal(t, tc.value, result)
+
+			// Verify NO error was logged about unsupported field kind
+			require.LogsDoNotContain(t, logHook, "Unsupported config field kind")
+			require.LogsDoNotContain(t, logHook, "kind=string")
+		})
+	}
 }

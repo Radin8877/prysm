@@ -5,14 +5,14 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 var (
@@ -89,6 +89,13 @@ var (
 			Buckets: []float64{5, 10, 50, 100, 150, 250, 500, 1000, 2000},
 		},
 	)
+	rpcDataColumnsByRangeResponseLatency = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "rpc_data_columns_by_range_response_latency_milliseconds",
+			Help:    "Captures total time to respond to rpc DataColumnsByRange requests in a milliseconds distribution",
+			Buckets: []float64{5, 10, 50, 100, 150, 250, 500, 1000, 2000},
+		},
+	)
 	arrivalBlockPropagationHistogram = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "block_arrival_latency_milliseconds",
@@ -126,6 +133,19 @@ var (
 			Help: "Time to verify gossiped attestations",
 		},
 	)
+	attestationVerificationGossipSummary = promauto.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "gossip_attestation_verification_milliseconds",
+			Help: "Time to verify gossiped attestations",
+		},
+	)
+	syncPayloadAttestationArrivalDelaySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "sync_payload_attestation_arrival_delay_seconds",
+			Help:    "Time from slot start to payload attestation gossip arrival.",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 	blockVerificationGossipSummary = promauto.NewSummary(
 		prometheus.SummaryOpts{
 			Name: "gossip_block_verification_milliseconds",
@@ -142,6 +162,12 @@ var (
 		prometheus.SummaryOpts{
 			Name: "gossip_blob_sidecar_arrival_milliseconds",
 			Help: "Time for gossiped blob sidecars to arrive",
+		},
+	)
+	dataColumnSidecarArrivalGossipSummary = promauto.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "gossip_data_column_sidecar_arrival_milliseconds",
+			Help: "Time for gossiped data column sidecars to arrive",
 		},
 	)
 	blobSidecarVerificationGossipSummary = promauto.NewSummary(
@@ -184,6 +210,95 @@ var (
 			Help: "Count the number of times blobs have been found in the database.",
 		},
 	)
+
+	dataColumnsRecoveredFromELAttempts = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "data_columns_recovered_from_el_attempts",
+			Help: "Count the number of data columns recovery attempts from the execution layer.",
+		},
+	)
+
+	dataColumnsRecoveredFromELTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "data_columns_recovered_from_el_total",
+			Help: "Count the number of times data columns have been recovered from the execution layer.",
+		},
+	)
+	syncExecutionPayloadEnvelopeArrivalDelaySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "sync_execution_payload_envelope_arrival_delay_seconds",
+			Help:    "Time from slot start to execution payload envelope gossip arrival.",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
+	syncPayloadEnvelopeByRangeServedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "sync_payload_envelope_by_range_served_total",
+			Help: "Count the number of execution payload envelopes by range RPC requests served.",
+		},
+	)
+	syncPayloadEnvelopeByRootServedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "sync_payload_envelope_by_root_served_total",
+			Help: "Count the number of execution payload envelopes by root RPC requests served.",
+		},
+	)
+	gloasExecutionPayloadEnvelopesRPCRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gloas_execution_payload_envelopes_rpc_requests_total",
+			Help: "Count execution payload envelope RPC requests by method and outcome.",
+		},
+		[]string{"rpc", "result"},
+	)
+
+	// Data column sidecar validation, beacon metrics specs
+	dataColumnSidecarVerificationRequestsCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "beacon_data_column_sidecar_processing_requests_total",
+		Help: "Count the number of data column sidecars submitted for verification",
+	})
+
+	dataColumnSidecarVerificationSuccessesCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "beacon_data_column_sidecar_processing_successes_total",
+		Help: "Count the number of data column sidecars verified for gossip",
+	})
+
+	dataColumnSidecarVerificationGossipHistogram = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "beacon_data_column_sidecar_gossip_verification_milliseconds",
+			Help:    "Captures the time taken to verify data column sidecars.",
+			Buckets: []float64{2, 5, 10, 25, 50, 75, 100, 250, 500, 1000, 2000},
+		},
+	)
+
+	dataColumnReconstructionCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "beacon_data_availability_reconstructed_columns_total",
+		Help: "Count the number of reconstructed data columns.",
+	})
+
+	dataColumnReconstructionHistogram = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "beacon_data_availability_reconstruction_time_milliseconds",
+			Help:    "Captures the time taken to reconstruct data columns.",
+			Buckets: []float64{100, 250, 500, 750, 1000, 1500, 2000, 4000, 8000, 12000, 16000},
+		},
+	)
+
+	dataColumnSidecarsObtainedViaELCount = promauto.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "data_column_obtained_via_el_count",
+			Help: "Count the number of data column sidecars obtained via the execution layer.",
+		},
+	)
+
+	ignoredPreJustifiedBlockCount = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gossip_ignored_pre_justified_block_total",
+		Help: "Count of blocks ignored because their canonical parent is before the justified checkpoint.",
+	})
+
+	ignoredPreJustifiedDataColumnCount = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gossip_ignored_pre_justified_data_column_total",
+		Help: "Count of data column sidecars ignored because their canonical parent is before the justified checkpoint.",
+	})
 )
 
 func (s *Service) updateMetrics() {
@@ -197,10 +312,10 @@ func (s *Service) updateMetrics() {
 	if err != nil {
 		log.WithError(err).Debugf("Could not compute fork digest")
 	}
-	indices := s.aggregatorSubnetIndices(s.cfg.clock.CurrentSlot())
+	indices := aggregatorSubnetIndices(s.cfg.clock.CurrentSlot())
 	syncIndices := cache.SyncSubnetIDs.GetAllSubnets(slots.ToEpoch(s.cfg.clock.CurrentSlot()))
-	attTopic := p2p.GossipTypeMapping[reflect.TypeOf(&pb.Attestation{})]
-	syncTopic := p2p.GossipTypeMapping[reflect.TypeOf(&pb.SyncCommitteeMessage{})]
+	attTopic := p2p.GossipTypeMapping[reflect.TypeFor[*pb.Attestation]()]
+	syncTopic := p2p.GossipTypeMapping[reflect.TypeFor[*pb.SyncCommitteeMessage]()]
 	attTopic += s.cfg.p2p.Encoding().ProtocolSuffix()
 	syncTopic += s.cfg.p2p.Encoding().ProtocolSuffix()
 	if flags.Get().SubscribeToAllSubnets {
@@ -219,10 +334,16 @@ func (s *Service) updateMetrics() {
 		}
 	}
 
+	for i := 0; i < params.BeaconConfig().MaxBlobsPerBlock(s.cfg.clock.CurrentSlot()); i++ {
+		s.collectMetricForSubnet(p2p.BlobSubnetTopicFormat, digest, uint64(i))
+	}
+
 	// We update all other gossip topics.
 	for _, topic := range p2p.AllTopics() {
 		// We already updated attestation subnet topics.
-		if strings.Contains(topic, p2p.GossipAttestationMessage) || strings.Contains(topic, p2p.GossipSyncCommitteeMessage) {
+		if strings.Contains(topic, p2p.GossipAttestationMessage) ||
+			strings.Contains(topic, p2p.GossipSyncCommitteeMessage) ||
+			strings.Contains(topic, p2p.GossipBlobSidecarMessage) {
 			continue
 		}
 		topic += s.cfg.p2p.Encoding().ProtocolSuffix()
@@ -234,6 +355,7 @@ func (s *Service) updateMetrics() {
 		topicPeerCount.WithLabelValues(formattedTopic).Set(float64(len(s.cfg.p2p.PubSub().ListPeers(formattedTopic))))
 	}
 
+	subscribedTopicPeerCount.Reset()
 	for _, topic := range s.cfg.p2p.PubSub().GetTopics() {
 		subscribedTopicPeerCount.WithLabelValues(topic).Set(float64(len(s.cfg.p2p.PubSub().ListPeers(topic))))
 	}

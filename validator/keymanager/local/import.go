@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
 	"github.com/k0kubun/go-ansi"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sirupsen/logrus"
 	keystorev4 "github.com/wealdtech/go-eth2-wallet-encryptor-keystorev4"
@@ -44,7 +44,7 @@ func (km *Keymanager) ImportKeystores(
 	for i := 0; i < len(storeCopy.PrivateKeys); i++ {
 		existingPubKeys[string(storeCopy.PublicKeys[i])] = true
 	}
-	for i := 0; i < len(keystores); i++ {
+	for i := range keystores {
 		var privKeyBytes []byte
 		var pubKeyBytes []byte
 		privKeyBytes, pubKeyBytes, _, err = km.attemptDecryptKeystore(decryptor, keystores[i], passwords[i])
@@ -76,7 +76,7 @@ func (km *Keymanager) ImportKeystores(
 		}
 	}
 	if len(importedKeys) == 0 {
-		log.Warn("no keys were imported")
+		log.Warn("No keys were imported")
 		return statuses, nil
 	}
 	// 2) Update copied keystore with new keys,clear duplicates in existing set

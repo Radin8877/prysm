@@ -1,21 +1,21 @@
 package slasherkv
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
-	slashertypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/slasher/types"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	slashertypes "github.com/OffchainLabs/prysm/v7/beacon-chain/slasher/types"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 	bolt "go.etcd.io/bbolt"
 )
 
 func TestStore_PruneProposalsAtEpoch(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// If the lowest stored epoch in the database is >= the end epoch of the pruning process,
 	// there is nothing to prune, so we also expect exiting early.
@@ -66,7 +66,7 @@ func TestStore_PruneProposalsAtEpoch(t *testing.T) {
 		expectedNumPruned := 2 * uint(pruningLimitEpoch+1) * uint(slotsPerEpoch)
 
 		proposals := make([]*slashertypes.SignedBlockHeaderWrapper, 0, uint64(currentEpoch)*uint64(slotsPerEpoch)*2)
-		for i := primitives.Epoch(0); i < currentEpoch; i++ {
+		for i := range currentEpoch {
 			startSlot, err := slots.EpochStart(i)
 			require.NoError(t, err)
 			endSlot, err := slots.EpochStart(i + 1)
@@ -86,7 +86,7 @@ func TestStore_PruneProposalsAtEpoch(t *testing.T) {
 		require.Equal(t, expectedNumPruned, actualNumPruned)
 
 		// Everything before epoch 10 should be deleted.
-		for i := primitives.Epoch(0); i < pruningLimitEpoch; i++ {
+		for i := range pruningLimitEpoch {
 			err = beaconDB.db.View(func(tx *bolt.Tx) error {
 				bkt := tx.Bucket(proposalRecordsBucket)
 				startSlot, err := slots.EpochStart(i)
@@ -111,7 +111,7 @@ func TestStore_PruneProposalsAtEpoch(t *testing.T) {
 }
 
 func TestStore_PruneAttestations_OK(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// If the lowest stored epoch in the database is >= the end epoch of the pruning process,
 	// there is nothing to prune, so we also expect exiting early.
@@ -164,7 +164,7 @@ func TestStore_PruneAttestations_OK(t *testing.T) {
 		expectedNumPruned := 2 * uint(pruningLimitEpoch+1) * uint(slotsPerEpoch)
 
 		attestations := make([]*slashertypes.IndexedAttestationWrapper, 0, uint64(currentEpoch)*uint64(slotsPerEpoch)*2)
-		for i := primitives.Epoch(0); i < currentEpoch; i++ {
+		for i := range currentEpoch {
 			startSlot, err := slots.EpochStart(i)
 			require.NoError(t, err)
 			endSlot, err := slots.EpochStart(i + 1)
@@ -177,8 +177,8 @@ func TestStore_PruneAttestations_OK(t *testing.T) {
 				if i > 0 {
 					source = target - 1
 				}
-				att1 := createAttestationWrapper(source, target, []uint64{attester1}, []byte{0})
-				att2 := createAttestationWrapper(source, target, []uint64{attester2}, []byte{1})
+				att1 := createAttestationWrapper(version.Phase0, source, target, []uint64{attester1}, []byte{0})
+				att2 := createAttestationWrapper(version.Phase0, source, target, []uint64{attester2}, []byte{1})
 				attestations = append(attestations, att1, att2)
 			}
 		}
@@ -191,7 +191,7 @@ func TestStore_PruneAttestations_OK(t *testing.T) {
 		require.Equal(t, expectedNumPruned, actualNumPruned)
 
 		// Everything before epoch 10 should be deleted.
-		for i := primitives.Epoch(0); i < pruningLimitEpoch; i++ {
+		for i := range pruningLimitEpoch {
 			err = beaconDB.db.View(func(tx *bolt.Tx) error {
 				bkt := tx.Bucket(attestationDataRootsBucket)
 				startSlot, err := slots.EpochStart(i)

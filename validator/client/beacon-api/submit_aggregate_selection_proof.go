@@ -3,17 +3,16 @@ package beacon_api
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"net/url"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/apiutil"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 func (c *beaconApiValidatorClient) submitAggregateSelectionProof(
@@ -127,27 +126,12 @@ func (c *beaconApiValidatorClient) aggregateAttestation(
 	params.Add("slot", strconv.FormatUint(uint64(slot), 10))
 	params.Add("attestation_data_root", hexutil.Encode(attestationDataRoot))
 	params.Add("committee_index", strconv.FormatUint(uint64(committeeIndex), 10))
-	endpoint := buildURL("/eth/v2/validator/aggregate_attestation", params)
+	endpoint := apiutil.BuildURL("/eth/v2/validator/aggregate_attestation", params)
 
 	var aggregateAttestationResponse structs.AggregateAttestationResponse
-	err := c.jsonRestHandler.Get(ctx, endpoint, &aggregateAttestationResponse)
-	errJson := &httputil.DefaultJsonError{}
+	err := c.handler.Get(ctx, endpoint, &aggregateAttestationResponse)
 	if err != nil {
-		// TODO: remove this when v2 becomes default
-		if !errors.As(err, &errJson) {
-			return nil, err
-		}
-		if errJson.Code != http.StatusNotFound {
-			return nil, errJson
-		}
-		log.Debug("Endpoint /eth/v2/validator/aggregate_attestation is not supported, falling back to older endpoints for get aggregated attestation.")
-		params = url.Values{}
-		params.Add("slot", strconv.FormatUint(uint64(slot), 10))
-		params.Add("attestation_data_root", hexutil.Encode(attestationDataRoot))
-		oldEndpoint := buildURL("/eth/v1/validator/aggregate_attestation", params)
-		if err = c.jsonRestHandler.Get(ctx, oldEndpoint, &aggregateAttestationResponse); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	return &aggregateAttestationResponse, nil
@@ -163,10 +147,10 @@ func (c *beaconApiValidatorClient) aggregateAttestationElectra(
 	params.Add("slot", strconv.FormatUint(uint64(slot), 10))
 	params.Add("attestation_data_root", hexutil.Encode(attestationDataRoot))
 	params.Add("committee_index", strconv.FormatUint(uint64(committeeIndex), 10))
-	endpoint := buildURL("/eth/v2/validator/aggregate_attestation", params)
+	endpoint := apiutil.BuildURL("/eth/v2/validator/aggregate_attestation", params)
 
 	var aggregateAttestationResponse structs.AggregateAttestationResponse
-	if err := c.jsonRestHandler.Get(ctx, endpoint, &aggregateAttestationResponse); err != nil {
+	if err := c.handler.Get(ctx, endpoint, &aggregateAttestationResponse); err != nil {
 		return nil, err
 	}
 

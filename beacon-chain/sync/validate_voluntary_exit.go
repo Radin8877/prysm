@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	opfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	opfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // Clients who receive a voluntary exit on this topic MUST validate the conditions within process_voluntary_exit before
@@ -55,12 +57,22 @@ func (s *Service) validateVoluntaryExit(ctx context.Context, pid peer.ID, msg *p
 		return pubsub.ValidationIgnore, err
 	}
 
-	if uint64(exit.Exit.ValidatorIndex) >= uint64(headState.NumValidators()) {
-		return pubsub.ValidationReject, errors.New("validator index is invalid")
+	// Builder exits are only valid from Gloas onwards.
+	if exit.Exit.ValidatorIndex.IsBuilderIndex() {
+		if headState.Version() < version.Gloas {
+			return pubsub.ValidationReject, errors.New("builder exits not supported before Gloas")
+		}
+	} else {
+		if uint64(exit.Exit.ValidatorIndex) >= uint64(headState.NumValidators()) {
+			return pubsub.ValidationReject, errors.New("validator index is invalid")
+		}
 	}
-	val, err := headState.ValidatorAtIndexReadOnly(exit.Exit.ValidatorIndex)
-	if err != nil {
-		return pubsub.ValidationIgnore, err
+	var val state.ReadOnlyValidator
+	if !exit.Exit.ValidatorIndex.IsBuilderIndex() {
+		val, err = headState.ValidatorAtIndexReadOnly(exit.Exit.ValidatorIndex)
+		if err != nil {
+			return pubsub.ValidationIgnore, err
+		}
 	}
 	if err := blocks.VerifyExitAndSignature(val, headState, exit); err != nil {
 		return pubsub.ValidationReject, err

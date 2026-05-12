@@ -1,19 +1,18 @@
 package altair_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestProcessEpoch_CanProcess(t *testing.T) {
 	st, _ := util.DeterministicGenesisStateAltair(t, params.BeaconConfig().MaxValidatorsPerCommittee)
 	require.NoError(t, st.SetSlot(10*params.BeaconConfig().SlotsPerEpoch))
-	err := altair.ProcessEpoch(context.Background(), st)
+	err := altair.ProcessEpoch(t.Context(), st)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), st.Slashings()[2], "Unexpected slashed balance")
 
@@ -45,7 +44,7 @@ func TestProcessEpoch_CanProcess(t *testing.T) {
 func TestProcessEpoch_CanProcessBellatrix(t *testing.T) {
 	st, _ := util.DeterministicGenesisStateBellatrix(t, params.BeaconConfig().MaxValidatorsPerCommittee)
 	require.NoError(t, st.SetSlot(10*params.BeaconConfig().SlotsPerEpoch))
-	err := altair.ProcessEpoch(context.Background(), st)
+	err := altair.ProcessEpoch(t.Context(), st)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), st.Slashings()[2], "Unexpected slashed balance")
 

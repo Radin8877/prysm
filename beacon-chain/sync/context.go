@@ -1,12 +1,13 @@
 package sync
 
 import (
+	"io"
+
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/config/params"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
 )
 
 // Specifies the fixed size context length.
@@ -40,7 +41,7 @@ func readContextFromStream(stream network.Stream) ([]byte, error) {
 	}
 	// Read context (fork-digest) from stream
 	b := make([]byte, forkDigestLength)
-	if _, err := stream.Read(b); err != nil {
+	if _, err := io.ReadFull(stream, b); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -85,12 +86,8 @@ type ContextByteVersions map[[4]byte]int
 // and the runtime/version identifier for the corresponding fork.
 func ContextByteVersionsForValRoot(valRoot [32]byte) (ContextByteVersions, error) {
 	m := make(ContextByteVersions)
-	for fv, v := range params.ConfigForkVersions(params.BeaconConfig()) {
-		digest, err := signing.ComputeForkDigest(fv[:], valRoot[:])
-		if err != nil {
-			return nil, errors.Wrapf(err, "unable to compute fork digest for fork version %#x", fv)
-		}
-		m[digest] = v
+	for _, entry := range params.SortedNetworkScheduleEntries() {
+		m[entry.ForkDigest] = entry.VersionEnum
 	}
 	return m, nil
 }

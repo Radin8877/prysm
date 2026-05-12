@@ -2,14 +2,13 @@ package simulator
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestGenerateBlockHeadersForSlot_Slashing(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	simParams := &Parameters{
 		AggregationPercent:     1,
 		NumValidators:          64,

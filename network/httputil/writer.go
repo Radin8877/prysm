@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/prysmaticlabs/prysm/v5/api"
-	log "github.com/sirupsen/logrus"
+	"github.com/OffchainLabs/prysm/v7/api"
 )
 
 type HasStatusCode interface {
@@ -40,12 +39,12 @@ func WriteJson(w http.ResponseWriter, v any) {
 }
 
 // WriteSsz writes the response message in ssz format
-func WriteSsz(w http.ResponseWriter, respSsz []byte, fileName string) {
+func WriteSsz(w http.ResponseWriter, respSsz []byte) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(respSsz)))
 	w.Header().Set("Content-Type", api.OctetStreamMediaType)
-	w.Header().Set("Content-Disposition", "attachment; filename="+fileName)
+	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, io.NopCloser(bytes.NewReader(respSsz))); err != nil {
-		log.WithError(err).Error("could not write response message")
+		log.WithError(err).Error("Could not write response message")
 	}
 }
 

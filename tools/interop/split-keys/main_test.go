@@ -2,17 +2,16 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/local"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/local"
 )
 
 const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -69,8 +68,8 @@ func Test_spreadKeysAcrossImportedWallets(t *testing.T) {
 		walletPassword,
 	)
 	require.NoError(t, err)
-	ctx := context.Background()
-	for i := 0; i < numWallets; i++ {
+	ctx := t.Context()
+	for i := range numWallets {
 		w, err := wallet.OpenWallet(ctx, &wallet.Config{
 			WalletDir:      filepath.Join(tmpDir, fmt.Sprintf("wallet_%d", i)),
 			KeymanagerKind: keymanager.Local,

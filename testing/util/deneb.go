@@ -1,29 +1,25 @@
 package util
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	"math/big"
 	"testing"
 
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/random"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	GoKZG "github.com/crate-crypto/go-kzg-4844"
 	"github.com/ethereum/go-ethereum/common"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
-	"github.com/sirupsen/logrus"
 )
 
 type DenebBlockGeneratorOption func(*denebBlockGenerator)
@@ -48,17 +44,31 @@ func WithProposerSigning(idx primitives.ValidatorIndex, sk bls.SecretKey, valRoo
 	}
 }
 
+// WithProposer sets the proposer index for the generated block without signing.
+func WithProposer(idx primitives.ValidatorIndex) DenebBlockGeneratorOption {
+	return func(g *denebBlockGenerator) {
+		g.proposer = idx
+	}
+}
+
 func WithPayloadSetter(p *enginev1.ExecutionPayloadDeneb) DenebBlockGeneratorOption {
 	return func(g *denebBlockGenerator) {
 		g.payload = p
 	}
 }
 
+func WithDenebSlot(slot primitives.Slot) DenebBlockGeneratorOption {
+	return func(g *denebBlockGenerator) {
+		g.slot = slot
+	}
+}
+
 func GenerateTestDenebBlockWithSidecar(t *testing.T, parent [32]byte, slot primitives.Slot, nblobs int, opts ...DenebBlockGeneratorOption) (blocks.ROBlock, []blocks.ROBlob) {
 	g := &denebBlockGenerator{
-		parent: parent,
-		slot:   slot,
-		nblobs: nblobs,
+		parent:   parent,
+		slot:     slot,
+		nblobs:   nblobs,
+		proposer: 3, // Anything else than zero not to fallback to the default uin64 value.
 	}
 	for _, o := range opts {
 		o(g)
@@ -129,11 +139,7 @@ func GenerateTestDenebBlockWithSidecar(t *testing.T, parent [32]byte, slot primi
 	}
 	if g.sign {
 		epoch := slots.ToEpoch(block.Block.Slot)
-		schedule := forks.NewOrderedSchedule(params.BeaconConfig())
-		version, err := schedule.VersionForEpoch(epoch)
-		require.NoError(t, err)
-		fork, err := schedule.ForkFromVersion(version)
-		require.NoError(t, err)
+		fork := params.ForkFromConfig(params.BeaconConfig(), epoch)
 		domain := params.BeaconConfig().DomainBeaconProposer
 		sig, err := signing.ComputeDomainAndSignWithoutState(fork, epoch, domain, g.valRoot, block.Block, g.sk)
 		require.NoError(t, err)
@@ -186,14 +192,16 @@ func fakeEmptyProof(_ *testing.T, _ *ethpb.BlobSidecar) [][]byte {
 }
 
 func ExtendBlocksPlusBlobs(t *testing.T, blks []blocks.ROBlock, size int) ([]blocks.ROBlock, []blocks.ROBlob) {
+	deneb := params.BeaconConfig().DenebForkEpoch
+	denebSlot := SlotAtEpoch(t, deneb)
 	blobs := make([]blocks.ROBlob, 0)
 	if len(blks) == 0 {
-		blk, blb := GenerateTestDenebBlockWithSidecar(t, [32]byte{}, 0, 6)
+		blk, blb := GenerateTestDenebBlockWithSidecar(t, [32]byte{}, denebSlot, 6)
 		blobs = append(blobs, blb...)
 		blks = append(blks, blk)
 	}
 
-	for i := 0; i < size; i++ {
+	for range size {
 		prev := blks[len(blks)-1]
 		blk, blb := GenerateTestDenebBlockWithSidecar(t, prev.Root(), prev.Block().Slot()+1, 6)
 		blobs = append(blobs, blb...)
@@ -203,35 +211,16 @@ func ExtendBlocksPlusBlobs(t *testing.T, blks []blocks.ROBlock, size int) ([]blo
 	return blks, blobs
 }
 
-func deterministicRandomness(seed int64) [32]byte {
-	// Converts an int64 to a byte slice
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.BigEndian, seed)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to write int64 to bytes buffer")
-		return [32]byte{}
-	}
-	bytes := buf.Bytes()
-
-	return sha256.Sum256(bytes)
+func DeterministicRandomness(seed int64) [32]byte {
+	return random.DeterministicRandomness(seed)
 }
 
 // Returns a serialized random field element in big-endian
 func GetRandFieldElement(seed int64) [32]byte {
-	bytes := deterministicRandomness(seed)
-	var r fr.Element
-	r.SetBytes(bytes[:])
-
-	return GoKZG.SerializeScalar(r)
+	return random.GetRandFieldElement(seed)
 }
 
 // Returns a random blob using the passed seed as entropy
 func GetRandBlob(seed int64) GoKZG.Blob {
-	var blob GoKZG.Blob
-	bytesPerBlob := GoKZG.ScalarsPerBlob * GoKZG.SerializedScalarSize
-	for i := 0; i < bytesPerBlob; i += GoKZG.SerializedScalarSize {
-		fieldElementBytes := GetRandFieldElement(seed + int64(i))
-		copy(blob[i:i+GoKZG.SerializedScalarSize], fieldElementBytes[:])
-	}
-	return blob
+	return random.GetRandBlob(seed)
 }

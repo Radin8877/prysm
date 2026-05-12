@@ -6,14 +6,17 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"time"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/go-bitfield"
+	customtypes "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native/custom-types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native/types"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 )
 
 // BeaconState has read and write access to beacon state methods.
@@ -21,8 +24,6 @@ type BeaconState interface {
 	SpecParametersProvider
 	ReadOnlyBeaconState
 	WriteOnlyBeaconState
-	Copy() BeaconState
-	CopyAllTries()
 	Defragment()
 	HashTreeRoot(ctx context.Context) ([32]byte, error)
 	Prover
@@ -41,6 +42,8 @@ type Prover interface {
 	FinalizedRootProof(ctx context.Context) ([][]byte, error)
 	CurrentSyncCommitteeProof(ctx context.Context) ([][]byte, error)
 	NextSyncCommitteeProof(ctx context.Context) ([][]byte, error)
+
+	ProofByFieldIndex(ctx context.Context, f types.FieldIndex) ([][]byte, error)
 }
 
 // ReadOnlyBeaconState defines a struct which only has read access to beacon state methods.
@@ -60,14 +63,17 @@ type ReadOnlyBeaconState interface {
 	ReadOnlySyncCommittee
 	ReadOnlyDeposits
 	ReadOnlyConsolidations
-	ToProtoUnsafe() interface{}
-	ToProto() interface{}
-	GenesisTime() uint64
+	ReadOnlyProposerLookahead
+	readOnlyGloasFields
+	ToProtoUnsafe() any
+	ToProto() any
+	Copy() BeaconState
+	GenesisTime() time.Time
 	GenesisValidatorsRoot() []byte
 	Slot() primitives.Slot
 	Fork() *ethpb.Fork
 	LatestBlockHeader() *ethpb.BeaconBlockHeader
-	HistoricalRoots() ([][]byte, error)
+	HistoricalRoots() [][]byte
 	HistoricalSummaries() ([]*ethpb.HistoricalSummary, error)
 	Slashings() []uint64
 	FieldReferencesCount() map[string]uint64
@@ -94,7 +100,9 @@ type WriteOnlyBeaconState interface {
 	WriteOnlyConsolidations
 	WriteOnlyWithdrawals
 	WriteOnlyDeposits
-	SetGenesisTime(val uint64) error
+	WriteOnlyProposerLookahead
+	writeOnlyGloasFields
+	SetGenesisTime(val time.Time) error
 	SetGenesisValidatorsRoot(val []byte) error
 	SetSlot(val primitives.Slot) error
 	SetFork(val *ethpb.Fork) error
@@ -118,7 +126,6 @@ type ReadOnlyValidator interface {
 	GetWithdrawalCredentials() []byte
 	Copy() *ethpb.Validator
 	Slashed() bool
-	IsNil() bool
 	HasETH1WithdrawalCredentials() bool
 	HasCompoundingWithdrawalCredentials() bool
 	HasExecutionWithdrawalCredentials() bool
@@ -143,6 +150,8 @@ type ReadOnlyBalances interface {
 	Balances() []uint64
 	BalanceAtIndex(idx primitives.ValidatorIndex) (uint64, error)
 	BalancesLength() int
+	EffectiveBalanceSum([]primitives.ValidatorIndex) (uint64, error)
+	EffectiveBalanceAtIndex(idx primitives.ValidatorIndex) (uint64, error)
 }
 
 // ReadOnlyCheckpoint defines a struct which only has read access to checkpoint methods.
@@ -210,6 +219,8 @@ type ReadOnlyWithdrawals interface {
 type ReadOnlyParticipation interface {
 	CurrentEpochParticipation() ([]byte, error)
 	PreviousEpochParticipation() ([]byte, error)
+	CurrentEpochParticipationReadOnly() (customtypes.ReadOnlyParticipation, error)
+	PreviousEpochParticipationReadOnly() (customtypes.ReadOnlyParticipation, error)
 }
 
 // ReadOnlyInactivity defines a struct which only has read access to inactivity methods.
@@ -227,6 +238,7 @@ type ReadOnlyDeposits interface {
 	DepositBalanceToConsume() (primitives.Gwei, error)
 	DepositRequestsStartIndex() (uint64, error)
 	PendingDeposits() ([]*ethpb.PendingDeposit, error)
+	IsPendingValidator(pubkey []byte) (bool, error)
 }
 
 type ReadOnlyConsolidations interface {
@@ -234,6 +246,10 @@ type ReadOnlyConsolidations interface {
 	EarliestConsolidationEpoch() (primitives.Epoch, error)
 	PendingConsolidations() ([]*ethpb.PendingConsolidation, error)
 	NumPendingConsolidations() (uint64, error)
+}
+
+type ReadOnlyProposerLookahead interface {
+	ProposerLookahead() ([]primitives.ValidatorIndex, error)
 }
 
 // WriteOnlyBlockRoots defines a struct which only has write access to block roots methods.
@@ -254,7 +270,10 @@ type WriteOnlyEth1Data interface {
 	SetEth1DataVotes(val []*ethpb.Eth1Data) error
 	AppendEth1DataVotes(val *ethpb.Eth1Data) error
 	SetEth1DepositIndex(val uint64) error
-	ExitEpochAndUpdateChurn(exitBalance primitives.Gwei) (primitives.Epoch, error)
+	ExitEpochAndUpdateChurn(ctx context.Context, exitBalance primitives.Gwei) (primitives.Epoch, error)
+	ExitEpochAndUpdateChurnForTotalBal(totalActiveBalance primitives.Gwei, exitBalance primitives.Gwei) (primitives.Epoch, error)
+	SetExitBalanceToConsume(val primitives.Gwei) error
+	SetEarliestExitEpoch(val primitives.Epoch) error
 }
 
 // WriteOnlyValidators defines a struct which only has write access to validators methods.
@@ -322,6 +341,7 @@ type WriteOnlyWithdrawals interface {
 	DequeuePendingPartialWithdrawals(num uint64) error
 	SetNextWithdrawalIndex(i uint64) error
 	SetNextWithdrawalValidatorIndex(i primitives.ValidatorIndex) error
+	SetPendingPartialWithdrawals(val []*ethpb.PendingPartialWithdrawal) error
 }
 
 type WriteOnlyConsolidations interface {
@@ -336,4 +356,12 @@ type WriteOnlyDeposits interface {
 	SetDepositRequestsStartIndex(index uint64) error
 	SetPendingDeposits(val []*ethpb.PendingDeposit) error
 	SetDepositBalanceToConsume(primitives.Gwei) error
+}
+
+type WriteOnlyProposerLookahead interface {
+	SetProposerLookahead([]primitives.ValidatorIndex) error
+}
+
+func IsNil(s BeaconState) bool {
+	return s == nil || s.IsNil()
 }

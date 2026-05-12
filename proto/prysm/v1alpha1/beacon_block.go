@@ -1,9 +1,15 @@
 package eth
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
 )
+
+// GenericConverter defines any struct that can be converted to a generic beacon block.
+// We assume all your versioned block structs implement this method.
+type GenericConverter interface {
+	ToGeneric() (*GenericBeaconBlock, error)
+}
 
 // ----------------------------------------------------------------------------
 // Phase 0
@@ -680,28 +686,6 @@ func (block *BlindedBeaconBlockFulu) Copy() *BlindedBeaconBlockFulu {
 }
 
 // Copy --
-func (body *BlindedBeaconBlockBodyFulu) Copy() *BlindedBeaconBlockBodyFulu {
-	if body == nil {
-		return nil
-	}
-	return &BlindedBeaconBlockBodyFulu{
-		RandaoReveal:           bytesutil.SafeCopyBytes(body.RandaoReveal),
-		Eth1Data:               body.Eth1Data.Copy(),
-		Graffiti:               bytesutil.SafeCopyBytes(body.Graffiti),
-		ProposerSlashings:      CopySlice(body.ProposerSlashings),
-		AttesterSlashings:      CopySlice(body.AttesterSlashings),
-		Attestations:           CopySlice(body.Attestations),
-		Deposits:               CopySlice(body.Deposits),
-		VoluntaryExits:         CopySlice(body.VoluntaryExits),
-		SyncAggregate:          body.SyncAggregate.Copy(),
-		ExecutionPayloadHeader: body.ExecutionPayloadHeader.Copy(),
-		BlsToExecutionChanges:  CopySlice(body.BlsToExecutionChanges),
-		BlobKzgCommitments:     CopyBlobKZGs(body.BlobKzgCommitments),
-		ExecutionRequests:      CopyExecutionRequests(body.ExecutionRequests),
-	}
-}
-
-// Copy --
 func (sigBlock *SignedBeaconBlockFulu) Copy() *SignedBeaconBlockFulu {
 	if sigBlock == nil {
 		return nil
@@ -709,41 +693,5 @@ func (sigBlock *SignedBeaconBlockFulu) Copy() *SignedBeaconBlockFulu {
 	return &SignedBeaconBlockFulu{
 		Block:     sigBlock.Block.Copy(),
 		Signature: bytesutil.SafeCopyBytes(sigBlock.Signature),
-	}
-}
-
-// Copy --
-func (block *BeaconBlockFulu) Copy() *BeaconBlockFulu {
-	if block == nil {
-		return nil
-	}
-	return &BeaconBlockFulu{
-		Slot:          block.Slot,
-		ProposerIndex: block.ProposerIndex,
-		ParentRoot:    bytesutil.SafeCopyBytes(block.ParentRoot),
-		StateRoot:     bytesutil.SafeCopyBytes(block.StateRoot),
-		Body:          block.Body.Copy(),
-	}
-}
-
-// Copy --
-func (body *BeaconBlockBodyFulu) Copy() *BeaconBlockBodyFulu {
-	if body == nil {
-		return nil
-	}
-	return &BeaconBlockBodyFulu{
-		RandaoReveal:          bytesutil.SafeCopyBytes(body.RandaoReveal),
-		Eth1Data:              body.Eth1Data.Copy(),
-		Graffiti:              bytesutil.SafeCopyBytes(body.Graffiti),
-		ProposerSlashings:     CopySlice(body.ProposerSlashings),
-		AttesterSlashings:     CopySlice(body.AttesterSlashings),
-		Attestations:          CopySlice(body.Attestations),
-		Deposits:              CopySlice(body.Deposits),
-		VoluntaryExits:        CopySlice(body.VoluntaryExits),
-		SyncAggregate:         body.SyncAggregate.Copy(),
-		ExecutionPayload:      body.ExecutionPayload.Copy(),
-		BlsToExecutionChanges: CopySlice(body.BlsToExecutionChanges),
-		BlobKzgCommitments:    CopyBlobKZGs(body.BlobKzgCommitments),
-		ExecutionRequests:     CopyExecutionRequests(body.ExecutionRequests),
 	}
 }

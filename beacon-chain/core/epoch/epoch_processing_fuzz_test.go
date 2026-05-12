@@ -3,21 +3,23 @@ package epoch
 import (
 	"testing"
 
-	fuzz "github.com/google/gofuzz"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/fuzz"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	gofuzz "github.com/google/gofuzz"
 )
 
 func TestFuzzFinalUpdates_10000(t *testing.T) {
-	fuzzer := fuzz.NewWithSeed(0)
+	fuzzer := gofuzz.NewWithSeed(0)
 	base := &ethpb.BeaconState{}
 
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		fuzzer.Fuzz(base)
 		s, err := state_native.InitializeFromProtoUnsafePhase0(base)
 		require.NoError(t, err)
 		_, err = ProcessFinalUpdates(s)
 		_ = err
+		fuzz.FreeMemory(i)
 	}
 }

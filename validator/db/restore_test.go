@@ -1,24 +1,23 @@
 package db
 
 import (
-	"context"
 	"flag"
 	"os"
 	"path"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/urfave/cli/v2"
 )
 
 func TestRestore(t *testing.T) {
 	logHook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	backupDb, err := kv.NewKVStore(ctx, t.TempDir(), &kv.Config{})
 	defer func() {

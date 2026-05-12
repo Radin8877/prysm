@@ -1,14 +1,16 @@
 package types
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/wrapper"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/metadata"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	lightclientConsensusTypes "github.com/OffchainLabs/prysm/v7/consensus-types/light-client"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/wrapper"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/metadata"
+	ssz "github.com/prysmaticlabs/fastssz"
 )
 
 func init() {
@@ -33,6 +35,17 @@ var (
 	// AggregateAttestationMap maps the fork-version to the underlying data type for that
 	// particular fork period.
 	AggregateAttestationMap map[[4]byte]func() (ethpb.SignedAggregateAttAndProof, error)
+	// AttesterSlashingMap maps the fork-version to the underlying data type for that particular
+	// fork period.
+	AttesterSlashingMap map[[4]byte]func() (ethpb.AttSlashing, error)
+	// LightClientOptimisticUpdateMap maps the fork-version to the underlying data type for that
+	// particular fork period.
+	LightClientOptimisticUpdateMap map[[4]byte]func() (interfaces.LightClientOptimisticUpdate, error)
+	// LightClientFinalityUpdateMap maps the fork-version to the underlying data type for that
+	// particular fork period.
+	LightClientFinalityUpdateMap map[[4]byte]func() (interfaces.LightClientFinalityUpdate, error)
+	// DataColumnSidecarMap maps the fork-version to the underlying data column sidecar type.
+	DataColumnSidecarMap map[[4]byte]func() (ssz.Unmarshaler, error)
 )
 
 // InitializeDataMaps initializes all the relevant object maps. This function is called to
@@ -67,12 +80,17 @@ func InitializeDataMaps() {
 		},
 		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (interfaces.ReadOnlySignedBeaconBlock, error) {
 			return blocks.NewSignedBeaconBlock(
-				&ethpb.SignedBeaconBlockElectra{Block: &ethpb.BeaconBlockElectra{Body: &ethpb.BeaconBlockBodyElectra{ExecutionPayload: &enginev1.ExecutionPayloadDeneb{}}}},
+				&ethpb.SignedBeaconBlockElectra{Block: &ethpb.BeaconBlockElectra{Body: &ethpb.BeaconBlockBodyElectra{ExecutionPayload: &enginev1.ExecutionPayloadDeneb{}, ExecutionRequests: &enginev1.ExecutionRequests{}}}},
+			)
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (interfaces.ReadOnlySignedBeaconBlock, error) {
+			return blocks.NewSignedBeaconBlock(
+				&ethpb.SignedBeaconBlockGloas{Block: &ethpb.BeaconBlockGloas{Body: &ethpb.BeaconBlockBodyGloas{}}},
 			)
 		},
 		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (interfaces.ReadOnlySignedBeaconBlock, error) {
 			return blocks.NewSignedBeaconBlock(
-				&ethpb.SignedBeaconBlockFulu{Block: &ethpb.BeaconBlockFulu{Body: &ethpb.BeaconBlockBodyFulu{ExecutionPayload: &enginev1.ExecutionPayloadDeneb{}}}},
+				&ethpb.SignedBeaconBlockFulu{Block: &ethpb.BeaconBlockElectra{Body: &ethpb.BeaconBlockBodyElectra{ExecutionPayload: &enginev1.ExecutionPayloadDeneb{}, ExecutionRequests: &enginev1.ExecutionRequests{}}}},
 			)
 		},
 	}
@@ -97,8 +115,11 @@ func InitializeDataMaps() {
 		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (metadata.Metadata, error) {
 			return wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}), nil
 		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (metadata.Metadata, error) {
+			return wrapper.WrappedMetadataV2(&ethpb.MetaDataV2{}), nil
+		},
 		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (metadata.Metadata, error) {
-			return wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}), nil
+			return wrapper.WrappedMetadataV2(&ethpb.MetaDataV2{}), nil
 		},
 	}
 
@@ -120,6 +141,9 @@ func InitializeDataMaps() {
 			return &ethpb.Attestation{}, nil
 		},
 		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (ethpb.Att, error) {
+			return &ethpb.SingleAttestation{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (ethpb.Att, error) {
 			return &ethpb.SingleAttestation{}, nil
 		},
 		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (ethpb.Att, error) {
@@ -147,8 +171,98 @@ func InitializeDataMaps() {
 		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (ethpb.SignedAggregateAttAndProof, error) {
 			return &ethpb.SignedAggregateAttestationAndProofElectra{}, nil
 		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (ethpb.SignedAggregateAttAndProof, error) {
+			return &ethpb.SignedAggregateAttestationAndProofElectra{}, nil
+		},
 		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (ethpb.SignedAggregateAttAndProof, error) {
 			return &ethpb.SignedAggregateAttestationAndProofElectra{}, nil
+		},
+	}
+
+	// Reset our aggregate attestation map.
+	AttesterSlashingMap = map[[4]byte]func() (ethpb.AttSlashing, error){
+		bytesutil.ToBytes4(params.BeaconConfig().GenesisForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashing{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().AltairForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashing{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().BellatrixForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashing{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().CapellaForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashing{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().DenebForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashing{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashingElectra{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashingElectra{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (ethpb.AttSlashing, error) {
+			return &ethpb.AttesterSlashingElectra{}, nil
+		},
+	}
+
+	// Reset our light client optimistic update map.
+	LightClientOptimisticUpdateMap = map[[4]byte]func() (interfaces.LightClientOptimisticUpdate, error){
+		bytesutil.ToBytes4(params.BeaconConfig().AltairForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateAltair(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().BellatrixForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateAltair(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().CapellaForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateCapella(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().DenebForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateDeneb(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateDeneb(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateDeneb(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (interfaces.LightClientOptimisticUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyOptimisticUpdateDeneb(), nil
+		},
+	}
+
+	// Reset our light client finality update map.
+	LightClientFinalityUpdateMap = map[[4]byte]func() (interfaces.LightClientFinalityUpdate, error){
+		bytesutil.ToBytes4(params.BeaconConfig().AltairForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateAltair(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().BellatrixForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateAltair(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().CapellaForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateCapella(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().DenebForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateDeneb(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().ElectraForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateElectra(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateElectra(), nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (interfaces.LightClientFinalityUpdate, error) {
+			return lightclientConsensusTypes.NewEmptyFinalityUpdateElectra(), nil
+		},
+	}
+
+	DataColumnSidecarMap = map[[4]byte]func() (ssz.Unmarshaler, error){
+		bytesutil.ToBytes4(params.BeaconConfig().FuluForkVersion): func() (ssz.Unmarshaler, error) {
+			return &ethpb.DataColumnSidecar{}, nil
+		},
+		bytesutil.ToBytes4(params.BeaconConfig().GloasForkVersion): func() (ssz.Unmarshaler, error) {
+			return &ethpb.DataColumnSidecarGloas{}, nil
 		},
 	}
 }

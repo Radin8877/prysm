@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	dbIface "github.com/OffchainLabs/prysm/v7/beacon-chain/db/iface"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz/detect"
+	"github.com/OffchainLabs/prysm/v7/genesis"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	dbIface "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz/detect"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // SaveGenesisData bootstraps the beaconDB with a given genesis state.
@@ -25,9 +27,17 @@ func (s *Store) SaveGenesisData(ctx context.Context, genesisState state.BeaconSt
 	if err := s.SaveBlock(ctx, wsb); err != nil {
 		return errors.Wrap(err, "could not save genesis block")
 	}
-	if err := s.SaveState(ctx, genesisState, genesisBlkRoot); err != nil {
-		return errors.Wrap(err, "could not save genesis state")
+
+	if features.Get().EnableStateDiff {
+		if err := s.initializeStateDiff(0, genesisState); err != nil {
+			return errors.Wrap(err, "failed to initialize state diff for genesis")
+		}
+	} else {
+		if err := s.SaveState(ctx, genesisState, genesisBlkRoot); err != nil {
+			return errors.Wrap(err, "could not save genesis state")
+		}
 	}
+
 	if err := s.SaveStateSummary(ctx, &ethpb.StateSummary{
 		Slot: 0,
 		Root: genesisBlkRoot[:],
@@ -41,6 +51,7 @@ func (s *Store) SaveGenesisData(ctx context.Context, genesisState state.BeaconSt
 	if err := s.SaveGenesisBlockRoot(ctx, genesisBlkRoot); err != nil {
 		return errors.Wrap(err, "could not save genesis block root")
 	}
+
 	return nil
 }
 
@@ -97,8 +108,22 @@ func (s *Store) EnsureEmbeddedGenesis(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if gs != nil && !gs.IsNil() {
+	if !state.IsNil(gs) {
 		return s.SaveGenesisData(ctx, gs)
 	}
 	return nil
+}
+
+type LegacyGenesisProvider struct {
+	store *Store
+}
+
+func NewLegacyGenesisProvider(store *Store) *LegacyGenesisProvider {
+	return &LegacyGenesisProvider{store: store}
+}
+
+var _ genesis.Provider = &LegacyGenesisProvider{}
+
+func (p *LegacyGenesisProvider) Genesis(ctx context.Context) (state.BeaconState, error) {
+	return p.store.LegacyGenesisState(ctx)
 }

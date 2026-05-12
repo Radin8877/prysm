@@ -13,23 +13,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/petnames"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/remote-web3signer/internal"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/remote-web3signer/types"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-playground/validator/v10"
 	"github.com/logrusorgru/aurora"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/petnames"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/remote-web3signer/internal"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/remote-web3signer/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -400,16 +400,14 @@ func getSignRequestJson(ctx context.Context, validator *validator.Validate, requ
 	if !bytesutil.IsValidRoot(genesisValidatorsRoot) {
 		return nil, fmt.Errorf("invalid genesis validators root length, genesis root: %v", genesisValidatorsRoot)
 	}
+	ver := slots.ToForkVersion(request.SigningSlot)
 	switch request.Object.(type) {
 	case *validatorpb.SignRequest_Block:
 		return handleBlock(ctx, validator, request, genesisValidatorsRoot)
 	case *validatorpb.SignRequest_AttestationData:
 		return handleAttestationData(ctx, validator, request, genesisValidatorsRoot)
-	case *validatorpb.SignRequest_AggregateAttestationAndProof:
-		// TODO: update to V2 sometime after release
-		return handleAggregateAttestationAndProof(ctx, validator, request, genesisValidatorsRoot)
-	case *validatorpb.SignRequest_AggregateAttestationAndProofElectra:
-		return handleAggregateAttestationAndProofV2(ctx, version.Electra, validator, request, genesisValidatorsRoot)
+	case *validatorpb.SignRequest_AggregateAttestationAndProof, *validatorpb.SignRequest_AggregateAttestationAndProofElectra:
+		return handleAggregateAttestationAndProofV2(ctx, ver, validator, request, genesisValidatorsRoot)
 	case *validatorpb.SignRequest_Slot:
 		return handleAggregationSlot(ctx, validator, request, genesisValidatorsRoot)
 	case *validatorpb.SignRequest_BlockAltair:
@@ -430,6 +428,20 @@ func getSignRequestJson(ctx context.Context, validator *validator.Validate, requ
 		return handleBlockElectra(ctx, validator, request, genesisValidatorsRoot)
 	case *validatorpb.SignRequest_BlindedBlockElectra:
 		return handleBlindedBlockElectra(ctx, validator, request, genesisValidatorsRoot)
+	case *validatorpb.SignRequest_BlockFulu:
+		return handleBlockFulu(ctx, validator, request, genesisValidatorsRoot)
+	case *validatorpb.SignRequest_BlindedBlockFulu:
+		return handleBlindedBlockFulu(ctx, validator, request, genesisValidatorsRoot)
+	case *validatorpb.SignRequest_BlockGloas:
+		// TODO: Implement Gloas block signing for web3signer.
+		return nil, fmt.Errorf("web3signer Gloas block signing not yet implemented")
+	case *validatorpb.SignRequest_ExecutionPayloadEnvelope:
+		// TODO: Implement execution payload envelope signing for web3signer.
+		return nil, fmt.Errorf("web3signer execution payload envelope signing not yet implemented")
+	case *validatorpb.SignRequest_ProposerPreference:
+		// TODO: Implement proposer preferences signing for web3signer.
+		return nil, fmt.Errorf("web3signer proposer preferences signing not yet implemented")
+
 	// We do not support "DEPOSIT" type.
 	/*
 		case *validatorpb.:
@@ -462,7 +474,7 @@ func handleBlock(ctx context.Context, validator *validator.Validate, request *va
 	if err = validator.StructCtx(ctx, bockSignRequest); err != nil {
 		return nil, err
 	}
-	blockSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("phase0", "false").Inc()
 	return json.Marshal(bockSignRequest)
 }
 
@@ -476,18 +488,6 @@ func handleAttestationData(ctx context.Context, validator *validator.Validate, r
 	}
 	attestationSignRequestsTotal.Inc()
 	return json.Marshal(attestationSignRequest)
-}
-
-func handleAggregateAttestationAndProof(ctx context.Context, validator *validator.Validate, request *validatorpb.SignRequest, genesisValidatorsRoot []byte) ([]byte, error) {
-	aggregateAndProofSignRequest, err := types.GetAggregateAndProofSignRequest(request, genesisValidatorsRoot)
-	if err != nil {
-		return nil, err
-	}
-	if err = validator.StructCtx(ctx, aggregateAndProofSignRequest); err != nil {
-		return nil, err
-	}
-	aggregateAndProofSignRequestsTotal.Inc()
-	return json.Marshal(aggregateAndProofSignRequest)
 }
 
 func handleAggregateAttestationAndProofV2(ctx context.Context, fork int, validator *validator.Validate, request *validatorpb.SignRequest, genesisValidatorsRoot []byte) ([]byte, error) {
@@ -522,7 +522,7 @@ func handleBlockAltair(ctx context.Context, validator *validator.Validate, reque
 	if err = validator.StructCtx(ctx, blockv2AltairSignRequest); err != nil {
 		return nil, err
 	}
-	blockAltairSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("altair", "false").Inc()
 	return json.Marshal(blockv2AltairSignRequest)
 }
 
@@ -534,7 +534,7 @@ func handleBlockBellatrix(ctx context.Context, validator *validator.Validate, re
 	if err = validator.StructCtx(ctx, blockv2BellatrixSignRequest); err != nil {
 		return nil, err
 	}
-	blockBellatrixSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("bellatrix", "false").Inc()
 	return json.Marshal(blockv2BellatrixSignRequest)
 }
 
@@ -546,7 +546,7 @@ func handleBlindedBlockBellatrix(ctx context.Context, validator *validator.Valid
 	if err = validator.StructCtx(ctx, blindedBlockv2SignRequest); err != nil {
 		return nil, err
 	}
-	blindedBlockBellatrixSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("bellatrix", "true").Inc()
 	return json.Marshal(blindedBlockv2SignRequest)
 }
 
@@ -558,7 +558,7 @@ func handleBlockCapella(ctx context.Context, validator *validator.Validate, requ
 	if err = validator.StructCtx(ctx, blockv2CapellaSignRequest); err != nil {
 		return nil, err
 	}
-	blockCapellaSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("capella", "false").Inc()
 	return json.Marshal(blockv2CapellaSignRequest)
 }
 
@@ -570,7 +570,7 @@ func handleBlindedBlockCapella(ctx context.Context, validator *validator.Validat
 	if err = validator.StructCtx(ctx, blindedBlockv2CapellaSignRequest); err != nil {
 		return nil, err
 	}
-	blindedBlockCapellaSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("capella", "true").Inc()
 	return json.Marshal(blindedBlockv2CapellaSignRequest)
 }
 
@@ -582,7 +582,7 @@ func handleBlockDeneb(ctx context.Context, validator *validator.Validate, reques
 	if err = validator.StructCtx(ctx, blockv2DenebSignRequest); err != nil {
 		return nil, err
 	}
-	blockDenebSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("deneb", "false").Inc()
 	return json.Marshal(blockv2DenebSignRequest)
 }
 
@@ -594,7 +594,7 @@ func handleBlindedBlockDeneb(ctx context.Context, validator *validator.Validate,
 	if err = validator.StructCtx(ctx, blindedBlockv2DenebSignRequest); err != nil {
 		return nil, err
 	}
-	blindedBlockDenebSignRequestsTotal.Inc()
+	remoteBlockSignRequestsTotal.WithLabelValues("deneb", "true").Inc()
 	return json.Marshal(blindedBlockv2DenebSignRequest)
 }
 
@@ -620,6 +620,30 @@ func handleBlindedBlockElectra(ctx context.Context, validator *validator.Validat
 	}
 	remoteBlockSignRequestsTotal.WithLabelValues("electra", "true").Inc()
 	return json.Marshal(blindedBlockv2ElectraSignRequest)
+}
+
+func handleBlockFulu(ctx context.Context, validator *validator.Validate, request *validatorpb.SignRequest, genesisValidatorsRoot []byte) ([]byte, error) {
+	blockv2FuluSignRequest, err := types.GetBlockV2BlindedSignRequest(request, genesisValidatorsRoot)
+	if err != nil {
+		return nil, err
+	}
+	if err = validator.StructCtx(ctx, blockv2FuluSignRequest); err != nil {
+		return nil, err
+	}
+	remoteBlockSignRequestsTotal.WithLabelValues("fulu", "false").Inc()
+	return json.Marshal(blockv2FuluSignRequest)
+}
+
+func handleBlindedBlockFulu(ctx context.Context, validator *validator.Validate, request *validatorpb.SignRequest, genesisValidatorsRoot []byte) ([]byte, error) {
+	blindedBlockv2FuluSignRequest, err := types.GetBlockV2BlindedSignRequest(request, genesisValidatorsRoot)
+	if err != nil {
+		return nil, err
+	}
+	if err = validator.StructCtx(ctx, blindedBlockv2FuluSignRequest); err != nil {
+		return nil, err
+	}
+	remoteBlockSignRequestsTotal.WithLabelValues("fulu", "true").Inc()
+	return json.Marshal(blindedBlockv2FuluSignRequest)
 }
 
 func handleRandaoReveal(ctx context.Context, validator *validator.Validate, request *validatorpb.SignRequest, genesisValidatorsRoot []byte) ([]byte, error) {
@@ -741,7 +765,7 @@ func (km *Keymanager) ListKeymanagerAccounts(ctx context.Context, cfg keymanager
 // DisplayRemotePublicKeys prints remote public keys to stdout.
 func DisplayRemotePublicKeys(validatingPubKeys [][48]byte) {
 	au := aurora.NewAurora(true)
-	for i := 0; i < len(validatingPubKeys); i++ {
+	for i := range validatingPubKeys {
 		fmt.Println("")
 		fmt.Printf(
 			"%s\n", au.BrightGreen(petnames.DeterministicName(validatingPubKeys[i][:], "-")).Bold(),

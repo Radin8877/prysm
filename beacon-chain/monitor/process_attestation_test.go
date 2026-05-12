@@ -2,21 +2,20 @@ package monitor
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/sirupsen/logrus"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestGetAttestingIndices(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	beaconState, _ := util.DeterministicGenesisState(t, 256)
 	att := &ethpb.Attestation{
 		Data: &ethpb.AttestationData{
@@ -54,9 +53,9 @@ func TestProcessIncludedAttestationTwoTracked(t *testing.T) {
 		},
 		AggregationBits: bitfield.Bitlist{0b11, 0b1},
 	}
-	s.processIncludedAttestation(context.Background(), state, att)
-	wanted1 := "\"Attestation included\" balanceChange=0 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2"
-	wanted2 := "\"Attestation included\" balanceChange=100000000 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12"
+	s.processIncludedAttestation(t.Context(), state, att)
+	wanted1 := "\"Attestation included\" balanceChange=0 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2"
+	wanted2 := "\"Attestation included\" balanceChange=100000000 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12"
 	require.LogsContain(t, hook, wanted1)
 	require.LogsContain(t, hook, wanted2)
 }
@@ -64,7 +63,7 @@ func TestProcessIncludedAttestationTwoTracked(t *testing.T) {
 func TestProcessUnaggregatedAttestationStateNotCached(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := setupService(t)
 	state, _ := util.DeterministicGenesisStateAltair(t, 256)
@@ -95,7 +94,7 @@ func TestProcessUnaggregatedAttestationStateNotCached(t *testing.T) {
 }
 
 func TestProcessUnaggregatedAttestationStateCached(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hook := logTest.NewGlobal()
 
 	s := setupService(t)
@@ -123,9 +122,9 @@ func TestProcessUnaggregatedAttestationStateCached(t *testing.T) {
 		AggregationBits: bitfield.Bitlist{0b11, 0b1},
 	}
 	require.NoError(t, s.config.StateGen.SaveState(ctx, root, state))
-	s.processUnaggregatedAttestation(context.Background(), att)
-	wanted1 := "\"Processed unaggregated attestation\" head=0x68656c6c6f2d prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2"
-	wanted2 := "\"Processed unaggregated attestation\" head=0x68656c6c6f2d prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12"
+	s.processUnaggregatedAttestation(t.Context(), att)
+	wanted1 := "\"Processed unaggregated attestation\" head=0x68656c6c6f2d package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2"
+	wanted2 := "\"Processed unaggregated attestation\" head=0x68656c6c6f2d package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12"
 	require.LogsContain(t, hook, wanted1)
 	require.LogsContain(t, hook, wanted2)
 }
@@ -133,7 +132,7 @@ func TestProcessUnaggregatedAttestationStateCached(t *testing.T) {
 func TestProcessAggregatedAttestationStateNotCached(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := setupService(t)
 	state, _ := util.DeterministicGenesisStateAltair(t, 256)
@@ -162,14 +161,14 @@ func TestProcessAggregatedAttestationStateNotCached(t *testing.T) {
 		},
 	}
 	s.processAggregatedAttestation(ctx, att)
-	require.LogsContain(t, hook, "\"Processed attestation aggregation\" aggregatorIndex=2 beaconBlockRoot=0x000000000000 prefix=monitor slot=1 sourceRoot=0x68656c6c6f2d targetRoot=0x68656c6c6f2d")
+	require.LogsContain(t, hook, "\"Processed attestation aggregation\" aggregatorIndex=2 beaconBlockRoot=0x000000000000 package=beacon-chain/monitor slot=1 sourceRoot=0x68656c6c6f2d targetRoot=0x68656c6c6f2d")
 	require.LogsContain(t, hook, "Skipping aggregated attestation due to state not found in cache")
 	logrus.SetLevel(logrus.InfoLevel)
 }
 
 func TestProcessAggregatedAttestationStateCached(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	s := setupService(t)
 	state, _ := util.DeterministicGenesisStateAltair(t, 256)
 	participation := []byte{0xff, 0xff, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -200,15 +199,15 @@ func TestProcessAggregatedAttestationStateCached(t *testing.T) {
 
 	require.NoError(t, s.config.StateGen.SaveState(ctx, root, state))
 	s.processAggregatedAttestation(ctx, att)
-	require.LogsContain(t, hook, "\"Processed attestation aggregation\" aggregatorIndex=2 beaconBlockRoot=0x68656c6c6f2d prefix=monitor slot=1 sourceRoot=0x68656c6c6f2d targetRoot=0x68656c6c6f2d")
-	require.LogsContain(t, hook, "\"Processed aggregated attestation\" head=0x68656c6c6f2d prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2")
-	require.LogsDoNotContain(t, hook, "\"Processed aggregated attestation\" head=0x68656c6c6f2d prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12")
+	require.LogsContain(t, hook, "\"Processed attestation aggregation\" aggregatorIndex=2 beaconBlockRoot=0x68656c6c6f2d package=beacon-chain/monitor slot=1 sourceRoot=0x68656c6c6f2d targetRoot=0x68656c6c6f2d")
+	require.LogsContain(t, hook, "\"Processed aggregated attestation\" head=0x68656c6c6f2d package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2")
+	require.LogsDoNotContain(t, hook, "\"Processed aggregated attestation\" head=0x68656c6c6f2d package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12")
 }
 
 func TestProcessAttestations(t *testing.T) {
 	hook := logTest.NewGlobal()
 	s := setupService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	state, _ := util.DeterministicGenesisStateAltair(t, 256)
 	require.NoError(t, state.SetSlot(2))
 	require.NoError(t, state.SetCurrentParticipationBits(bytes.Repeat([]byte{0xff}, 13)))
@@ -240,8 +239,8 @@ func TestProcessAttestations(t *testing.T) {
 	wrappedBlock, err := blocks.NewBeaconBlock(block)
 	require.NoError(t, err)
 	s.processAttestations(ctx, state, wrappedBlock)
-	wanted1 := "\"Attestation included\" balanceChange=0 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2"
-	wanted2 := "\"Attestation included\" balanceChange=100000000 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 prefix=monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12"
+	wanted1 := "\"Attestation included\" balanceChange=0 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=2"
+	wanted2 := "\"Attestation included\" balanceChange=100000000 correctHead=true correctSource=true correctTarget=true head=0x68656c6c6f2d inclusionSlot=2 newBalance=32000000000 package=beacon-chain/monitor slot=1 source=0x68656c6c6f2d target=0x68656c6c6f2d validatorIndex=12"
 	require.LogsContain(t, hook, wanted1)
 	require.LogsContain(t, hook, wanted2)
 

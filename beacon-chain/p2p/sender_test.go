@@ -1,18 +1,17 @@
 package p2p
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
 
+	testp2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/libp2p/go-libp2p/core/network"
-	testp2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -50,7 +49,7 @@ func TestService_Send(t *testing.T) {
 		wg.Done()
 	})
 
-	stream, err := svc.Send(context.Background(), msg, "/testing/1", p2.BHost.ID())
+	stream, err := svc.Send(t.Context(), msg, "/testing/1", p2.BHost.ID())
 	require.NoError(t, err)
 
 	util.WaitTimeout(&wg, 1*time.Second)

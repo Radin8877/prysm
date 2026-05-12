@@ -5,9 +5,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/api/client"
-	"github.com/prysmaticlabs/prysm/v5/api/client/beacon"
-	log "github.com/sirupsen/logrus"
+	"github.com/OffchainLabs/prysm/v7/api/client"
+	"github.com/OffchainLabs/prysm/v7/api/client/beacon"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/sync/checkpoint"
 	"github.com/urfave/cli/v2"
 )
 
@@ -57,7 +57,7 @@ func cliActionDownload(_ *cli.Context) error {
 		return err
 	}
 
-	od, err := beacon.DownloadFinalizedData(ctx, client)
+	od, err := checkpoint.DownloadFinalizedData(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -66,13 +66,13 @@ func cliActionDownload(_ *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("saved ssz-encoded block to %s", blockPath)
+	log.Printf("Saved ssz-encoded block to %s", blockPath)
 
 	statePath, err := od.SaveState(cwd)
 	if err != nil {
 		return err
 	}
-	log.Printf("saved ssz-encoded state to %s", statePath)
+	log.Printf("Saved ssz-encoded state to %s", statePath)
 
 	return nil
 }

@@ -1,7 +1,5 @@
 package params
 
-import "math"
-
 // UseHoleskyNetworkConfig uses the Holesky beacon chain specific network config.
 func UseHoleskyNetworkConfig() {
 	cfg := BeaconNetworkConfig().Copy()
@@ -22,7 +20,7 @@ func UseHoleskyNetworkConfig() {
 
 // HoleskyConfig defines the config for the Holesky beacon chain testnet.
 func HoleskyConfig() *BeaconChainConfig {
-	cfg := MainnetConfig().Copy()
+	cfg := MainnetConfig()
 	cfg.MinGenesisTime = 1695902100
 	cfg.GenesisDelay = 300
 	cfg.ConfigName = HoleskyName
@@ -39,13 +37,24 @@ func HoleskyConfig() *BeaconChainConfig {
 	cfg.CapellaForkVersion = []byte{0x4, 0x1, 0x70, 0x0}
 	cfg.DenebForkEpoch = 29696
 	cfg.DenebForkVersion = []byte{0x05, 0x1, 0x70, 0x0}
-	cfg.ElectraForkEpoch = math.MaxUint64
-	cfg.ElectraForkVersion = []byte{0x06, 0x1, 0x70, 0x0} // TODO: Define holesky fork version for electra. This is a placeholder value.
-	cfg.FuluForkEpoch = math.MaxUint64
-	cfg.FuluForkVersion = []byte{0x07, 0x1, 0x70, 0x0} // TODO: Define holesky fork version for fulu. This is a placeholder value.
+	cfg.ElectraForkEpoch = 115968 // Mon, Feb 24 at 21:55:12 UTC
+	cfg.ElectraForkVersion = []byte{0x06, 0x1, 0x70, 0x0}
+	cfg.FuluForkEpoch = 165120 // 2025-10-01 08:48:00 UTC
+	cfg.FuluForkVersion = []byte{0x07, 0x1, 0x70, 0x0}
+	cfg.GloasForkVersion = []byte{0x08, 0x1, 0x70, 0x0}
 	cfg.TerminalTotalDifficulty = "0"
 	cfg.DepositContractAddress = "0x4242424242424242424242424242424242424242"
 	cfg.EjectionBalance = 28000000000
+	cfg.BlobSchedule = []BlobScheduleEntry{
+		{
+			MaxBlobsPerBlock: 15,
+			Epoch:            166400, // 2025-10-07 01:20:00 UTC
+		},
+		{
+			MaxBlobsPerBlock: 21,
+			Epoch:            167936, // 2025-10-13 21:10:24 UTC
+		},
+	}
 	cfg.InitializeForkSchedule()
 	return cfg
 }

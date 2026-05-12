@@ -1,29 +1,28 @@
 package beacon
 
 import (
-	"context"
 	"encoding/binary"
 	"math"
 	"testing"
 	"time"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	dbTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	blocktest "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks/testing"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	dbTest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	blocktest "github.com/OffchainLabs/prysm/v7/consensus-types/blocks/testing"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/d4l3k/messagediff.v1"
 )
@@ -33,7 +32,7 @@ func TestServer_ListBeaconCommittees_CurrentEpoch(t *testing.T) {
 	helpers.ClearCache()
 
 	numValidators := 128
-	ctx := context.Background()
+	ctx := t.Context()
 	headState := setupActiveValidators(t, numValidators)
 
 	offset := int64(headState.Slot().Mul(params.BeaconConfig().SecondsPerSlot))
@@ -58,7 +57,7 @@ func TestServer_ListBeaconCommittees_CurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	attesterSeed, err := helpers.Seed(headState, 0, params.BeaconConfig().DomainBeaconAttester)
 	require.NoError(t, err)
-	committees, err := computeCommittees(context.Background(), 0, activeIndices, attesterSeed)
+	committees, err := computeCommittees(t.Context(), 0, activeIndices, attesterSeed)
 	require.NoError(t, err)
 
 	wanted := &ethpb.BeaconCommittees{
@@ -66,7 +65,7 @@ func TestServer_ListBeaconCommittees_CurrentEpoch(t *testing.T) {
 		Committees:           committees.SlotToUint64(),
 		ActiveValidatorCount: uint64(numValidators),
 	}
-	res, err := bs.ListBeaconCommittees(context.Background(), &ethpb.ListCommitteesRequest{
+	res, err := bs.ListBeaconCommittees(t.Context(), &ethpb.ListCommitteesRequest{
 		QueryFilter: &ethpb.ListCommitteesRequest_Genesis{Genesis: true},
 	})
 	require.NoError(t, err)
@@ -87,7 +86,7 @@ func addDefaultReplayerBuilder(s *Server, h stategen.HistoryAccessor) {
 func TestServer_ListBeaconCommittees_PreviousEpoch(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	params.OverrideBeaconConfig(params.BeaconConfig())
-	ctx := context.Background()
+	ctx := t.Context()
 
 	db := dbTest.SetupDB(t)
 	helpers.ClearCache()
@@ -96,7 +95,7 @@ func TestServer_ListBeaconCommittees_PreviousEpoch(t *testing.T) {
 	headState := setupActiveValidators(t, numValidators)
 
 	mixes := make([][]byte, params.BeaconConfig().EpochsPerHistoricalVector)
-	for i := 0; i < len(mixes); i++ {
+	for i := range mixes {
 		mixes[i] = make([]byte, fieldparams.RootLength)
 	}
 	require.NoError(t, headState.SetRandaoMixes(mixes))
@@ -129,7 +128,7 @@ func TestServer_ListBeaconCommittees_PreviousEpoch(t *testing.T) {
 	require.NoError(t, err)
 	startSlot, err := slots.EpochStart(1)
 	require.NoError(t, err)
-	wanted, err := computeCommittees(context.Background(), startSlot, activeIndices, attesterSeed)
+	wanted, err := computeCommittees(t.Context(), startSlot, activeIndices, attesterSeed)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -149,7 +148,7 @@ func TestServer_ListBeaconCommittees_PreviousEpoch(t *testing.T) {
 	}
 	helpers.ClearCache()
 	for i, test := range tests {
-		res, err := bs.ListBeaconCommittees(context.Background(), test.req)
+		res, err := bs.ListBeaconCommittees(t.Context(), test.req)
 		require.NoError(t, err)
 		if !proto.Equal(res, test.res) {
 			diff, _ := messagediff.PrettyDiff(res, test.res)
@@ -162,7 +161,7 @@ func TestRetrieveCommitteesForRoot(t *testing.T) {
 
 	db := dbTest.SetupDB(t)
 	helpers.ClearCache()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	numValidators := 128
 	headState := setupActiveValidators(t, numValidators)
@@ -196,9 +195,9 @@ func TestRetrieveCommitteesForRoot(t *testing.T) {
 	activeIndices, err := helpers.ActiveValidatorIndices(ctx, headState, 0)
 	require.NoError(t, err)
 
-	wanted, err := computeCommittees(context.Background(), 0, activeIndices, seed)
+	wanted, err := computeCommittees(t.Context(), 0, activeIndices, seed)
 	require.NoError(t, err)
-	committees, activeIndices, err := bs.retrieveCommitteesForRoot(context.Background(), gRoot[:])
+	committees, activeIndices, err := bs.retrieveCommitteesForRoot(t.Context(), gRoot[:])
 	require.NoError(t, err)
 
 	wantedRes := &ethpb.BeaconCommittees{
@@ -217,7 +216,7 @@ func TestRetrieveCommitteesForRoot(t *testing.T) {
 func setupActiveValidators(t *testing.T, count int) state.BeaconState {
 	balances := make([]uint64, count)
 	validators := make([]*ethpb.Validator, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		pubKey := make([]byte, params.BeaconConfig().BLSPubkeyLength)
 		binary.LittleEndian.PutUint64(pubKey, uint64(i))
 		balances[i] = uint64(i)

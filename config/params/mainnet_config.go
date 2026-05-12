@@ -4,8 +4,9 @@ import (
 	"math"
 	"time"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
 )
 
 // MainnetConfig returns the configuration to be used in the main network.
@@ -13,7 +14,7 @@ func MainnetConfig() *BeaconChainConfig {
 	if mainnetBeaconConfig.ForkVersionSchedule == nil {
 		mainnetBeaconConfig.InitializeForkSchedule()
 	}
-	return mainnetBeaconConfig
+	return mainnetBeaconConfig.Copy()
 }
 
 const (
@@ -28,15 +29,17 @@ const (
 	// Deneb Fork Epoch for mainnet config.
 	mainnetDenebForkEpoch = 269568 // March 13, 2024, 13:55:35 UTC
 	// Electra Fork Epoch for mainnet config
-	mainnetElectraForkEpoch = math.MaxUint64 // Far future / to be defined
+	mainnetElectraForkEpoch = 364032 // May 7, 2025, 10:05:11 UTC
 	// Fulu Fork Epoch for mainnet config
-	mainnetFuluForkEpoch = math.MaxUint64 // Far future / to be defined
+	mainnetFuluForkEpoch = 411392 // December 3, 2025, 09:49:11pm UTC
+	// Gloas Fork Epoch for mainnet config
+	mainnetGloasForkEpoch = math.MaxUint64
 )
 
 var mainnetNetworkConfig = &NetworkConfig{
-	ETH2Key:                    "eth2",
 	AttSubnetKey:               "attnets",
 	SyncCommsSubnetKey:         "syncnets",
+	CustodyGroupCountKey:       "cgc",
 	MinimumPeersInSubnetSearch: 20,
 	ContractDeploymentBlock:    11184524, // Note: contract was deployed in block 11052984 but no transactions were sent until 11184524.
 	BootstrapNodes: []string{
@@ -93,11 +96,14 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	BLSWithdrawalPrefixByte:         byte(0),
 	ETH1AddressWithdrawalPrefixByte: byte(1),
 	CompoundingWithdrawalPrefixByte: byte(2),
+	BuilderWithdrawalPrefixByte:     byte(3),
+	BuilderIndexSelfBuild:           primitives.BuilderIndex(math.MaxUint64),
 	ZeroHash:                        [32]byte{},
 
 	// Time parameter constants.
 	MinAttestationInclusionDelay:     1,
 	SecondsPerSlot:                   12,
+	SlotDurationMilliseconds:         12000,
 	SlotsPerEpoch:                    32,
 	SqrRootSlotsPerEpoch:             5,
 	MinSeedLookahead:                 1,
@@ -105,16 +111,29 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	EpochsPerEth1VotingPeriod:        64,
 	SlotsPerHistoricalRoot:           8192,
 	MinValidatorWithdrawabilityDelay: 256,
+	MinBuilderWithdrawabilityDelay:   64,
 	ShardCommitteePeriod:             256,
 	MinEpochsToInactivityPenalty:     4,
 	Eth1FollowDistance:               2048,
 
 	// Fork choice algorithm constants.
 	ProposerScoreBoost:              40,
-	ReorgWeightThreshold:            20,
+	ReorgHeadWeightThreshold:        20,
 	ReorgParentWeightThreshold:      160,
 	ReorgMaxEpochsSinceFinalization: 2,
 	IntervalsPerSlot:                3,
+
+	// Time-based protocol parameters.
+	ProposerReorgCutoffBPS:   primitives.BP(1667),
+	AttestationDueBPS:        primitives.BP(3333),
+	AggregateDueBPS:          primitives.BP(6667),
+	SyncMessageDueBPS:        primitives.BP(3333),
+	ContributionDueBPS:       primitives.BP(6667),
+	AttestationDueBPSGloas:   primitives.BP(2500),
+	AggregateDueBPSGloas:     primitives.BP(5000),
+	SyncMessageDueBPSGloas:   primitives.BP(2500),
+	ContributionDueBPSGloas:  primitives.BP(5000),
+	PayloadAttestationDueBPS: primitives.BP(7500),
 
 	// Ethereum PoW parameters.
 	DepositChainID:         1, // Chain ID of eth1 mainnet.
@@ -158,6 +177,7 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	MaxWithdrawalsPerPayload:         16,
 	MaxBlsToExecutionChanges:         16,
 	MaxValidatorsPerWithdrawalsSweep: 16384,
+	MaxBuildersPerWithdrawalsSweep:   16384,
 
 	// BLS domain values.
 	DomainBeaconProposer:              bytesutil.Uint32ToBytes4(0x00000000),
@@ -173,6 +193,9 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	DomainApplicationMask:             bytesutil.Uint32ToBytes4(0x00000001),
 	DomainApplicationBuilder:          bytesutil.Uint32ToBytes4(0x00000001),
 	DomainBLSToExecutionChange:        bytesutil.Uint32ToBytes4(0x0A000000),
+	DomainBeaconBuilder:               bytesutil.Uint32ToBytes4(0x0B000000),
+	DomainPTCAttester:                 bytesutil.Uint32ToBytes4(0x0C000000),
+	DomainProposerPreferences:         bytesutil.Uint32ToBytes4(0x0D000000),
 
 	// Prysm constants.
 	GenesisValidatorsRoot:          [32]byte{75, 54, 61, 185, 78, 40, 97, 32, 215, 110, 185, 5, 52, 15, 221, 78, 84, 191, 233, 240, 107, 243, 63, 246, 207, 90, 210, 127, 81, 27, 254, 149},
@@ -196,7 +219,8 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	BeaconStateCapellaFieldCount:   28,
 	BeaconStateDenebFieldCount:     28,
 	BeaconStateElectraFieldCount:   37,
-	BeaconStateFuluFieldCount:      37,
+	BeaconStateFuluFieldCount:      38,
+	BeaconStateGloasFieldCount:     46,
 
 	// Slasher related values.
 	WeakSubjectivityPeriod:          54000,
@@ -221,6 +245,8 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	ElectraForkEpoch:     mainnetElectraForkEpoch,
 	FuluForkVersion:      []byte{6, 0, 0, 0},
 	FuluForkEpoch:        mainnetFuluForkEpoch,
+	GloasForkVersion:     []byte{7, 0, 0, 0},
+	GloasForkEpoch:       mainnetGloasForkEpoch,
 
 	// New values introduced in Altair hard fork 1.
 	// Participation flag indices.
@@ -262,8 +288,12 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	TerminalBlockHashActivationEpoch: 18446744073709551615,
 	TerminalBlockHash:                [32]byte{},
 	TerminalTotalDifficulty:          "58750000000000000000000", // Estimated: Sept 15, 2022
+	MaxBytesPerTransaction:           1073741824,
+	MaxTransactionsPerPayload:        1048576,
+	BytesPerLogsBloom:                256,
+	MaxExtraDataBytes:                32,
 	EthBurnAddressHex:                "0x0000000000000000000000000000000000000000",
-	DefaultBuilderGasLimit:           uint64(30000000),
+	DefaultBuilderGasLimit:           uint64(60000000),
 
 	// Mevboost circuit breaker
 	MaxBuilderConsecutiveMissedSlots: 3,
@@ -279,16 +309,18 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	MinEpochsForBlobsSidecarsRequest: 4096,
 	MaxRequestBlobSidecars:           768,
 	MaxRequestBlocksDeneb:            128,
+	FieldElementsPerBlob:             4096,
+	MaxBlobCommitmentsPerBlock:       4096,
+	KzgCommitmentInclusionProofDepth: 17,
+	DeprecatedMaxBlobsPerBlock:       6,
 
 	// Values related to electra
-	MaxRequestDataColumnSidecars:          16384,
-	DataColumnSidecarSubnetCount:          128,
 	MinPerEpochChurnLimitElectra:          128_000_000_000,
 	MaxPerEpochActivationExitChurnLimit:   256_000_000_000,
 	MaxEffectiveBalanceElectra:            2048_000_000_000,
 	MinSlashingPenaltyQuotientElectra:     4096,
 	WhistleBlowerRewardQuotientElectra:    4096,
-	PendingDepositLimit:                   134_217_728,
+	PendingDepositsLimit:                  134_217_728,
 	PendingPartialWithdrawalsLimit:        134_217_728,
 	PendingConsolidationsLimit:            262_144,
 	MinActivationBalance:                  32_000_000_000,
@@ -299,17 +331,30 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	MaxWithdrawalRequestsPerPayload:       16,
 	MaxDepositRequestsPerPayload:          8192, // 2**13 (= 8192)
 	UnsetDepositRequestsStartIndex:        math.MaxUint64,
+	DeprecatedMaxBlobsPerBlockElectra:     9,
+	DeprecatedTargetBlobsPerBlockElectra:  6,
+	MaxRequestBlobSidecarsElectra:         1152,
 
-	// PeerDAS
-	NumberOfColumns:                       128,
-	MaxCellsInExtendedMatrix:              768,
+	// Values related to fulu
+	MaxRequestDataColumnSidecars:          16384,
+	DataColumnSidecarSubnetCount:          128,
 	SamplesPerSlot:                        8,
+	NumberOfCustodyGroups:                 128,
 	CustodyRequirement:                    4,
 	MinEpochsForDataColumnSidecarsRequest: 4096,
+	ValidatorCustodyRequirement:           8,
+	BalancePerAdditionalCustodyGroup:      32_000_000_000,
+
+	// Values related to gloas
+	BuilderPaymentThresholdNumerator:     6,
+	BuilderPaymentThresholdDenominator:   10,
+	MaxRequestPayloads:                   128,
+	ChurnLimitQuotientGloas:              32_768,
+	ConsolidationChurnLimitQuotient:      65_536,
+	MaxPerEpochActivationChurnLimitGloas: 256_000_000_000,
 
 	// Values related to networking parameters.
-	GossipMaxSize:                   10 * 1 << 20, // 10 MiB
-	MaxChunkSize:                    10 * 1 << 20, // 10 MiB
+	MaxPayloadSize:                  10 * 1 << 20, // 10 MiB
 	AttestationSubnetCount:          64,
 	AttestationPropagationSlotRange: 32,
 	MaxRequestBlocks:                1 << 10, // 1024
@@ -325,17 +370,23 @@ var mainnetBeaconConfig = &BeaconChainConfig{
 	SubnetsPerNode:                  2,
 	NodeIdBits:                      256,
 
-	DeprecatedMaxBlobsPerBlock:           6,
-	DeprecatedMaxBlobsPerBlockElectra:    9,
-	DeprecatedTargetBlobsPerBlockElectra: 6,
-	MaxRequestBlobSidecarsElectra:        1152,
+	BlobSchedule: []BlobScheduleEntry{
+		{
+			Epoch:            412672, // December 9, 2025, 02:21:11pm UTC
+			MaxBlobsPerBlock: 15,
+		},
+		{
+			Epoch:            419072, // January 7, 2026, 01:01:11am UTC
+			MaxBlobsPerBlock: 21,
+		},
+	},
 }
 
 // MainnetTestConfig provides a version of the mainnet config that has a different name
 // and a different fork choice schedule. This can be used in cases where we want to use config values
 // that are consistent with mainnet, but won't conflict or cause the hard-coded genesis to be loaded.
 func MainnetTestConfig() *BeaconChainConfig {
-	mn := MainnetConfig().Copy()
+	mn := MainnetConfig()
 	mn.ConfigName = MainnetTestName
 	FillTestVersions(mn, 128)
 	return mn
@@ -351,6 +402,7 @@ func FillTestVersions(c *BeaconChainConfig, b byte) {
 	c.DenebForkVersion = make([]byte, fieldparams.VersionLength)
 	c.ElectraForkVersion = make([]byte, fieldparams.VersionLength)
 	c.FuluForkVersion = make([]byte, fieldparams.VersionLength)
+	c.GloasForkVersion = make([]byte, fieldparams.VersionLength)
 
 	c.GenesisForkVersion[fieldparams.VersionLength-1] = b
 	c.AltairForkVersion[fieldparams.VersionLength-1] = b
@@ -359,6 +411,7 @@ func FillTestVersions(c *BeaconChainConfig, b byte) {
 	c.DenebForkVersion[fieldparams.VersionLength-1] = b
 	c.ElectraForkVersion[fieldparams.VersionLength-1] = b
 	c.FuluForkVersion[fieldparams.VersionLength-1] = b
+	c.GloasForkVersion[fieldparams.VersionLength-1] = b
 
 	c.GenesisForkVersion[0] = 0
 	c.AltairForkVersion[0] = 1
@@ -367,4 +420,5 @@ func FillTestVersions(c *BeaconChainConfig, b byte) {
 	c.DenebForkVersion[0] = 4
 	c.ElectraForkVersion[0] = 5
 	c.FuluForkVersion[0] = 6
+	c.GloasForkVersion[0] = 7
 }

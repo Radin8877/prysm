@@ -2,32 +2,31 @@ package sync
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"math"
 	"reflect"
 	"testing"
 	"time"
 
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	opfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	coreTime "github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	lruwrpr "github.com/OffchainLabs/prysm/v7/cache/lru"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	opfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	coreTime "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	lruwrpr "github.com/prysmaticlabs/prysm/v5/cache/lru"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func setupValidExit(t *testing.T) (*ethpb.SignedVoluntaryExit, state.BeaconState) {
@@ -79,7 +78,7 @@ func TestValidateVoluntaryExit_ValidExit(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	exit, s := setupValidExit(t)
 
@@ -102,7 +101,7 @@ func TestValidateVoluntaryExit_ValidExit(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err := p.Encoding().EncodeGossip(buf, exit)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(exit)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedVoluntaryExit]()]
 	d, err := r.currentForkDigest()
 	assert.NoError(t, err)
 	topic = r.addDigestToTopic(topic, d)
@@ -140,7 +139,7 @@ func TestValidateVoluntaryExit_ValidExit(t *testing.T) {
 
 func TestValidateVoluntaryExit_InvalidExitSlot(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	exit, s := setupValidExit(t)
 	// Set state slot to 1 to cause exit object fail to verify.
@@ -159,7 +158,7 @@ func TestValidateVoluntaryExit_InvalidExitSlot(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err := p.Encoding().EncodeGossip(buf, exit)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(exit)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedVoluntaryExit]()]
 	m := &pubsub.Message{
 		Message: &pubsubpb.Message{
 			Data:  buf.Bytes(),
@@ -174,7 +173,7 @@ func TestValidateVoluntaryExit_InvalidExitSlot(t *testing.T) {
 
 func TestValidateVoluntaryExit_ValidExit_Syncing(t *testing.T) {
 	p := p2ptest.NewTestP2P(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	exit, s := setupValidExit(t)
 
@@ -190,7 +189,7 @@ func TestValidateVoluntaryExit_ValidExit_Syncing(t *testing.T) {
 	buf := new(bytes.Buffer)
 	_, err := p.Encoding().EncodeGossip(buf, exit)
 	require.NoError(t, err)
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(exit)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedVoluntaryExit]()]
 	m := &pubsub.Message{
 		Message: &pubsubpb.Message{
 			Data:  buf.Bytes(),

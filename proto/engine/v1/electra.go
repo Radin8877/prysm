@@ -2,10 +2,10 @@ package enginev1
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
 )
 
 var (
@@ -17,17 +17,38 @@ var (
 	crSize    = crExample.SizeSSZ()
 )
 
+// emptyRequestsRootOnce merkleizes a zero-value ExecutionRequests.
+var emptyRequestsRootOnce = sync.OnceValues(func() ([32]byte, error) {
+	return (&ExecutionRequests{}).HashTreeRoot()
+})
+
+// EmptyExecutionRequestsHashTreeRoot returns the merkle root of an empty ExecutionRequests.
+func EmptyExecutionRequestsHashTreeRoot() ([32]byte, error) {
+	return emptyRequestsRootOnce()
+}
+
 const (
 	DepositRequestType = iota
 	WithdrawalRequestType
 	ConsolidationRequestType
 )
 
-func (ebe *ExecutionBundleElectra) GetDecodedExecutionRequests() (*ExecutionRequests, error) {
+// ExecutionRequestConfig ensures that we don't mix up the execution request params
+type ExecutionRequestLimits struct {
+	Deposits       uint64
+	Withdrawals    uint64
+	Consolidations uint64
+}
+
+func (ebe *ExecutionBundleElectra) GetDecodedExecutionRequests(limits ExecutionRequestLimits) (*ExecutionRequests, error) {
+	return decodeExecutionRequestList(ebe.ExecutionRequests, limits)
+}
+
+func decodeExecutionRequestList(raw [][]byte, limits ExecutionRequestLimits) (*ExecutionRequests, error) {
 	requests := &ExecutionRequests{}
 	var prevTypeNum *uint8
-	for i := range ebe.ExecutionRequests {
-		requestType, requestListInSSZBytes, err := decodeExecutionRequest(ebe.ExecutionRequests[i])
+	for i := range raw {
+		requestType, requestListInSSZBytes, err := decodeExecutionRequest(raw[i])
 		if err != nil {
 			return nil, err
 		}
@@ -37,19 +58,19 @@ func (ebe *ExecutionBundleElectra) GetDecodedExecutionRequests() (*ExecutionRequ
 		prevTypeNum = &requestType
 		switch requestType {
 		case DepositRequestType:
-			drs, err := unmarshalDeposits(requestListInSSZBytes)
+			drs, err := unmarshalDeposits(requestListInSSZBytes, limits.Deposits)
 			if err != nil {
 				return nil, err
 			}
 			requests.Deposits = drs
 		case WithdrawalRequestType:
-			wrs, err := unmarshalWithdrawals(requestListInSSZBytes)
+			wrs, err := unmarshalWithdrawals(requestListInSSZBytes, limits.Withdrawals)
 			if err != nil {
 				return nil, err
 			}
 			requests.Withdrawals = wrs
 		case ConsolidationRequestType:
-			crs, err := unmarshalConsolidations(requestListInSSZBytes)
+			crs, err := unmarshalConsolidations(requestListInSSZBytes, limits.Consolidations)
 			if err != nil {
 				return nil, err
 			}
@@ -61,32 +82,35 @@ func (ebe *ExecutionBundleElectra) GetDecodedExecutionRequests() (*ExecutionRequ
 	return requests, nil
 }
 
-func unmarshalDeposits(requestListInSSZBytes []byte) ([]*DepositRequest, error) {
+func unmarshalDeposits(requestListInSSZBytes []byte, maxDepositRequests uint64) ([]*DepositRequest, error) {
 	if len(requestListInSSZBytes) < drSize {
-		return nil, errors.New("invalid deposit requests length, requests should be at least the size of 1 request")
+		return nil, fmt.Errorf("invalid deposit requests SSZ size, got %d expected at least %d", len(requestListInSSZBytes), drSize)
 	}
-	if uint64(len(requestListInSSZBytes)) > uint64(drSize)*params.BeaconConfig().MaxDepositRequestsPerPayload {
-		return nil, fmt.Errorf("invalid deposit requests length, requests should not be more than the max per payload, got %d max %d", len(requestListInSSZBytes), drSize)
+	maxSSZsize := uint64(drSize) * maxDepositRequests
+	if uint64(len(requestListInSSZBytes)) > maxSSZsize {
+		return nil, fmt.Errorf("invalid deposit requests SSZ size, requests should not be more than the max per payload, got %d max %d", len(requestListInSSZBytes), maxSSZsize)
 	}
 	return unmarshalItems(requestListInSSZBytes, drSize, func() *DepositRequest { return &DepositRequest{} })
 }
 
-func unmarshalWithdrawals(requestListInSSZBytes []byte) ([]*WithdrawalRequest, error) {
+func unmarshalWithdrawals(requestListInSSZBytes []byte, maxWithdrawals uint64) ([]*WithdrawalRequest, error) {
 	if len(requestListInSSZBytes) < wrSize {
-		return nil, errors.New("invalid withdrawal request length, requests should be at least the size of 1 request")
+		return nil, fmt.Errorf("invalid withdrawal requests SSZ size, got %d expected at least %d", len(requestListInSSZBytes), wrSize)
 	}
-	if uint64(len(requestListInSSZBytes)) > uint64(wrSize)*params.BeaconConfig().MaxWithdrawalRequestsPerPayload {
-		return nil, fmt.Errorf("invalid withdrawal requests length, requests should not be more than the max per payload, got %d max %d", len(requestListInSSZBytes), wrSize)
+	maxSSZsize := uint64(wrSize) * maxWithdrawals
+	if uint64(len(requestListInSSZBytes)) > maxSSZsize {
+		return nil, fmt.Errorf("invalid withdrawal requests SSZ size, requests should not be more than the max per payload, got %d max %d", len(requestListInSSZBytes), maxSSZsize)
 	}
 	return unmarshalItems(requestListInSSZBytes, wrSize, func() *WithdrawalRequest { return &WithdrawalRequest{} })
 }
 
-func unmarshalConsolidations(requestListInSSZBytes []byte) ([]*ConsolidationRequest, error) {
+func unmarshalConsolidations(requestListInSSZBytes []byte, maxConsolidations uint64) ([]*ConsolidationRequest, error) {
 	if len(requestListInSSZBytes) < crSize {
-		return nil, errors.New("invalid consolidations request length, requests should be at least the size of 1 request")
+		return nil, fmt.Errorf("invalid consolidation requests SSZ size, got %d expected at least %d", len(requestListInSSZBytes), crSize)
 	}
-	if uint64(len(requestListInSSZBytes)) > uint64(crSize)*params.BeaconConfig().MaxConsolidationsRequestsPerPayload {
-		return nil, fmt.Errorf("invalid consolidation requests length, requests should not be more than the max per payload, got %d max %d", len(requestListInSSZBytes), crSize)
+	maxSSZsize := uint64(crSize) * maxConsolidations
+	if uint64(len(requestListInSSZBytes)) > maxSSZsize {
+		return nil, fmt.Errorf("invalid consolidation requests SSZ size, requests should not be more than the max per payload, got %d max %d", len(requestListInSSZBytes), maxSSZsize)
 	}
 	return unmarshalItems(requestListInSSZBytes, crSize, func() *ConsolidationRequest { return &ConsolidationRequest{} })
 }

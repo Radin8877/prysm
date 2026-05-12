@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/async"
+	"github.com/OffchainLabs/prysm/v7/async"
 )
 
 func TestEveryRuns(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	i := int32(0)
 	async.RunEvery(ctx, 100*time.Millisecond, func() {

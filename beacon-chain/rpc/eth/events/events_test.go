@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -11,33 +12,36 @@ import (
 	"testing"
 	"time"
 
+	mockChain "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	payloadattribute "github.com/OffchainLabs/prysm/v7/consensus-types/payload-attribute"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/ethereum/go-ethereum/common"
-	mockChain "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	payloadattribute "github.com/prysmaticlabs/prysm/v5/consensus-types/payload-attribute"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	sse "github.com/r3labs/sse/v2"
+	"github.com/r3labs/sse/v2"
 	"github.com/sirupsen/logrus"
 )
 
 var testEventWriteTimeout = 100 * time.Millisecond
+var logger = logrus.StandardLogger()
 
 func requireAllEventsReceived(t *testing.T, stn, opn *mockChain.EventFeedWrapper, events []*feed.Event, req *topicRequest, s *Server, w *StreamingResponseWriterRecorder, logs chan *logrus.Entry) {
 	// maxBufferSize param copied from sse lib client code
 	sseR := sse.NewEventStreamReader(w.Body(), 1<<24)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 
 	expected := make(map[string]bool)
@@ -45,7 +49,7 @@ func requireAllEventsReceived(t *testing.T, stn, opn *mockChain.EventFeedWrapper
 		ev := events[i]
 		// serialize the event the same way the server will so that we can compare expectation to results.
 		top := topicForEvent(ev)
-		eb, err := s.lazyReaderForEvent(context.Background(), ev, req)
+		eb, err := s.lazyReaderForEvent(t.Context(), ev, req)
 		require.NoError(t, err)
 		exb, err := io.ReadAll(eb())
 		require.NoError(t, err)
@@ -110,26 +114,36 @@ func (tr *topicRequest) testHttpRequest(ctx context.Context, _ *testing.T) *http
 func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 	topics, err := newTopicRequest([]string{
 		AttestationTopic,
+		SingleAttestationTopic,
 		VoluntaryExitTopic,
 		SyncCommitteeContributionTopic,
 		BLSToExecutionChangeTopic,
 		BlobSidecarTopic,
 		AttesterSlashingTopic,
 		ProposerSlashingTopic,
+		BlockGossipTopic,
+		DataColumnTopic,
+		PayloadAttestationMessageTopic,
 	})
 	require.NoError(t, err)
 	ro, err := blocks.NewROBlob(util.HydrateBlobSidecar(&eth.BlobSidecar{}))
 	require.NoError(t, err)
 	vblob := blocks.NewVerifiedROBlob(ro)
 
+	// Create a test block for block gossip event
+	block := util.NewBeaconBlock()
+	block.Block.Slot = 123
+	signedBlock, err := blocks.NewSignedBeaconBlock(block)
+	require.NoError(t, err)
+
 	return topics, []*feed.Event{
-		&feed.Event{
+		{
 			Type: operation.UnaggregatedAttReceived,
 			Data: &operation.UnAggregatedAttReceivedData{
 				Attestation: util.HydrateAttestation(&eth.Attestation{}),
 			},
 		},
-		&feed.Event{
+		{
 			Type: operation.AggregatedAttReceived,
 			Data: &operation.AggregatedAttReceivedData{
 				Attestation: &eth.AggregateAttestationAndProof{
@@ -139,7 +153,13 @@ func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 				},
 			},
 		},
-		&feed.Event{
+		{
+			Type: operation.SingleAttReceived,
+			Data: &operation.SingleAttReceivedData{
+				Attestation: util.HydrateSingleAttestation(&eth.SingleAttestation{}),
+			},
+		},
+		{
 			Type: operation.ExitReceived,
 			Data: &operation.ExitReceivedData{
 				Exit: &eth.SignedVoluntaryExit{
@@ -151,7 +171,7 @@ func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 				},
 			},
 		},
-		&feed.Event{
+		{
 			Type: operation.SyncCommitteeContributionReceived,
 			Data: &operation.SyncCommitteeContributionReceivedData{
 				Contribution: &eth.SignedContributionAndProof{
@@ -170,7 +190,7 @@ func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 				},
 			},
 		},
-		&feed.Event{
+		{
 			Type: operation.BLSToExecutionChangeReceived,
 			Data: &operation.BLSToExecutionChangeReceivedData{
 				Change: &eth.SignedBLSToExecutionChange{
@@ -183,13 +203,13 @@ func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 				},
 			},
 		},
-		&feed.Event{
+		{
 			Type: operation.BlobSidecarReceived,
 			Data: &operation.BlobSidecarReceivedData{
 				Blob: &vblob,
 			},
 		},
-		&feed.Event{
+		{
 			Type: operation.AttesterSlashingReceived,
 			Data: &operation.AttesterSlashingReceivedData{
 				AttesterSlashing: &eth.AttesterSlashing{
@@ -222,7 +242,40 @@ func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 				},
 			},
 		},
-		&feed.Event{
+		{
+			Type: operation.AttesterSlashingReceived,
+			Data: &operation.AttesterSlashingReceivedData{
+				AttesterSlashing: &eth.AttesterSlashingElectra{
+					Attestation_1: &eth.IndexedAttestationElectra{
+						AttestingIndices: []uint64{0, 1},
+						Data: &eth.AttestationData{
+							BeaconBlockRoot: make([]byte, fieldparams.RootLength),
+							Source: &eth.Checkpoint{
+								Root: make([]byte, fieldparams.RootLength),
+							},
+							Target: &eth.Checkpoint{
+								Root: make([]byte, fieldparams.RootLength),
+							},
+						},
+						Signature: make([]byte, fieldparams.BLSSignatureLength),
+					},
+					Attestation_2: &eth.IndexedAttestationElectra{
+						AttestingIndices: []uint64{0, 1},
+						Data: &eth.AttestationData{
+							BeaconBlockRoot: make([]byte, fieldparams.RootLength),
+							Source: &eth.Checkpoint{
+								Root: make([]byte, fieldparams.RootLength),
+							},
+							Target: &eth.Checkpoint{
+								Root: make([]byte, fieldparams.RootLength),
+							},
+						},
+						Signature: make([]byte, fieldparams.BLSSignatureLength),
+					},
+				},
+			},
+		},
+		{
 			Type: operation.ProposerSlashingReceived,
 			Data: &operation.ProposerSlashingReceivedData{
 				ProposerSlashing: &eth.ProposerSlashing{
@@ -242,6 +295,36 @@ func operationEventsFixtures(t *testing.T) (*topicRequest, []*feed.Event) {
 						},
 						Signature: make([]byte, fieldparams.BLSSignatureLength),
 					},
+				},
+			},
+		},
+		{
+			Type: operation.BlockGossipReceived,
+			Data: &operation.BlockGossipReceivedData{
+				SignedBlock: signedBlock,
+			},
+		},
+		{
+			Type: operation.DataColumnReceived,
+			Data: &operation.DataColumnReceivedData{
+				Slot:           1,
+				Index:          2,
+				BlockRoot:      [32]byte{'a'},
+				KzgCommitments: [][]byte{{'a'}, {'b'}, {'c'}},
+			},
+		},
+		{
+			Type: operation.PayloadAttestationMessageReceived,
+			Data: &operation.PayloadAttestationMessageReceivedData{
+				Message: &eth.PayloadAttestationMessage{
+					ValidatorIndex: 0,
+					Data: &eth.PayloadAttestationData{
+						BeaconBlockRoot:   make([]byte, fieldparams.RootLength),
+						Slot:              0,
+						PayloadPresent:    true,
+						BlobDataAvailable: true,
+					},
+					Signature: make([]byte, fieldparams.BLSSignatureLength),
 				},
 			},
 		},
@@ -275,7 +358,7 @@ func newStreamTestSync(t *testing.T) *streamTestSync {
 	logChan := make(chan *logrus.Entry, 100)
 	cew := util.NewChannelEntryWriter(logChan)
 	undo := util.RegisterHookWithUndo(logger, cew)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	return &streamTestSync{
 		t:      t,
 		ctx:    ctx,
@@ -326,6 +409,7 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 			FinalizedCheckpointTopic,
 			ChainReorgTopic,
 			BlockTopic,
+			ExecutionPayloadTopic,
 		})
 		require.NoError(t, err)
 		request := topics.testHttpRequest(testSync.ctx, t)
@@ -334,7 +418,7 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 		b, err := blocks.NewSignedBeaconBlock(util.HydrateSignedBeaconBlock(&eth.SignedBeaconBlock{}))
 		require.NoError(t, err)
 		events := []*feed.Event{
-			&feed.Event{
+			{
 				Type: statefeed.BlockProcessed,
 				Data: &statefeed.BlockProcessedData{
 					Slot:        0,
@@ -344,7 +428,7 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 					Optimistic:  false,
 				},
 			},
-			&feed.Event{
+			{
 				Type: statefeed.NewHead,
 				Data: &ethpb.EventHead{
 					Slot:                      0,
@@ -356,7 +440,7 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 					ExecutionOptimistic:       false,
 				},
 			},
-			&feed.Event{
+			{
 				Type: statefeed.Reorg,
 				Data: &ethpb.EventChainReorg{
 					Slot:                0,
@@ -369,13 +453,20 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 					ExecutionOptimistic: false,
 				},
 			},
-			&feed.Event{
+			{
 				Type: statefeed.FinalizedCheckpoint,
 				Data: &ethpb.EventFinalizedCheckpoint{
 					Block:               make([]byte, 32),
 					State:               make([]byte, 32),
 					Epoch:               0,
 					ExecutionOptimistic: false,
+				},
+			},
+			{
+				Type: statefeed.PayloadProcessed,
+				Data: &statefeed.PayloadProcessedData{
+					Slot:      10,
+					BlockRoot: [32]byte{0x9a},
 				},
 			},
 		}
@@ -463,19 +554,27 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 				st := tc.getState()
 				v := &eth.Validator{ExitEpoch: math.MaxUint64, EffectiveBalance: params.BeaconConfig().MinActivationBalance, WithdrawalCredentials: make([]byte, 32)}
 				require.NoError(t, st.SetValidators([]*eth.Validator{v}))
+				require.NoError(t, st.SetBalances([]uint64{0}))
 				currentSlot := primitives.Slot(0)
 				// to avoid slot processing
 				require.NoError(t, st.SetSlot(currentSlot+1))
 				b := tc.getBlock()
+				genesis := time.Now()
+				require.NoError(t, st.SetGenesisTime(genesis))
 				mockChainService := &mockChain.ChainService{
-					Root:  make([]byte, 32),
-					State: st,
-					Block: b,
-					Slot:  &currentSlot,
+					Root:    make([]byte, 32),
+					State:   st,
+					Block:   b,
+					Slot:    &currentSlot,
+					Genesis: genesis,
 				}
+				headRoot, err := b.Block().HashTreeRoot()
+				require.NoError(t, err)
 
 				stn := mockChain.NewEventFeedWrapper()
 				opn := mockChain.NewEventFeedWrapper()
+				stategen := mock.NewService()
+				stategen.AddStateForRoot(st, headRoot)
 				s := &Server{
 					StateNotifier:          &mockChain.SimpleNotifier{Feed: stn},
 					OperationNotifier:      &mockChain.SimpleNotifier{Feed: opn},
@@ -483,6 +582,7 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 					ChainInfoFetcher:       mockChainService,
 					TrackedValidatorsCache: cache.NewTrackedValidatorsCache(),
 					EventWriteTimeout:      testEventWriteTimeout,
+					StateGen:               stategen,
 				}
 				if tc.SetTrackedValidatorsCache != nil {
 					tc.SetTrackedValidatorsCache(s.TrackedValidatorsCache)
@@ -492,17 +592,15 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 				request := topics.testHttpRequest(testSync.ctx, t)
 				w := NewStreamingResponseWriterRecorder(testSync.ctx)
 				events := []*feed.Event{
-					&feed.Event{
+					{
 						Type: statefeed.PayloadAttributes,
 						Data: payloadattribute.EventData{
 							ProposerIndex:     0,
-							ProposalSlot:      0,
+							ProposalSlot:      mockChainService.CurrentSlot() + 1,
 							ParentBlockNumber: 0,
-							ParentBlockRoot:   make([]byte, 32),
 							ParentBlockHash:   make([]byte, 32),
-							HeadState:         st,
 							HeadBlock:         b,
-							HeadRoot:          [fieldparams.RootLength]byte{},
+							HeadRoot:          headRoot,
 						},
 					},
 				}
@@ -515,6 +613,109 @@ func TestStreamEvents_OperationsEvents(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestFillEventData(t *testing.T) {
+	ctx := t.Context()
+	t.Run("AlreadyFilledData_ShouldShortCircuitWithoutError", func(t *testing.T) {
+		b, err := blocks.NewSignedBeaconBlock(util.HydrateSignedBeaconBlockBellatrix(&eth.SignedBeaconBlockBellatrix{}))
+		require.NoError(t, err)
+		attributor, err := payloadattribute.New(&enginev1.PayloadAttributes{
+			Timestamp: uint64(time.Now().Unix()),
+		})
+		require.NoError(t, err)
+		alreadyFilled := payloadattribute.EventData{
+			HeadBlock:       b,
+			HeadRoot:        [32]byte{1, 2, 3},
+			Attributer:      attributor,
+			ParentBlockHash: []byte{4, 5, 6},
+		}
+		srv := &Server{} // No real HeadFetcher needed here since it won't be called.
+		result, err := srv.fillEventData(ctx, alreadyFilled)
+		require.NoError(t, err)
+		require.DeepEqual(t, alreadyFilled, result)
+	})
+	t.Run("Electra PartialData_ShouldFetchHeadStateAndBlock", func(t *testing.T) {
+		st, err := util.NewBeaconStateElectra()
+		require.NoError(t, err)
+		valCount := 10
+		setActiveValidators(t, st, valCount)
+		inactivityScores := make([]uint64, valCount)
+		for i := range inactivityScores {
+			inactivityScores[i] = 10
+		}
+		require.NoError(t, st.SetInactivityScores(inactivityScores))
+		b, err := blocks.NewSignedBeaconBlock(util.HydrateSignedBeaconBlockElectra(&eth.SignedBeaconBlockElectra{}))
+		require.NoError(t, err)
+		attributor, err := payloadattribute.New(&enginev1.PayloadAttributes{
+			Timestamp: uint64(time.Now().Unix()),
+		})
+		require.NoError(t, err)
+		headRoot, err := b.Block().HashTreeRoot()
+		require.NoError(t, err)
+		// Create an event data object missing certain fields:
+		partial := payloadattribute.EventData{
+			ProposalSlot: 42,         // different epoch from current slot
+			Attributer:   attributor, // Must be Bellatrix or later
+			HeadBlock:    b,
+			HeadRoot:     headRoot,
+		}
+		currentSlot := primitives.Slot(0)
+		// to avoid slot processing
+		require.NoError(t, st.SetSlot(currentSlot+1))
+		mockChainService := &mockChain.ChainService{
+			Root:  make([]byte, 32),
+			State: st,
+			Block: b,
+			Slot:  &currentSlot,
+		}
+
+		stategen := mock.NewService()
+		stategen.AddStateForRoot(st, headRoot)
+		stn := mockChain.NewEventFeedWrapper()
+		opn := mockChain.NewEventFeedWrapper()
+		srv := &Server{
+			StateNotifier:          &mockChain.SimpleNotifier{Feed: stn},
+			OperationNotifier:      &mockChain.SimpleNotifier{Feed: opn},
+			HeadFetcher:            mockChainService,
+			ChainInfoFetcher:       mockChainService,
+			TrackedValidatorsCache: cache.NewTrackedValidatorsCache(),
+			EventWriteTimeout:      testEventWriteTimeout,
+			StateGen:               stategen,
+		}
+
+		filled, err := srv.fillEventData(ctx, partial)
+		require.NoError(t, err, "expected successful fill of partial event data")
+
+		// Verify that fields have been updated from the mock data:
+		require.NotNil(t, filled.HeadBlock, "HeadBlock should be assigned")
+		require.NotEqual(t, [32]byte{}, filled.HeadRoot, "HeadRoot should no longer be zero")
+		require.NotEmpty(t, filled.ParentBlockHash, "ParentBlockHash should be filled")
+		require.Equal(t, uint64(0), filled.ParentBlockNumber, "ParentBlockNumber must match mock block")
+
+		// Check that a valid Attributer was set:
+		require.NotNil(t, filled.Attributer, "Should have a valid payload attributes object")
+		require.Equal(t, false, filled.Attributer.IsEmpty(), "Attributer should not be empty after fill")
+	})
+}
+
+func setActiveValidators(t *testing.T, st state.BeaconState, count int) {
+	balances := make([]uint64, count)
+	validators := make([]*eth.Validator, 0, count)
+	for i := range count {
+		pubKey := make([]byte, params.BeaconConfig().BLSPubkeyLength)
+		binary.LittleEndian.PutUint64(pubKey, uint64(i))
+		balances[i] = uint64(i)
+		validators = append(validators, &eth.Validator{
+			PublicKey:             pubKey,
+			ActivationEpoch:       0,
+			ExitEpoch:             params.BeaconConfig().FarFutureEpoch,
+			WithdrawalCredentials: make([]byte, 32),
+		})
+	}
+
+	require.NoError(t, st.SetValidators(validators))
+	require.NoError(t, st.SetBalances(balances))
 }
 
 func TestStuckReaderScenarios(t *testing.T) {
@@ -544,7 +745,7 @@ func TestStuckReaderScenarios(t *testing.T) {
 
 func wedgedWriterTestCase(t *testing.T, queueDepth func([]*feed.Event) int) {
 	topics, events := operationEventsFixtures(t)
-	require.Equal(t, 8, len(events))
+	require.Equal(t, 13, len(events))
 
 	// set eventFeedDepth to a number lower than the events we intend to send to force the server to drop the reader.
 	stn := mockChain.NewEventFeedWrapper()
@@ -556,7 +757,7 @@ func wedgedWriterTestCase(t *testing.T, queueDepth func([]*feed.Event) int) {
 		EventFeedDepth:    queueDepth(events),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	eventsWritten := make(chan struct{})
 	go func() {

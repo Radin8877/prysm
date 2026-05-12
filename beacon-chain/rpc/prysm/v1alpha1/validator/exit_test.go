@@ -1,30 +1,29 @@
 package validator
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	mockChain "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	opfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/voluntaryexits"
-	mockp2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mockChain "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	opfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/voluntaryexits"
+	mockp2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestProposeExit_Notification(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	deposits, keys, err := util.DeterministicDepositsAndKeys(params.BeaconConfig().MinGenesisActiveValidatorCount)
 	require.NoError(t, err)
@@ -66,7 +65,7 @@ func TestProposeExit_Notification(t *testing.T) {
 	req.Signature, err = signing.ComputeDomainAndSign(beaconState, epoch, req.Exit, params.BeaconConfig().DomainVoluntaryExit, keys[0])
 	require.NoError(t, err)
 
-	resp, err := server.ProposeExit(context.Background(), req)
+	resp, err := server.ProposeExit(t.Context(), req)
 	require.NoError(t, err)
 	expectedRoot, err := req.Exit.HashTreeRoot()
 	require.NoError(t, err)
@@ -91,7 +90,7 @@ func TestProposeExit_Notification(t *testing.T) {
 }
 
 func TestProposeExit_NoPanic(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	deposits, keys, err := util.DeterministicDepositsAndKeys(params.BeaconConfig().MinGenesisActiveValidatorCount)
 	require.NoError(t, err)
@@ -123,7 +122,7 @@ func TestProposeExit_NoPanic(t *testing.T) {
 	defer opSub.Unsubscribe()
 
 	req := &ethpb.SignedVoluntaryExit{}
-	_, err = server.ProposeExit(context.Background(), req)
+	_, err = server.ProposeExit(t.Context(), req)
 	require.ErrorContains(t, "voluntary exit does not exist", err, "Expected error for no exit existing")
 
 	// Send the request, expect a result on the state feed.
@@ -135,15 +134,15 @@ func TestProposeExit_NoPanic(t *testing.T) {
 		},
 	}
 
-	_, err = server.ProposeExit(context.Background(), req)
+	_, err = server.ProposeExit(t.Context(), req)
 	require.ErrorContains(t, "invalid signature provided", err, "Expected error for no signature exists")
 	req.Signature = bytesutil.FromBytes48([fieldparams.BLSPubkeyLength]byte{})
 
-	_, err = server.ProposeExit(context.Background(), req)
+	_, err = server.ProposeExit(t.Context(), req)
 	require.ErrorContains(t, "invalid signature provided", err, "Expected error for invalid signature length")
 	req.Signature, err = signing.ComputeDomainAndSign(beaconState, epoch, req.Exit, params.BeaconConfig().DomainVoluntaryExit, keys[0])
 	require.NoError(t, err)
-	resp, err := server.ProposeExit(context.Background(), req)
+	resp, err := server.ProposeExit(t.Context(), req)
 	require.NoError(t, err)
 	expectedRoot, err := req.Exit.HashTreeRoot()
 	require.NoError(t, err)

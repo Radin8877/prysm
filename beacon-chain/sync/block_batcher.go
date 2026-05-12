@@ -6,12 +6,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filters"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 	libp2pcore "github.com/libp2p/go-libp2p/core"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filters"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 )
 
 // blockRangeBatcher encapsulates the logic for splitting up a block range request into fixed-size batches of
@@ -100,7 +100,7 @@ func (bb *blockRangeBatcher) next(ctx context.Context, stream libp2pcore.Stream)
 		}
 		rob = append(rob, gb)
 	}
-	for i := 0; i < len(blks); i++ {
+	for i := range blks {
 		rb, err := blocks.NewROBlockWithRoot(blks[i], roots[i])
 		if err != nil {
 			return blockBatch{err: errors.Wrap(err, "Could not initialize ROBlock")}, false

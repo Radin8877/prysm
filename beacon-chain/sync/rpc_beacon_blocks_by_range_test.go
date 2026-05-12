@@ -1,40 +1,39 @@
 package sync
 
 import (
-	"context"
 	"io"
 	"math/big"
 	"sync"
 	"testing"
 	"time"
 
+	chainMock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	db2 "github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	db "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/encoder"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	p2ptypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	leakybucket "github.com/OffchainLabs/prysm/v7/container/leaky-bucket"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/pkg/errors"
-	chainMock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	db2 "github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	db "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	p2ptypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	leakybucket "github.com/prysmaticlabs/prysm/v5/container/leaky-bucket"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -60,7 +59,7 @@ func TestRPCBeaconBlocksByRange_RPCHandlerReturnsBlocks(t *testing.T) {
 		copy(blk.Block.ParentRoot, prevRoot[:])
 		prevRoot, err = blk.Block.HashTreeRoot()
 		require.NoError(t, err)
-		util.SaveBlock(t, context.Background(), d, blk)
+		util.SaveBlock(t, t.Context(), d, blk)
 	}
 
 	clock := startup.NewClock(time.Unix(0, 0), [32]byte{})
@@ -83,10 +82,10 @@ func TestRPCBeaconBlocksByRange_RPCHandlerReturnsBlocks(t *testing.T) {
 		}
 	})
 
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
 
-	err = r.beaconBlocksByRangeRPCHandler(context.Background(), req, stream1)
+	err = r.beaconBlocksByRangeRPCHandler(t.Context(), req, stream1)
 	require.NoError(t, err)
 
 	// Make sure that rate limiter doesn't limit capacity exceedingly.
@@ -122,9 +121,9 @@ func TestRPCBeaconBlocksByRange_ReturnCorrectNumberBack(t *testing.T) {
 			require.NoError(t, err)
 			genRoot = rt
 		}
-		util.SaveBlock(t, context.Background(), d, blk)
+		util.SaveBlock(t, t.Context(), d, blk)
 	}
-	require.NoError(t, d.SaveGenesisBlockRoot(context.Background(), genRoot))
+	require.NoError(t, d.SaveGenesisBlockRoot(t.Context(), genRoot))
 
 	clock := startup.NewClock(time.Unix(0, 0), [32]byte{})
 	// Start service with 160 as allowed blocks capacity (and almost zero capacity recovery).
@@ -154,10 +153,10 @@ func TestRPCBeaconBlocksByRange_ReturnCorrectNumberBack(t *testing.T) {
 		}
 	})
 
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
 
-	err = r.beaconBlocksByRangeRPCHandler(context.Background(), newReq, stream1)
+	err = r.beaconBlocksByRangeRPCHandler(t.Context(), newReq, stream1)
 	require.NoError(t, err)
 
 	if util.WaitTimeout(&wg, 1*time.Second) {
@@ -231,9 +230,9 @@ func TestRPCBeaconBlocksByRange_ReconstructsPayloads(t *testing.T) {
 			require.NoError(t, err)
 			genRoot = rt
 		}
-		util.SaveBlock(t, context.Background(), d, blk)
+		util.SaveBlock(t, t.Context(), d, blk)
 	}
-	require.NoError(t, d.SaveGenesisBlockRoot(context.Background(), genRoot))
+	require.NoError(t, d.SaveGenesisBlockRoot(t.Context(), genRoot))
 
 	clock := startup.NewClock(time.Unix(0, 0), [32]byte{})
 	// Start service with 160 as allowed blocks capacity (and almost zero capacity recovery).
@@ -274,15 +273,136 @@ func TestRPCBeaconBlocksByRange_ReconstructsPayloads(t *testing.T) {
 		require.Equal(t, uint64(1), mockEngine.NumReconstructedPayloads)
 	})
 
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
 
-	err = r.beaconBlocksByRangeRPCHandler(context.Background(), newReq, stream1)
+	err = r.beaconBlocksByRangeRPCHandler(t.Context(), newReq, stream1)
 	require.NoError(t, err)
 
 	if util.WaitTimeout(&wg, 1*time.Second) {
 		t.Fatal("Did not receive stream within 1 sec")
 	}
+}
+
+func TestWriteBlockBatchToStream_ReconstructedBlocksPreserveCanonicalOrder(t *testing.T) {
+	p1 := p2ptest.NewTestP2P(t)
+	p2 := p2ptest.NewTestP2P(t)
+	p1.Connect(p2)
+	require.Equal(t, 1, len(p1.BHost.Network().Peers()))
+
+	clock := startup.NewClock(time.Unix(0, 0), [32]byte{})
+
+	makePayload := func(tag byte) *enginev1.ExecutionPayload {
+		blockHash := bytesutil.PadTo([]byte{tag}, fieldparams.RootLength)
+		return &enginev1.ExecutionPayload{
+			ParentHash:    bytesutil.PadTo([]byte{'p', tag}, fieldparams.RootLength),
+			FeeRecipient:  make([]byte, fieldparams.FeeRecipientLength),
+			StateRoot:     bytesutil.PadTo([]byte{'s', tag}, fieldparams.RootLength),
+			ReceiptsRoot:  bytesutil.PadTo([]byte{'r', tag}, fieldparams.RootLength),
+			LogsBloom:     make([]byte, fieldparams.LogsBloomLength),
+			PrevRandao:    blockHash,
+			BlockNumber:   0,
+			GasLimit:      0,
+			GasUsed:       0,
+			Timestamp:     0,
+			ExtraData:     nil,
+			BlockHash:     blockHash,
+			BaseFeePerGas: bytesutil.PadTo([]byte{'b', tag}, fieldparams.RootLength),
+			Transactions:  nil,
+		}
+	}
+
+	makeBlindedROBlock := func(slot primitives.Slot, payload *enginev1.ExecutionPayload) blocks.ROBlock {
+		blinded := util.NewBlindedBeaconBlockBellatrix()
+		blinded.Block.Slot = slot
+		wrappedPayload, err := blocks.WrappedExecutionPayload(payload)
+		require.NoError(t, err)
+		header, err := blocks.PayloadToHeader(wrappedPayload)
+		require.NoError(t, err)
+		blinded.Block.Body.ExecutionPayloadHeader = header
+		signed, err := blocks.NewSignedBeaconBlock(blinded)
+		require.NoError(t, err)
+		root, err := blinded.Block.HashTreeRoot()
+		require.NoError(t, err)
+		ro, err := blocks.NewROBlockWithRoot(signed, root)
+		require.NoError(t, err)
+		return ro
+	}
+
+	makeFullROBlock := func(slot primitives.Slot) blocks.ROBlock {
+		full := util.NewBeaconBlockBellatrix()
+		full.Block.Slot = slot
+		signed, err := blocks.NewSignedBeaconBlock(full)
+		require.NoError(t, err)
+		root, err := full.Block.HashTreeRoot()
+		require.NoError(t, err)
+		ro, err := blocks.NewROBlockWithRoot(signed, root)
+		require.NoError(t, err)
+		return ro
+	}
+
+	payload1 := makePayload(0x11)
+	payload3 := makePayload(0x33)
+	block1 := makeBlindedROBlock(1, payload1)
+	block2 := makeFullROBlock(2)
+	block3 := makeBlindedROBlock(3, payload3)
+
+	mockEngine := &mockExecution.EngineClient{
+		ExecutionPayloadByBlockHash: map[[32]byte]*enginev1.ExecutionPayload{
+			bytesutil.ToBytes32(payload1.BlockHash): payload1,
+			bytesutil.ToBytes32(payload3.BlockHash): payload3,
+		},
+	}
+
+	r := &Service{cfg: &config{p2p: p1, clock: clock, executionReconstructor: mockEngine}}
+	pcl := protocol.ID(p2p.RPCBlocksByRangeTopicV1)
+
+	slotsCh := make(chan []primitives.Slot, 1)
+	errCh := make(chan error, 1)
+	p2.BHost.SetStreamHandler(pcl, func(stream network.Stream) {
+		got := make([]primitives.Slot, 0, 3)
+		for range 3 {
+			expectSuccess(t, stream)
+			blk := util.NewBeaconBlockBellatrix()
+			if err := p2.Encoding().DecodeWithMaxLength(stream, blk); err != nil {
+				errCh <- err
+				return
+			}
+			wrapped, err := blocks.NewSignedBeaconBlock(blk)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if wrapped.IsBlinded() {
+				errCh <- errors.New("expected reconstructed full block, got blinded block")
+				return
+			}
+			got = append(got, wrapped.Block().Slot())
+		}
+		slotsCh <- got
+	})
+
+	stream, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
+	require.NoError(t, err)
+
+	err = r.writeBlockBatchToStream(
+		t.Context(),
+		blockBatch{lin: []blocks.ROBlock{block1, block2, block3}},
+		stream,
+	)
+	require.NoError(t, err)
+	require.NoError(t, stream.Close())
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case got := <-slotsCh:
+		assert.DeepEqual(t, []primitives.Slot{1, 2, 3}, got)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for streamed blocks")
+	}
+
+	require.Equal(t, uint64(2), mockEngine.NumReconstructedPayloads)
 }
 
 func TestRPCBeaconBlocksByRange_RPCHandlerReturnsSortedBlocks(t *testing.T) {
@@ -310,7 +430,7 @@ func TestRPCBeaconBlocksByRange_RPCHandlerReturnsSortedBlocks(t *testing.T) {
 		require.NoError(t, err)
 		expectedRoots[j] = rt
 		prevRoot = rt
-		util.SaveBlock(t, context.Background(), d, blk)
+		util.SaveBlock(t, t.Context(), d, blk)
 		j++
 	}
 
@@ -342,9 +462,9 @@ func TestRPCBeaconBlocksByRange_RPCHandlerReturnsSortedBlocks(t *testing.T) {
 		}
 	})
 
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
-	require.NoError(t, r.beaconBlocksByRangeRPCHandler(context.Background(), req, stream1))
+	require.NoError(t, r.beaconBlocksByRangeRPCHandler(t.Context(), req, stream1))
 
 	if util.WaitTimeout(&wg, 1*time.Second) {
 		t.Fatal("Did not receive stream within 1 sec")
@@ -375,9 +495,9 @@ func TestRPCBeaconBlocksByRange_ReturnsGenesisBlock(t *testing.T) {
 
 		// Save genesis block
 		if i == 0 {
-			require.NoError(t, d.SaveGenesisBlockRoot(context.Background(), rt))
+			require.NoError(t, d.SaveGenesisBlockRoot(t.Context(), rt))
 		}
-		util.SaveBlock(t, context.Background(), d, blk)
+		util.SaveBlock(t, t.Context(), d, blk)
 		prevRoot = rt
 	}
 
@@ -403,9 +523,9 @@ func TestRPCBeaconBlocksByRange_ReturnsGenesisBlock(t *testing.T) {
 		}
 	})
 
-	stream1, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+	stream1, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 	require.NoError(t, err)
-	require.NoError(t, r.beaconBlocksByRangeRPCHandler(context.Background(), req, stream1))
+	require.NoError(t, r.beaconBlocksByRangeRPCHandler(t.Context(), req, stream1))
 
 	if util.WaitTimeout(&wg, 1*time.Second) {
 		t.Fatal("Did not receive stream within 1 sec")
@@ -425,7 +545,7 @@ func TestRPCBeaconBlocksByRange_RPCHandlerRateLimitOverflow(t *testing.T) {
 			if req.Step == 1 {
 				block.Block.ParentRoot = parentRoot[:]
 			}
-			util.SaveBlock(t, context.Background(), d, block)
+			util.SaveBlock(t, t.Context(), d, block)
 			rt, err := block.Block.HashTreeRoot()
 			require.NoError(t, err)
 			parentRoot = rt
@@ -454,9 +574,9 @@ func TestRPCBeaconBlocksByRange_RPCHandlerRateLimitOverflow(t *testing.T) {
 				}
 			}
 		})
-		stream, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+		stream, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 		require.NoError(t, err)
-		if err := r.beaconBlocksByRangeRPCHandler(context.Background(), req, stream); err != nil {
+		if err := r.beaconBlocksByRangeRPCHandler(t.Context(), req, stream); err != nil {
 			return err
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -678,7 +798,7 @@ func TestRPCBeaconBlocksByRange_EnforceResponseInvariants(t *testing.T) {
 			block := util.NewBeaconBlock()
 			block.Block.Slot = i
 			block.Block.ParentRoot = parentRoot[:]
-			util.SaveBlock(t, context.Background(), d, block)
+			util.SaveBlock(t, t.Context(), d, block)
 			rt, err := block.Block.HashTreeRoot()
 			require.NoError(t, err)
 			parentRoot = rt
@@ -703,9 +823,9 @@ func TestRPCBeaconBlocksByRange_EnforceResponseInvariants(t *testing.T) {
 			}
 			processBlocks(blocks)
 		})
-		stream, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+		stream, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 		require.NoError(t, err)
-		if err := r.beaconBlocksByRangeRPCHandler(context.Background(), req, stream); err != nil {
+		if err := r.beaconBlocksByRangeRPCHandler(t.Context(), req, stream); err != nil {
 			return err
 		}
 		if util.WaitTimeout(&wg, 1*time.Second) {
@@ -754,8 +874,8 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 		previousRoot, err := blk.Block.HashTreeRoot()
 		require.NoError(t, err)
 
-		util.SaveBlock(t, context.Background(), d, blk)
-		require.NoError(t, d.SaveGenesisBlockRoot(context.Background(), previousRoot))
+		util.SaveBlock(t, t.Context(), d, blk)
+		require.NoError(t, d.SaveGenesisBlockRoot(t.Context(), previousRoot))
 		blks := make([]*ethpb.SignedBeaconBlock, req.Count)
 		// Populate the database with blocks that would match the request.
 		for i, j := req.StartSlot, 0; i < req.StartSlot.Add(req.Step*req.Count); i += primitives.Slot(req.Step) {
@@ -769,7 +889,7 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 			require.NoError(t, err)
 			previousRoot, err = blks[j].Block.HashTreeRoot()
 			require.NoError(t, err)
-			util.SaveBlock(t, context.Background(), d, blks[j])
+			util.SaveBlock(t, t.Context(), d, blks[j])
 			j++
 		}
 		stateSummaries := make([]*ethpb.StateSummary, len(blks))
@@ -787,8 +907,8 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 				}
 				chain.CanonicalRoots[bRoot] = true
 			}
-			require.NoError(t, d.SaveStateSummaries(context.Background(), stateSummaries))
-			require.NoError(t, d.SaveFinalizedCheckpoint(context.Background(), &ethpb.Checkpoint{
+			require.NoError(t, d.SaveStateSummaries(t.Context(), stateSummaries))
+			require.NoError(t, d.SaveFinalizedCheckpoint(t.Context(), &ethpb.Checkpoint{
 				Epoch: slots.ToEpoch(stateSummaries[len(stateSummaries)-1].Slot),
 				Root:  stateSummaries[len(stateSummaries)-1].Root,
 			}))
@@ -802,8 +922,8 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 		require.NoError(t, err)
 		genRoot := previousRoot
 
-		util.SaveBlock(t, context.Background(), d, blk)
-		require.NoError(t, d.SaveGenesisBlockRoot(context.Background(), previousRoot))
+		util.SaveBlock(t, t.Context(), d, blk)
+		require.NoError(t, d.SaveGenesisBlockRoot(t.Context(), previousRoot))
 		blks := make([]*ethpb.SignedBeaconBlock, req.Count)
 		// Populate the database with blocks with non linear roots.
 		for i, j := req.StartSlot, 0; i < req.StartSlot.Add(req.Step*req.Count); i += primitives.Slot(req.Step) {
@@ -821,7 +941,7 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 			require.NoError(t, err)
 			previousRoot, err = blks[j].Block.HashTreeRoot()
 			require.NoError(t, err)
-			util.SaveBlock(t, context.Background(), d, blks[j])
+			util.SaveBlock(t, t.Context(), d, blks[j])
 			j++
 		}
 		stateSummaries := make([]*ethpb.StateSummary, len(blks))
@@ -838,8 +958,8 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 				}
 				chain.CanonicalRoots[bRoot] = true
 			}
-			require.NoError(t, d.SaveStateSummaries(context.Background(), stateSummaries))
-			require.NoError(t, d.SaveFinalizedCheckpoint(context.Background(), &ethpb.Checkpoint{
+			require.NoError(t, d.SaveStateSummaries(t.Context(), stateSummaries))
+			require.NoError(t, d.SaveFinalizedCheckpoint(t.Context(), &ethpb.Checkpoint{
 				Epoch: slots.ToEpoch(stateSummaries[len(stateSummaries)-1].Slot),
 				Root:  stateSummaries[len(stateSummaries)-1].Root,
 			}))
@@ -855,7 +975,7 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 			blocks := make([]*ethpb.SignedBeaconBlock, 0, req.Count)
 			for i := req.StartSlot; i < req.StartSlot.Add(req.Count*req.Step); i += primitives.Slot(req.Step) {
 				code, _, err := ReadStatusCode(stream, &encoder.SszNetworkEncoder{})
-				if err != nil && err != io.EOF {
+				if err != nil && !errors.Is(err, io.EOF) {
 					t.Fatal(err)
 				}
 				if code != 0 || errors.Is(err, io.EOF) {
@@ -870,9 +990,9 @@ func TestRPCBeaconBlocksByRange_FilterBlocks(t *testing.T) {
 			}
 			processBlocks(blocks)
 		})
-		stream, err := p1.BHost.NewStream(context.Background(), p2.BHost.ID(), pcl)
+		stream, err := p1.BHost.NewStream(t.Context(), p2.BHost.ID(), pcl)
 		require.NoError(t, err)
-		if err := r.beaconBlocksByRangeRPCHandler(context.Background(), req, stream); err != nil {
+		if err := r.beaconBlocksByRangeRPCHandler(t.Context(), req, stream); err != nil {
 			return err
 		}
 		if util.WaitTimeout(&wg, 1*time.Second) {
@@ -1096,7 +1216,7 @@ func TestRPCBeaconBlocksByRange_FilterBlocks_PreviousRoot(t *testing.T) {
 
 	chain := &chainMock.ChainService{}
 	cf := canonicalFilter{canonical: chain.IsCanonical}
-	seq, nseq, err := cf.filter(context.Background(), blks)
+	seq, nseq, err := cf.filter(t.Context(), blks)
 	require.NoError(t, err)
 	require.Equal(t, len(blks), len(seq))
 	require.Equal(t, 0, len(nseq))

@@ -1,19 +1,18 @@
 package filesystem
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path"
 	"testing"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func getPubKeys(t *testing.T, count int) [][fieldparams.BLSPubkeyLength]byte {
@@ -106,7 +105,7 @@ func TestStore_Backup(t *testing.T) {
 	require.NoError(t, err, "NewStore should not return an error")
 
 	// Update the proposer settings.
-	err = s.SaveProposerSettings(context.Background(), &proposer.Settings{
+	err = s.SaveProposerSettings(t.Context(), &proposer.Settings{
 		DefaultConfig: &proposer.Option{
 			FeeRecipientConfig: &proposer.FeeRecipientConfig{
 				FeeRecipient: common.Address{},
@@ -116,7 +115,7 @@ func TestStore_Backup(t *testing.T) {
 	require.NoError(t, err, "SaveProposerSettings should not return an error")
 
 	// Backup the DB.
-	require.NoError(t, s.Backup(context.Background(), backupsPath, true), "Backup should not return an error")
+	require.NoError(t, s.Backup(t.Context(), backupsPath, true), "Backup should not return an error")
 
 	// Get the directory path of the backup.
 	files, err := os.ReadDir(path.Join(backupsPath, backupsDirectoryName))

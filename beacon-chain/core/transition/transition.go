@@ -8,26 +8,29 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/capella"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/deneb"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/electra"
+	e "github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/execution"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/fulu"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/gloas"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	prysmTrace "github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/capella"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/deneb"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/electra"
-	e "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/execution"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/fulu"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	prysmTrace "github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
+	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -140,7 +143,29 @@ func ProcessSlot(ctx context.Context, state state.BeaconState) (state.BeaconStat
 	); err != nil {
 		return nil, err
 	}
+
+	// <spec fn="process_slot" fork="gloas" lines="11-13" hash="62b28839">
+	// # [New in Gloas:EIP7732]
+	// # Unset the next payload availability
+	// state.execution_payload_availability[(state.slot + 1) % SLOTS_PER_HISTORICAL_ROOT] = 0b0
+	// </spec>
+	if state.Version() >= version.Gloas {
+		index := uint64((state.Slot() + 1) % params.BeaconConfig().SlotsPerHistoricalRoot)
+		if err := state.UpdateExecutionPayloadAvailabilityAtIndex(index, 0x0); err != nil {
+			return nil, err
+		}
+	}
+
 	return state, nil
+}
+
+// ProcessSlotsIfNeeded takes a ReadOnlyBeaconState and processes it only if its needed, it returns a ReadOnlyBeaconState
+func ProcessSlotsIfNeeded(ctx context.Context, state state.ReadOnlyBeaconState, parentRoot []byte, slot primitives.Slot) (state.ReadOnlyBeaconState, error) {
+	if slot <= state.Slot() {
+		return state, nil
+	}
+	copied := state.Copy()
+	return ProcessSlotsUsingNextSlotCache(ctx, copied, parentRoot, slot)
 }
 
 // ProcessSlotsUsingNextSlotCache processes slots by using next slot cache for higher efficiency.
@@ -291,6 +316,8 @@ func ProcessSlotsCore(ctx context.Context, span trace.Span, state state.BeaconSt
 			tracing.AnnotateError(span, err)
 			return nil, errors.Wrap(err, "failed to upgrade state")
 		}
+
+		logBlobLimitIncrease(state.Slot())
 	}
 	return state, nil
 }
@@ -299,7 +326,15 @@ func ProcessSlotsCore(ctx context.Context, span trace.Span, state state.BeaconSt
 func ProcessEpoch(ctx context.Context, state state.BeaconState) (state.BeaconState, error) {
 	var err error
 	if time.CanProcessEpoch(state) {
-		if state.Version() >= version.Electra {
+		if state.Version() >= version.Gloas {
+			if err = processEpochGloas(ctx, state); err != nil {
+				return nil, errors.Wrap(err, fmt.Sprintf("could not process %s epoch", version.String(state.Version())))
+			}
+		} else if state.Version() >= version.Fulu {
+			if err = fulu.ProcessEpoch(ctx, state); err != nil {
+				return nil, errors.Wrap(err, fmt.Sprintf("could not process %s epoch", version.String(state.Version())))
+			}
+		} else if state.Version() >= version.Electra {
 			if err = electra.ProcessEpoch(ctx, state); err != nil {
 				return nil, errors.Wrap(err, fmt.Sprintf("could not process %s epoch", version.String(state.Version())))
 			}
@@ -364,7 +399,7 @@ func UpgradeState(ctx context.Context, state state.BeaconState) (state.BeaconSta
 	}
 
 	if time.CanUpgradeToElectra(slot) {
-		state, err = electra.UpgradeToElectra(state)
+		state, err = electra.UpgradeToElectra(ctx, state)
 		if err != nil {
 			tracing.AnnotateError(span, err)
 			return nil, err
@@ -373,7 +408,16 @@ func UpgradeState(ctx context.Context, state state.BeaconState) (state.BeaconSta
 	}
 
 	if time.CanUpgradeToFulu(slot) {
-		state, err = fulu.UpgradeToFulu(state)
+		state, err = fulu.UpgradeToFulu(ctx, state)
+		if err != nil {
+			tracing.AnnotateError(span, err)
+			return nil, err
+		}
+		upgraded = true
+	}
+
+	if time.CanUpgradeToGloas(slot) {
+		state, err = gloas.UpgradeToGloas(state)
 		if err != nil {
 			tracing.AnnotateError(span, err)
 			return nil, err
@@ -403,19 +447,27 @@ func VerifyOperationLengths(_ context.Context, state state.BeaconState, b interf
 		)
 	}
 
-	if uint64(len(body.AttesterSlashings())) > params.BeaconConfig().MaxAttesterSlashings {
+	maxSlashings := params.BeaconConfig().MaxAttesterSlashings
+	if body.Version() >= version.Electra {
+		maxSlashings = params.BeaconConfig().MaxAttesterSlashingsElectra
+	}
+	if uint64(len(body.AttesterSlashings())) > maxSlashings {
 		return nil, fmt.Errorf(
 			"number of attester slashings (%d) in block body exceeds allowed threshold of %d",
 			len(body.AttesterSlashings()),
-			params.BeaconConfig().MaxAttesterSlashings,
+			maxSlashings,
 		)
 	}
 
-	if uint64(len(body.Attestations())) > params.BeaconConfig().MaxAttestations {
+	maxAttestations := params.BeaconConfig().MaxAttestations
+	if body.Version() >= version.Electra {
+		maxAttestations = params.BeaconConfig().MaxAttestationsElectra
+	}
+	if uint64(len(body.Attestations())) > maxAttestations {
 		return nil, fmt.Errorf(
 			"number of attestations (%d) in block body exceeds allowed threshold of %d",
 			len(body.Attestations()),
-			params.BeaconConfig().MaxAttestations,
+			maxAttestations,
 		)
 	}
 
@@ -498,4 +550,20 @@ func ProcessEpochPrecompute(ctx context.Context, state state.BeaconState) (state
 		return nil, errors.Wrap(err, "could not process final updates")
 	}
 	return state, nil
+}
+
+func logBlobLimitIncrease(slot primitives.Slot) {
+	if !slots.IsEpochStart(slot) {
+		return
+	}
+
+	epoch := slots.ToEpoch(slot)
+	for _, entry := range params.BeaconConfig().BlobSchedule {
+		if entry.Epoch == epoch {
+			log.WithFields(logrus.Fields{
+				"epoch":     epoch,
+				"blobLimit": entry.MaxBlobsPerBlock,
+			}).Info("Blob limit updated")
+		}
+	}
 }

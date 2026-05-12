@@ -4,22 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -44,41 +41,23 @@ func (v *validator) SubmitAggregateAndProof(ctx context.Context, slot primitives
 		return
 	}
 
-	// Avoid sending beacon node duplicated aggregation requests.
-	k := validatorSubnetSubscriptionKey(slot, duty.CommitteeIndex)
-	v.aggregatedSlotCommitteeIDCacheLock.Lock()
-	if v.aggregatedSlotCommitteeIDCache.Contains(k) {
-		v.aggregatedSlotCommitteeIDCacheLock.Unlock()
+	if !v.aggSelector.ClaimAggregateSlot(slot, duty.CommitteeIndex) {
 		return
-	}
-	v.aggregatedSlotCommitteeIDCache.Add(k, true)
-	v.aggregatedSlotCommitteeIDCacheLock.Unlock()
-
-	var slotSig []byte
-	if v.distributed {
-		slotSig, err = v.attSelection(attSelectionKey{slot: slot, index: duty.ValidatorIndex})
-		if err != nil {
-			log.WithError(err).Error("Could not find aggregated selection proof")
-			if v.emitAccountMetrics {
-				ValidatorAggFailVec.WithLabelValues(fmtKey).Inc()
-			}
-			return
-		}
-	} else {
-		slotSig, err = v.signSlotWithSelectionProof(ctx, pubKey, slot)
-		if err != nil {
-			log.WithError(err).Error("Could not sign slot")
-			if v.emitAccountMetrics {
-				ValidatorAggFailVec.WithLabelValues(fmtKey).Inc()
-			}
-			return
-		}
 	}
 
 	// As specified in spec, an aggregator should wait until two thirds of the way through slot
 	// to broadcast the best aggregate to the global aggregate channel.
 	// https://github.com/ethereum/consensus-specs/blob/v0.9.3/specs/validator/0_beacon-chain-validator.md#broadcast-aggregate
-	v.waitToSlotTwoThirds(ctx, slot)
+	v.waitUntilAggregateDue(ctx, slot)
+
+	slotSig, err := v.aggSelector.AttestationSelectionProof(ctx, slot, pubKey)
+	if err != nil {
+		log.WithError(err).Error("Could not get selection proof")
+		if v.emitAccountMetrics {
+			ValidatorAggFailVec.WithLabelValues(fmtKey).Inc()
+		}
+		return
+	}
 
 	postElectra := slots.ToEpoch(slot) >= params.BeaconConfig().ElectraForkEpoch
 
@@ -91,14 +70,14 @@ func (v *validator) SubmitAggregateAndProof(ctx context.Context, slot primitives
 	// TODO: look at renaming SubmitAggregateSelectionProof functions as they are GET beacon API
 	var agg ethpb.AggregateAttAndProof
 	if postElectra {
-		res, err := v.validatorClient.SubmitAggregateSelectionProofElectra(ctx, aggSelectionRequest, duty.ValidatorIndex, uint64(len(duty.Committee)))
+		res, err := v.validatorClient.SubmitAggregateSelectionProofElectra(ctx, aggSelectionRequest, duty.ValidatorIndex, duty.CommitteeLength)
 		if err != nil {
 			v.handleSubmitAggSelectionProofError(err, slot, fmtKey)
 			return
 		}
 		agg = res.AggregateAndProof
 	} else {
-		res, err := v.validatorClient.SubmitAggregateSelectionProof(ctx, aggSelectionRequest, duty.ValidatorIndex, uint64(len(duty.Committee)))
+		res, err := v.validatorClient.SubmitAggregateSelectionProof(ctx, aggSelectionRequest, duty.ValidatorIndex, duty.CommitteeLength)
 		if err != nil {
 			v.handleSubmitAggSelectionProofError(err, slot, fmtKey)
 			return
@@ -158,7 +137,7 @@ func (v *validator) SubmitAggregateAndProof(ctx context.Context, slot primitives
 		}
 	}
 
-	if err := v.saveSubmittedAtt(agg.AggregateVal().GetData(), pubKey[:], true); err != nil {
+	if err := v.saveSubmittedAtt(agg.AggregateVal(), pubKey[:], true); err != nil {
 		log.WithError(err).Error("Could not add aggregator indices to logs")
 		if v.emitAccountMetrics {
 			ValidatorAggFailVec.WithLabelValues(fmtKey).Inc()
@@ -200,32 +179,18 @@ func (v *validator) signSlotWithSelectionProof(ctx context.Context, pubKey [fiel
 	return sig.Marshal(), nil
 }
 
-// waitToSlotTwoThirds waits until two third through the current slot period
-// such that any attestations from this slot have time to reach the beacon node
-// before creating the aggregated attestation.
-func (v *validator) waitToSlotTwoThirds(ctx context.Context, slot primitives.Slot) {
-	ctx, span := trace.StartSpan(ctx, "validator.waitToSlotTwoThirds")
-	defer span.End()
-
-	oneThird := slots.DivideSlotBy(3 /* one third of slot duration */)
-	twoThird := oneThird + oneThird
-	delay := twoThird
-
-	startTime := slots.StartTime(v.genesisTime, slot)
-	finalTime := startTime.Add(delay)
-	wait := prysmTime.Until(finalTime)
-	if wait <= 0 {
-		return
+// waitUntilAggregateDue waits until the configured aggregation due time within the current slot
+// such that any attestations from this slot have time to reach the beacon node before creating
+// the aggregated attestation.
+//
+// Note: Historically this was ~2/3 of the slot, but may differ across forks (e.g. Gloas).
+func (v *validator) waitUntilAggregateDue(ctx context.Context, slot primitives.Slot) {
+	cfg := params.BeaconConfig()
+	component := cfg.AggregateDueBPS
+	if slots.ToEpoch(slot) >= cfg.GloasForkEpoch {
+		component = cfg.AggregateDueBPSGloas
 	}
-	t := time.NewTimer(wait)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		tracing.AnnotateError(span, ctx.Err())
-		return
-	case <-t.C:
-		return
-	}
+	v.waitUntilSlotComponent(ctx, slot, component)
 }
 
 // This returns the signature of validator signing over aggregate and

@@ -1,8 +1,8 @@
 package epoch
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 )
 
 // sortableIndices implements the Sort interface to sort newly activated validator indices

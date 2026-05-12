@@ -1,14 +1,13 @@
 package interop
 
 import (
-	"context"
 	"math/big"
 	"testing"
+	"time"
 
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/time"
 )
 
 func TestPremineGenesis_Electra(t *testing.T) {
@@ -21,6 +20,6 @@ func TestPremineGenesis_Electra(t *testing.T) {
 		ExcessBlobGas: &one,
 		BlobGasUsed:   &one,
 	})
-	_, err := NewPreminedGenesis(context.Background(), genesis.Time(), 10, 10, version.Electra, genesis)
+	_, err := NewPreminedGenesis(t.Context(), time.Unix(int64(genesis.Time()), 0), 10, 10, version.Electra, genesis)
 	require.NoError(t, err)
 }

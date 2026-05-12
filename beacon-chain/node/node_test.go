@@ -10,19 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/api/server/middleware"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/builder"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filesystem"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/monitor"
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/runtime"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/api/server/middleware"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/builder"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filesystem"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/execution"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/monitor"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/runtime"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/urfave/cli/v2"
 )
@@ -54,7 +54,12 @@ func TestNodeClose_OK(t *testing.T) {
 	cmd.ValidatorMonitorIndicesFlag.Value.SetInt(1)
 	ctx, cancel := newCliContextWithCancel(&app, set)
 
-	node, err := New(ctx, cancel, WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)))
+	options := []Option{
+		WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)),
+		WithDataColumnStorage(filesystem.NewEphemeralDataColumnStorage(t)),
+	}
+
+	node, err := New(ctx, cancel, nil, options...)
 	require.NoError(t, err)
 
 	node.Close()
@@ -63,31 +68,37 @@ func TestNodeClose_OK(t *testing.T) {
 }
 
 func TestNodeStart_Ok(t *testing.T) {
-	hook := logTest.NewGlobal()
 	app := cli.App{}
 	tmp := fmt.Sprintf("%s/datadirtest2", t.TempDir())
 	set := flag.NewFlagSet("test", 0)
 	set.String("datadir", tmp, "node data directory")
 	set.String("suggested-fee-recipient", "0x6e35733c5af9B61374A128e6F85f553aF09ff89A", "fee recipient")
+	set.Bool("enable-light-client", true, "enable light client")
 	require.NoError(t, set.Set("suggested-fee-recipient", "0x6e35733c5af9B61374A128e6F85f553aF09ff89A"))
+	require.NoError(t, set.Set("enable-light-client", "true"))
 
 	ctx, cancel := newCliContextWithCancel(&app, set)
-	node, err := New(ctx, cancel, WithBlockchainFlagOptions([]blockchain.Option{}),
+
+	options := []Option{
+		WithBlockchainFlagOptions([]blockchain.Option{}),
 		WithBuilderFlagOptions([]builder.Option{}),
 		WithExecutionChainOptions([]execution.Option{}),
-		WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)))
+		WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)),
+		WithDataColumnStorage(filesystem.NewEphemeralDataColumnStorage(t)),
+	}
+
+	node, err := New(ctx, cancel, nil, options...)
 	require.NoError(t, err)
+	require.NotNil(t, node.lcStore)
 	node.services = &runtime.ServiceRegistry{}
 	go func() {
 		node.Start()
 	}()
 	time.Sleep(3 * time.Second)
 	node.Close()
-	require.LogsContain(t, hook, "Starting beacon node")
 }
 
 func TestNodeStart_SyncChecker(t *testing.T) {
-	hook := logTest.NewGlobal()
 	app := cli.App{}
 	tmp := fmt.Sprintf("%s/datadirtest2", t.TempDir())
 	set := flag.NewFlagSet("test", 0)
@@ -96,10 +107,16 @@ func TestNodeStart_SyncChecker(t *testing.T) {
 	require.NoError(t, set.Set("suggested-fee-recipient", "0x6e35733c5af9B61374A128e6F85f553aF09ff89A"))
 
 	ctx, cancel := newCliContextWithCancel(&app, set)
-	node, err := New(ctx, cancel, WithBlockchainFlagOptions([]blockchain.Option{}),
+
+	options := []Option{
+		WithBlockchainFlagOptions([]blockchain.Option{}),
 		WithBuilderFlagOptions([]builder.Option{}),
 		WithExecutionChainOptions([]execution.Option{}),
-		WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)))
+		WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)),
+		WithDataColumnStorage(filesystem.NewEphemeralDataColumnStorage(t)),
+	}
+
+	node, err := New(ctx, cancel, nil, options...)
 	require.NoError(t, err)
 	go func() {
 		node.Start()
@@ -107,7 +124,6 @@ func TestNodeStart_SyncChecker(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	assert.NotNil(t, node.syncChecker.Svc)
 	node.Close()
-	require.LogsContain(t, hook, "Starting beacon node")
 }
 
 // TestClearDB tests clearing the database
@@ -128,11 +144,14 @@ func TestClearDB(t *testing.T) {
 	set.String("suggested-fee-recipient", "0x6e35733c5af9B61374A128e6F85f553aF09ff89A", "fee recipient")
 	require.NoError(t, set.Set("suggested-fee-recipient", "0x6e35733c5af9B61374A128e6F85f553aF09ff89A"))
 	context, cancel := newCliContextWithCancel(&app, set)
+
 	options := []Option{
 		WithExecutionChainOptions([]execution.Option{execution.WithHttpEndpoint(endpoint)}),
 		WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)),
+		WithDataColumnStorage(filesystem.NewEphemeralDataColumnStorage(t)),
 	}
-	_, err = New(context, cancel, options...)
+
+	_, err = New(context, cancel, nil, options...)
 	require.NoError(t, err)
 	require.LogsContain(t, hook, "Removing database")
 }
@@ -238,6 +257,49 @@ func TestCORS(t *testing.T) {
 			}
 			if !tc.expectAllow && rr.Header().Get("Access-Control-Allow-Origin") != "" {
 				t.Errorf("Expected Access-Control-Allow-Origin header to be empty for disallowed origin, got %v", rr.Header().Get("Access-Control-Allow-Origin"))
+			}
+		})
+	}
+}
+
+func TestParseIPNetStrings(t *testing.T) {
+	tests := []struct {
+		name      string
+		whitelist []string
+		wantCount int
+		wantError string
+	}{
+		{
+			name:      "empty whitelist",
+			whitelist: []string{},
+			wantCount: 0,
+		},
+		{
+			name:      "single IP whitelist",
+			whitelist: []string{"192.168.1.1/32"},
+			wantCount: 1,
+		},
+		{
+			name:      "multiple IPs whitelist",
+			whitelist: []string{"192.168.1.0/24", "10.0.0.0/8", "34.42.19.170/32"},
+			wantCount: 3,
+		},
+		{
+			name:      "invalid CIDR returns error",
+			whitelist: []string{"192.168.1.0/24", "invalid-cidr", "10.0.0.0/8"},
+			wantCount: 0,
+			wantError: "invalid CIDR address",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseIPNetStrings(tt.whitelist)
+			assert.Equal(t, tt.wantCount, len(result))
+			if len(tt.wantError) == 0 {
+				assert.Equal(t, nil, err)
+			} else {
+				assert.ErrorContains(t, tt.wantError, err)
 			}
 		})
 	}

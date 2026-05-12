@@ -4,39 +4,38 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptesting "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/wrapper"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/metadata"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/d4l3k/messagediff"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pb "github.com/libp2p/go-libp2p-pubsub/pb"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/wrapper"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/metadata"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestService_decodePubsubMessage(t *testing.T) {
-	digest, err := signing.ComputeForkDigest(params.BeaconConfig().GenesisForkVersion, make([]byte, 32))
-	require.NoError(t, err)
+	params.SetupTestConfigCleanup(t)
+	params.BeaconConfig().InitializeForkSchedule()
+	entry := params.GetNetworkScheduleEntry(params.BeaconConfig().GenesisEpoch)
 	tests := []struct {
 		name    string
 		topic   string
 		input   *pubsub.Message
-		want    interface{}
+		want    any
 		wantErr error
 	}{
 		{
@@ -56,7 +55,7 @@ func TestService_decodePubsubMessage(t *testing.T) {
 		{
 			name:    "invalid topic format",
 			topic:   "foo",
-			wantErr: errInvalidTopic,
+			wantErr: p2p.ErrInvalidTopic,
 		},
 		{
 			name:    "topic not mapped to any message type",
@@ -65,7 +64,7 @@ func TestService_decodePubsubMessage(t *testing.T) {
 		},
 		{
 			name:  "valid message -- beacon block",
-			topic: fmt.Sprintf(p2p.GossipTypeMapping[reflect.TypeOf(&ethpb.SignedBeaconBlock{})], digest),
+			topic: fmt.Sprintf(p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SignedBeaconBlock]()], entry.ForkDigest),
 			input: &pubsub.Message{
 				Message: &pb.Message{
 					Data: func() []byte {
@@ -102,10 +101,11 @@ func TestService_decodePubsubMessage(t *testing.T) {
 				tt.input.Message.Topic = &topic
 			}
 			got, err := s.decodePubsubMessage(tt.input)
-			if err != nil && err != tt.wantErr && !strings.Contains(err.Error(), tt.wantErr.Error()) {
-				t.Errorf("decodePubsubMessage() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr, "decodePubsubMessage() error mismatch")
 				return
 			}
+			require.NoError(t, err, "decodePubsubMessage() unexpected error")
 			if !reflect.DeepEqual(got, tt.want) {
 				diff, _ := messagediff.PrettyDiff(got, tt.want)
 				t.Log(diff)
@@ -116,79 +116,41 @@ func TestService_decodePubsubMessage(t *testing.T) {
 }
 
 func TestExtractDataType(t *testing.T) {
-	// Precompute digests
-	genDigest, err := signing.ComputeForkDigest(params.BeaconConfig().GenesisForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
-	altairDigest, err := signing.ComputeForkDigest(params.BeaconConfig().AltairForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
-	bellatrixDigest, err := signing.ComputeForkDigest(params.BeaconConfig().BellatrixForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
-	capellaDigest, err := signing.ComputeForkDigest(params.BeaconConfig().CapellaForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
-	denebDigest, err := signing.ComputeForkDigest(params.BeaconConfig().DenebForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
-	electraDigest, err := signing.ComputeForkDigest(params.BeaconConfig().ElectraForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
-	fuluDigest, err := signing.ComputeForkDigest(params.BeaconConfig().FuluForkVersion, params.BeaconConfig().ZeroHash[:])
-	require.NoError(t, err)
+	params.SetupTestConfigCleanup(t)
+	params.BeaconConfig().FuluForkEpoch = params.BeaconConfig().ElectraForkEpoch + 4096*2
+	params.BeaconConfig().InitializeForkSchedule()
 
 	type args struct {
-		digest []byte
+		digest [4]byte
 		chain  blockchain.ChainInfoFetcher
 	}
 	tests := []struct {
-		name          string
-		args          args
-		wantBlock     interfaces.ReadOnlySignedBeaconBlock
-		wantMd        metadata.Metadata
-		wantAtt       ethpb.Att
-		wantAggregate ethpb.SignedAggregateAttAndProof
-		wantErr       bool
+		name            string
+		args            args
+		wantBlock       interfaces.ReadOnlySignedBeaconBlock
+		wantMd          metadata.Metadata
+		wantAtt         ethpb.Att
+		wantAggregate   ethpb.SignedAggregateAttAndProof
+		wantAttSlashing ethpb.AttSlashing
+		wantErr         bool
 	}{
-		{
-			name: "no digest",
-			args: args{
-				digest: []byte{},
-				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
-			},
-			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
-				wsb, err := blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlock{Block: &ethpb.BeaconBlock{Body: &ethpb.BeaconBlockBody{}}})
-				require.NoError(t, err)
-				return wsb
-			}(),
-			wantMd:        wrapper.WrappedMetadataV0(&ethpb.MetaDataV0{}),
-			wantAtt:       &ethpb.Attestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProof{},
-			wantErr:       false,
-		},
-		{
-			name: "invalid digest",
-			args: args{
-				digest: []byte{0x00, 0x01},
-				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
-			},
-			wantBlock:     nil,
-			wantMd:        nil,
-			wantAtt:       nil,
-			wantAggregate: nil,
-			wantErr:       true,
-		},
 		{
 			name: "non existent digest",
 			args: args{
-				digest: []byte{0x00, 0x01, 0x02, 0x03},
+				digest: [4]byte{},
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
-			wantBlock:     nil,
-			wantMd:        nil,
-			wantAtt:       nil,
-			wantAggregate: nil,
-			wantErr:       true,
+			wantBlock:       nil,
+			wantMd:          nil,
+			wantAtt:         nil,
+			wantAggregate:   nil,
+			wantAttSlashing: nil,
+			wantErr:         true,
 		},
 		{
 			name: "genesis fork version",
 			args: args{
-				digest: genDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().GenesisEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
@@ -196,14 +158,15 @@ func TestExtractDataType(t *testing.T) {
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantAtt:       &ethpb.Attestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProof{},
-			wantErr:       false,
+			wantAtt:         &ethpb.Attestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProof{},
+			wantAttSlashing: &ethpb.AttesterSlashing{},
+			wantErr:         false,
 		},
 		{
 			name: "altair fork version",
 			args: args{
-				digest: altairDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().AltairForkEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
@@ -211,15 +174,16 @@ func TestExtractDataType(t *testing.T) {
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantMd:        wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
-			wantAtt:       &ethpb.Attestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProof{},
-			wantErr:       false,
+			wantMd:          wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
+			wantAtt:         &ethpb.Attestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProof{},
+			wantAttSlashing: &ethpb.AttesterSlashing{},
+			wantErr:         false,
 		},
 		{
 			name: "bellatrix fork version",
 			args: args{
-				digest: bellatrixDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().BellatrixForkEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
@@ -227,15 +191,16 @@ func TestExtractDataType(t *testing.T) {
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantMd:        wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
-			wantAtt:       &ethpb.Attestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProof{},
-			wantErr:       false,
+			wantMd:          wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
+			wantAtt:         &ethpb.Attestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProof{},
+			wantAttSlashing: &ethpb.AttesterSlashing{},
+			wantErr:         false,
 		},
 		{
 			name: "capella fork version",
 			args: args{
-				digest: capellaDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().CapellaForkEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
@@ -243,15 +208,16 @@ func TestExtractDataType(t *testing.T) {
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantMd:        wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
-			wantAtt:       &ethpb.Attestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProof{},
-			wantErr:       false,
+			wantMd:          wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
+			wantAtt:         &ethpb.Attestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProof{},
+			wantAttSlashing: &ethpb.AttesterSlashing{},
+			wantErr:         false,
 		},
 		{
 			name: "deneb fork version",
 			args: args{
-				digest: denebDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().DenebForkEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
@@ -259,15 +225,16 @@ func TestExtractDataType(t *testing.T) {
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantMd:        wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
-			wantAtt:       &ethpb.Attestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProof{},
-			wantErr:       false,
+			wantMd:          wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
+			wantAtt:         &ethpb.Attestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProof{},
+			wantAttSlashing: &ethpb.AttesterSlashing{},
+			wantErr:         false,
 		},
 		{
 			name: "electra fork version",
 			args: args{
-				digest: electraDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().ElectraForkEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
@@ -275,31 +242,33 @@ func TestExtractDataType(t *testing.T) {
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantMd:        wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
-			wantAtt:       &ethpb.SingleAttestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProofElectra{},
-			wantErr:       false,
+			wantMd:          wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
+			wantAtt:         &ethpb.SingleAttestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProofElectra{},
+			wantAttSlashing: &ethpb.AttesterSlashingElectra{},
+			wantErr:         false,
 		},
 		{
 			name: "fulu fork version",
 			args: args{
-				digest: fuluDigest[:],
+				digest: params.ForkDigest(params.BeaconConfig().FuluForkEpoch),
 				chain:  &mock.ChainService{ValidatorsRoot: [32]byte{}},
 			},
 			wantBlock: func() interfaces.ReadOnlySignedBeaconBlock {
-				wsb, err := blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlockFulu{Block: &ethpb.BeaconBlockFulu{Body: &ethpb.BeaconBlockBodyFulu{ExecutionPayload: &enginev1.ExecutionPayloadDeneb{}}}})
+				wsb, err := blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlockFulu{Block: &ethpb.BeaconBlockElectra{Body: &ethpb.BeaconBlockBodyElectra{ExecutionPayload: &enginev1.ExecutionPayloadDeneb{}}}})
 				require.NoError(t, err)
 				return wsb
 			}(),
-			wantMd:        wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
-			wantAtt:       &ethpb.SingleAttestation{},
-			wantAggregate: &ethpb.SignedAggregateAttestationAndProofElectra{},
-			wantErr:       false,
+			wantMd:          wrapper.WrappedMetadataV1(&ethpb.MetaDataV1{}),
+			wantAtt:         &ethpb.SingleAttestation{},
+			wantAggregate:   &ethpb.SignedAggregateAttestationAndProofElectra{},
+			wantAttSlashing: &ethpb.AttesterSlashingElectra{},
+			wantErr:         false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotBlock, err := extractDataTypeFromTypeMap(types.BlockMap, tt.args.digest, tt.args.chain)
+			gotBlock, err := extractDataTypeFromTypeMap(types.BlockMap, tt.args.digest[:], tt.args.chain)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("block: error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -307,7 +276,7 @@ func TestExtractDataType(t *testing.T) {
 			if !reflect.DeepEqual(gotBlock, tt.wantBlock) {
 				t.Errorf("block: got = %v, want %v", gotBlock, tt.wantBlock)
 			}
-			gotAtt, err := extractDataTypeFromTypeMap(types.AttestationMap, tt.args.digest, tt.args.chain)
+			gotAtt, err := extractDataTypeFromTypeMap(types.AttestationMap, tt.args.digest[:], tt.args.chain)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("attestation: error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -315,7 +284,7 @@ func TestExtractDataType(t *testing.T) {
 			if !reflect.DeepEqual(gotAtt, tt.wantAtt) {
 				t.Errorf("attestation: got = %v, want %v", gotAtt, tt.wantAtt)
 			}
-			gotAggregate, err := extractDataTypeFromTypeMap(types.AggregateAttestationMap, tt.args.digest, tt.args.chain)
+			gotAggregate, err := extractDataTypeFromTypeMap(types.AggregateAttestationMap, tt.args.digest[:], tt.args.chain)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("aggregate: error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -323,6 +292,25 @@ func TestExtractDataType(t *testing.T) {
 			if !reflect.DeepEqual(gotAggregate, tt.wantAggregate) {
 				t.Errorf("aggregate: got = %v, want %v", gotAggregate, tt.wantAggregate)
 			}
+			gotAttSlashing, err := extractDataTypeFromTypeMap(types.AttesterSlashingMap, tt.args.digest[:], tt.args.chain)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("attester slashing: error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotAttSlashing, tt.wantAttSlashing) {
+				t.Errorf("attester slashin: got = %v, want %v", gotAttSlashing, tt.wantAttSlashing)
+			}
 		})
 	}
+}
+
+func TestExtractDataTypeFromTypeMapInvalid(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	params.BeaconConfig().FuluForkEpoch = params.BeaconConfig().ElectraForkEpoch + 4096*2
+	params.BeaconConfig().InitializeForkSchedule()
+	chain := &mock.ChainService{ValidatorsRoot: [32]byte{}}
+	_, err := extractDataTypeFromTypeMap(types.BlockMap, []byte{0x00, 0x01}, chain)
+	require.ErrorIs(t, err, errInvalidDigest)
+	_, err = extractDataTypeFromTypeMap(types.AttestationMap, []byte{0x00, 0x01}, chain)
+	require.ErrorIs(t, err, errInvalidDigest)
 }

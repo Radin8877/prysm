@@ -3,16 +3,16 @@ package state_native
 import (
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	mathutil "github.com/OffchainLabs/prysm/v7/math"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	mathutil "github.com/prysmaticlabs/prysm/v5/math"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 const ETH1AddressOffset = 12
@@ -62,9 +62,11 @@ func (b *BeaconState) NextWithdrawalValidatorIndex() (primitives.ValidatorIndex,
 //
 //			validator = state.validators[withdrawal.index]
 //			has_sufficient_effective_balance = validator.effective_balance >= MIN_ACTIVATION_BALANCE
-//			has_excess_balance = state.balances[withdrawal.index] > MIN_ACTIVATION_BALANCE
+//			total_withdrawn = sum(w.amount for w in withdrawals if w.validator_index == withdrawal.validator_index)
+//			balance = state.balances[withdrawal.validator_index] - total_withdrawn
+//			has_excess_balance = balance > MIN_ACTIVATION_BALANCE
 //			if validator.exit_epoch == FAR_FUTURE_EPOCH and has_sufficient_effective_balance and has_excess_balance:
-//				withdrawable_balance = min(state.balances[withdrawal.index] - MIN_ACTIVATION_BALANCE, withdrawal.amount)
+//				withdrawable_balance = min(balance - MIN_ACTIVATION_BALANCE, withdrawal.amount)
 //				withdrawals.append(Withdrawal(
 //					index=withdrawal_index,
 //					validator_index=withdrawal.index,
@@ -95,7 +97,7 @@ func (b *BeaconState) NextWithdrawalValidatorIndex() (primitives.ValidatorIndex,
 //					index=withdrawal_index,
 //					validator_index=validator_index,
 //					address=ExecutionAddress(validator.withdrawal_credentials[12:]),
-//					amount=balance - get_validator_max_effective_balance(validator),  # [Modified in Electra:EIP7251]
+//					amount=balance - get_max_effective_balance(validator),  # [Modified in Electra:EIP7251]
 //				))
 //				withdrawal_index += WithdrawalIndex(1)
 //			if len(withdrawals) == MAX_WITHDRAWALS_PER_PAYLOAD:
@@ -111,64 +113,106 @@ func (b *BeaconState) ExpectedWithdrawals() ([]*enginev1.Withdrawal, uint64, err
 	defer b.lock.RUnlock()
 
 	withdrawals := make([]*enginev1.Withdrawal, 0, params.BeaconConfig().MaxWithdrawalsPerPayload)
-	validatorIndex := b.nextWithdrawalValidatorIndex
 	withdrawalIndex := b.nextWithdrawalIndex
-	epoch := slots.ToEpoch(b.slot)
 
-	// Electra partial withdrawals functionality.
-	var processedPartialWithdrawalsCount uint64
-	if b.version >= version.Electra {
-		for _, w := range b.pendingPartialWithdrawals {
-			if w.WithdrawableEpoch > epoch || len(withdrawals) >= int(params.BeaconConfig().MaxPendingPartialsPerWithdrawalsSweep) {
-				break
-			}
-
-			v, err := b.validatorAtIndexReadOnly(w.Index)
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to determine withdrawals at index %d: %w", w.Index, err)
-			}
-			vBal, err := b.balanceAtIndex(w.Index)
-			if err != nil {
-				return nil, 0, fmt.Errorf("could not retrieve balance at index %d: %w", w.Index, err)
-			}
-			hasSufficientEffectiveBalance := v.EffectiveBalance() >= params.BeaconConfig().MinActivationBalance
-			hasExcessBalance := vBal > params.BeaconConfig().MinActivationBalance
-			if v.ExitEpoch() == params.BeaconConfig().FarFutureEpoch && hasSufficientEffectiveBalance && hasExcessBalance {
-				amount := min(vBal-params.BeaconConfig().MinActivationBalance, w.Amount)
-				withdrawals = append(withdrawals, &enginev1.Withdrawal{
-					Index:          withdrawalIndex,
-					ValidatorIndex: w.Index,
-					Address:        v.GetWithdrawalCredentials()[12:],
-					Amount:         amount,
-				})
-				withdrawalIndex++
-			}
-			processedPartialWithdrawalsCount++
-		}
+	withdrawalIndex, processedPartialWithdrawalsCount, err := b.appendPendingPartialWithdrawals(withdrawalIndex, &withdrawals)
+	if err != nil {
+		return nil, 0, err
 	}
 
+	err = b.appendValidatorsSweepWithdrawals(withdrawalIndex, &withdrawals)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return withdrawals, processedPartialWithdrawalsCount, nil
+}
+
+func (b *BeaconState) appendPendingPartialWithdrawals(withdrawalIndex uint64, withdrawals *[]*enginev1.Withdrawal) (uint64, uint64, error) {
+	if b.version < version.Electra {
+		return withdrawalIndex, 0, nil
+	}
+
+	cfg := params.BeaconConfig()
+	withdrawalsLimit := min(
+		len(*withdrawals)+int(cfg.MaxPendingPartialsPerWithdrawalsSweep),
+		int(cfg.MaxWithdrawalsPerPayload-1),
+	)
+
+	ws := *withdrawals
+	epoch := slots.ToEpoch(b.slot)
+	var processedPartialWithdrawalsCount uint64
+	for _, w := range b.pendingPartialWithdrawals {
+		if w.WithdrawableEpoch > epoch || len(ws) >= withdrawalsLimit {
+			break
+		}
+
+		v, err := b.validatorAtIndexReadOnly(w.Index)
+		if err != nil {
+			return withdrawalIndex, 0, fmt.Errorf("failed to determine withdrawals at index %d: %w", w.Index, err)
+		}
+		vBal, err := b.balanceAtIndex(w.Index)
+		if err != nil {
+			return withdrawalIndex, 0, fmt.Errorf("could not retrieve balance at index %d: %w", w.Index, err)
+		}
+		hasSufficientEffectiveBalance := v.EffectiveBalance() >= cfg.MinActivationBalance
+		var totalWithdrawn uint64
+		for _, wi := range ws {
+			if wi.ValidatorIndex == w.Index {
+				totalWithdrawn += wi.Amount
+			}
+		}
+		balance, err := mathutil.Sub64(vBal, totalWithdrawn)
+		if err != nil {
+			return withdrawalIndex, 0, errors.Wrapf(err, "failed to subtract balance %d with total withdrawn %d", vBal, totalWithdrawn)
+		}
+		hasExcessBalance := balance > cfg.MinActivationBalance
+		if v.ExitEpoch() == cfg.FarFutureEpoch && hasSufficientEffectiveBalance && hasExcessBalance {
+			amount := min(balance-cfg.MinActivationBalance, w.Amount)
+			ws = append(ws, &enginev1.Withdrawal{
+				Index:          withdrawalIndex,
+				ValidatorIndex: w.Index,
+				Address:        v.GetWithdrawalCredentials()[12:],
+				Amount:         amount,
+			})
+			withdrawalIndex++
+		}
+		processedPartialWithdrawalsCount++
+	}
+
+	*withdrawals = ws
+	return withdrawalIndex, processedPartialWithdrawalsCount, nil
+}
+
+func (b *BeaconState) appendValidatorsSweepWithdrawals(withdrawalIndex uint64, withdrawals *[]*enginev1.Withdrawal) error {
+	ws := *withdrawals
+	validatorIndex := b.nextWithdrawalValidatorIndex
 	validatorsLen := b.validatorsLen()
-	bound := mathutil.Min(uint64(validatorsLen), params.BeaconConfig().MaxValidatorsPerWithdrawalsSweep)
-	for i := uint64(0); i < bound; i++ {
+	epoch := slots.ToEpoch(b.slot)
+	bound := min(uint64(validatorsLen), params.BeaconConfig().MaxValidatorsPerWithdrawalsSweep)
+	for range bound {
 		val, err := b.validatorAtIndexReadOnly(validatorIndex)
 		if err != nil {
-			return nil, 0, errors.Wrapf(err, "could not retrieve validator at index %d", validatorIndex)
+			return errors.Wrapf(err, "could not retrieve validator at index %d", validatorIndex)
 		}
 		balance, err := b.balanceAtIndex(validatorIndex)
 		if err != nil {
-			return nil, 0, errors.Wrapf(err, "could not retrieve balance at index %d", validatorIndex)
+			return errors.Wrapf(err, "could not retrieve balance at index %d", validatorIndex)
 		}
 		if b.version >= version.Electra {
 			var partiallyWithdrawnBalance uint64
-			for _, w := range withdrawals {
+			for _, w := range ws {
 				if w.ValidatorIndex == validatorIndex {
 					partiallyWithdrawnBalance += w.Amount
 				}
 			}
-			balance = balance - partiallyWithdrawnBalance
+			balance, err = mathutil.Sub64(balance, partiallyWithdrawnBalance)
+			if err != nil {
+				return errors.Wrapf(err, "could not subtract balance %d with partial withdrawn balance %d", balance, partiallyWithdrawnBalance)
+			}
 		}
 		if helpers.IsFullyWithdrawableValidator(val, balance, epoch, b.version) {
-			withdrawals = append(withdrawals, &enginev1.Withdrawal{
+			ws = append(ws, &enginev1.Withdrawal{
 				Index:          withdrawalIndex,
 				ValidatorIndex: validatorIndex,
 				Address:        bytesutil.SafeCopyBytes(val.GetWithdrawalCredentials()[ETH1AddressOffset:]),
@@ -176,7 +220,7 @@ func (b *BeaconState) ExpectedWithdrawals() ([]*enginev1.Withdrawal, uint64, err
 			})
 			withdrawalIndex++
 		} else if helpers.IsPartiallyWithdrawableValidator(val, balance, epoch, b.version) {
-			withdrawals = append(withdrawals, &enginev1.Withdrawal{
+			ws = append(ws, &enginev1.Withdrawal{
 				Index:          withdrawalIndex,
 				ValidatorIndex: validatorIndex,
 				Address:        bytesutil.SafeCopyBytes(val.GetWithdrawalCredentials()[ETH1AddressOffset:]),
@@ -184,7 +228,7 @@ func (b *BeaconState) ExpectedWithdrawals() ([]*enginev1.Withdrawal, uint64, err
 			})
 			withdrawalIndex++
 		}
-		if uint64(len(withdrawals)) == params.BeaconConfig().MaxWithdrawalsPerPayload {
+		if uint64(len(ws)) == params.BeaconConfig().MaxWithdrawalsPerPayload {
 			break
 		}
 		validatorIndex += 1
@@ -193,7 +237,8 @@ func (b *BeaconState) ExpectedWithdrawals() ([]*enginev1.Withdrawal, uint64, err
 		}
 	}
 
-	return withdrawals, processedPartialWithdrawalsCount, nil
+	*withdrawals = ws
+	return nil
 }
 
 func (b *BeaconState) PendingPartialWithdrawals() ([]*ethpb.PendingPartialWithdrawal, error) {

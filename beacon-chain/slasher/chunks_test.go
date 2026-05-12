@@ -1,18 +1,17 @@
 package slasher
 
 import (
-	"context"
 	"math"
 	"reflect"
 	"testing"
 
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	slashertypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/slasher/types"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	slashertypes "github.com/OffchainLabs/prysm/v7/beacon-chain/slasher/types"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 var (
@@ -83,7 +82,7 @@ func TestMaxSpanChunksSlice_MaxChunkSpanFrom(t *testing.T) {
 }
 
 func TestMinSpanChunksSlice_CheckSlashable(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, v := range []int{version.Phase0, version.Electra} {
 		t.Run(version.String(v), func(t *testing.T) {
@@ -176,7 +175,7 @@ func TestMinSpanChunksSlice_CheckSlashable(t *testing.T) {
 }
 
 func TestMinSpanChunksSlice_CheckSlashable_DifferentVersions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	slasherDB := dbtest.SetupSlasherDB(t)
 	params := &Parameters{
 		chunkSize:          3,
@@ -221,7 +220,7 @@ func TestMinSpanChunksSlice_CheckSlashable_DifferentVersions(t *testing.T) {
 }
 
 func TestMaxSpanChunksSlice_CheckSlashable(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, v := range []int{version.Phase0, version.Electra} {
 		t.Run(version.String(v), func(t *testing.T) {
@@ -317,7 +316,7 @@ func TestMaxSpanChunksSlice_CheckSlashable(t *testing.T) {
 }
 
 func TestMaxSpanChunksSlice_CheckSlashable_DifferentVersions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	slasherDB := dbtest.SetupSlasherDB(t)
 	params := &Parameters{
 		chunkSize:          4,

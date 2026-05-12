@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,34 +13,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/validator"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	validatormock "github.com/OffchainLabs/prysm/v7/testing/validator-mock"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	"github.com/OffchainLabs/prysm/v7/validator/client"
+	"github.com/OffchainLabs/prysm/v7/validator/client/testutil"
+	dbCommon "github.com/OffchainLabs/prysm/v7/validator/db/common"
+	"github.com/OffchainLabs/prysm/v7/validator/db/filesystem"
+	DBIface "github.com/OffchainLabs/prysm/v7/validator/db/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
+	dbtest "github.com/OffchainLabs/prysm/v7/validator/db/testing"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/derived"
+	remoteweb3signer "github.com/OffchainLabs/prysm/v7/validator/keymanager/remote-web3signer"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
+	mocks "github.com/OffchainLabs/prysm/v7/validator/testing"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/validator"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	validatormock "github.com/prysmaticlabs/prysm/v5/testing/validator-mock"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/iface"
-	mock "github.com/prysmaticlabs/prysm/v5/validator/accounts/testing"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	"github.com/prysmaticlabs/prysm/v5/validator/client"
-	dbCommon "github.com/prysmaticlabs/prysm/v5/validator/db/common"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/filesystem"
-	DBIface "github.com/prysmaticlabs/prysm/v5/validator/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
-	dbtest "github.com/prysmaticlabs/prysm/v5/validator/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/derived"
-	remoteweb3signer "github.com/prysmaticlabs/prysm/v5/validator/keymanager/remote-web3signer"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
-	mocks "github.com/prysmaticlabs/prysm/v5/validator/testing"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -49,10 +48,11 @@ import (
 )
 
 func TestServer_ListKeystores(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	t.Run("wallet not ready", func(t *testing.T) {
-		m := &mock.Validator{}
+		m := &testutil.FakeValidator{}
 		vs, err := client.NewValidatorService(ctx, &client.Config{
+			Conn:      mocks.MockNodeConnection(),
 			Validator: m,
 		})
 		require.NoError(t, err)
@@ -82,8 +82,9 @@ func TestServer_ListKeystores(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -110,7 +111,7 @@ func TestServer_ListKeystores(t *testing.T) {
 		resp := &ListKeystoresResponse{}
 		require.NoError(t, json.Unmarshal(wr.Body.Bytes(), resp))
 		require.Equal(t, numAccounts, len(resp.Data))
-		for i := 0; i < numAccounts; i++ {
+		for i := range numAccounts {
 			require.DeepEqual(t, hexutil.Encode(expectedKeys[i][:]), resp.Data[i].ValidatingPubkey)
 			require.Equal(
 				t,
@@ -132,7 +133,7 @@ func TestServer_ListKeystores(t *testing.T) {
 }
 
 func TestServer_ImportKeystores(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
 	opts := []accounts.Option{
@@ -148,8 +149,9 @@ func TestServer_ImportKeystores(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -244,7 +246,7 @@ func TestServer_ImportKeystores(t *testing.T) {
 		password := "12345678"
 		encodedKeystores := make([]string, numKeystores)
 		passwords := make([]string, numKeystores)
-		for i := 0; i < numKeystores; i++ {
+		for i := range numKeystores {
 			enc, err := json.Marshal(createRandomKeystore(t, password))
 			encodedKeystores[i] = string(enc)
 			require.NoError(t, err)
@@ -281,7 +283,7 @@ func TestServer_ImportKeystores(t *testing.T) {
 			keystores := make([]*keymanager.Keystore, numKeystores)
 			passwords := make([]string, numKeystores)
 			publicKeys := make([][fieldparams.BLSPubkeyLength]byte, numKeystores)
-			for i := 0; i < numKeystores; i++ {
+			for i := range numKeystores {
 				keystores[i] = createRandomKeystore(t, password)
 				pubKey, err := hexutil.Decode("0x" + keystores[i].Pubkey)
 				require.NoError(t, err)
@@ -308,7 +310,7 @@ func TestServer_ImportKeystores(t *testing.T) {
 				require.NoError(t, validatorDB.Close())
 			}()
 			encodedKeystores := make([]string, numKeystores)
-			for i := 0; i < numKeystores; i++ {
+			for i := range numKeystores {
 				enc, err := json.Marshal(keystores[i])
 				require.NoError(t, err)
 				encodedKeystores[i] = string(enc)
@@ -317,7 +319,7 @@ func TestServer_ImportKeystores(t *testing.T) {
 			// Generate mock slashing history.
 			attestingHistory := make([][]*dbCommon.AttestationRecord, 0)
 			proposalHistory := make([]dbCommon.ProposalHistoryForPubkey, len(publicKeys))
-			for i := 0; i < len(publicKeys); i++ {
+			for i := range publicKeys {
 				proposalHistory[i].Proposals = make([]dbCommon.Proposal, 0)
 			}
 			mockJSON, err := mocks.MockSlashingProtectionJSON(publicKeys, attestingHistory, proposalHistory)
@@ -353,7 +355,7 @@ func TestServer_ImportKeystores(t *testing.T) {
 }
 
 func TestServer_ImportKeystores_WrongKeymanagerKind(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	app := cli.App{}
 	set := flag.NewFlagSet("test", 0)
 	newDir := filepath.Join(t.TempDir(), "new")
@@ -369,8 +371,9 @@ func TestServer_ImportKeystores_WrongKeymanagerKind(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -404,7 +407,7 @@ func TestServer_ImportKeystores_WrongKeymanagerKind(t *testing.T) {
 
 func TestServer_DeleteKeystores(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range []bool{false, true} {
-		ctx := context.Background()
+		ctx := t.Context()
 		srv := setupServerWithWallet(t)
 
 		// We recover 3 accounts from a test mnemonic.
@@ -440,7 +443,7 @@ func TestServer_DeleteKeystores(t *testing.T) {
 		// Generate mock slashing history.
 		attestingHistory := make([][]*dbCommon.AttestationRecord, 0)
 		proposalHistory := make([]dbCommon.ProposalHistoryForPubkey, len(publicKeys))
-		for i := 0; i < len(publicKeys); i++ {
+		for i := range publicKeys {
 			proposalHistory[i].Proposals = make([]dbCommon.Proposal, 0)
 		}
 		mockJSON, err := mocks.MockSlashingProtectionJSON(publicKeys, attestingHistory, proposalHistory)
@@ -577,7 +580,7 @@ func TestServer_DeleteKeystores(t *testing.T) {
 func TestServer_DeleteKeystores_FailedSlashingProtectionExport(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range []bool{false, true} {
 		t.Run(fmt.Sprintf("minimalSlashingProtection:%v", isSlashingProtectionMinimal), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			srv := setupServerWithWallet(t)
 
 			// We recover 3 accounts from a test mnemonic.
@@ -636,7 +639,7 @@ func TestServer_DeleteKeystores_FailedSlashingProtectionExport(t *testing.T) {
 }
 
 func TestServer_DeleteKeystores_WrongKeymanagerKind(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	app := cli.App{}
 	set := flag.NewFlagSet("test", 0)
 	newDir := filepath.Join(t.TempDir(), "new")
@@ -653,8 +656,9 @@ func TestServer_DeleteKeystores_WrongKeymanagerKind(t *testing.T) {
 		}})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -680,7 +684,7 @@ func TestServer_DeleteKeystores_WrongKeymanagerKind(t *testing.T) {
 }
 
 func setupServerWithWallet(t testing.TB) *Server {
-	ctx := context.Background()
+	ctx := t.Context()
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
 	opts := []accounts.Option{
@@ -696,8 +700,9 @@ func setupServerWithWallet(t testing.TB) *Server {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -714,7 +719,7 @@ func TestServer_SetVoluntaryExit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	defaultWalletPath = setupWalletDir(t)
 	opts := []accounts.Option{
 		accounts.WithWalletDir(defaultWalletPath),
@@ -729,8 +734,9 @@ func TestServer_SetVoluntaryExit(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 
-	m := &mock.Validator{Km: km}
+	m := &testutil.FakeValidator{Km: km}
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:      mocks.MockNodeConnection(),
 		Validator: m,
 	})
 	require.NoError(t, err)
@@ -898,7 +904,7 @@ func TestServer_SetVoluntaryExit(t *testing.T) {
 }
 
 func TestServer_GetGasLimit(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	byteval, err := hexutil.Decode("0xaf2e7ba294e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493")
 	byteval2, err2 := hexutil.Decode("0x1234567878903438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493")
 	require.NoError(t, err)
@@ -950,10 +956,11 @@ func TestServer_GetGasLimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &mock.Validator{}
+			m := &testutil.FakeValidator{}
 			err := m.SetProposerSettings(ctx, tt.args)
 			require.NoError(t, err)
 			vs, err := client.NewValidatorService(ctx, &client.Config{
+				Conn:      mocks.MockNodeConnection(),
 				Validator: m,
 			})
 			require.NoError(t, err)
@@ -977,7 +984,7 @@ func TestServer_SetGasLimit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	beaconClient := validatormock.NewMockValidatorClient(ctrl)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubkey1, err := hexutil.Decode("0xaf2e7ba294e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493")
 	pubkey2, err2 := hexutil.Decode("0xbedefeaa94e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2cdddddddddddddddddddddddd")
@@ -1107,11 +1114,12 @@ func TestServer_SetGasLimit(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range [...]bool{false, true} {
 		for _, tt := range tests {
 			t.Run(fmt.Sprintf("%s/isSlashingProtectionMinimal:%v", tt.name, isSlashingProtectionMinimal), func(t *testing.T) {
-				m := &mock.Validator{}
+				m := &testutil.FakeValidator{}
 				err := m.SetProposerSettings(ctx, tt.proposerSettings)
 				require.NoError(t, err)
-				validatorDB := dbtest.SetupDB(t, [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
+				validatorDB := dbtest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
 				vs, err := client.NewValidatorService(ctx, &client.Config{
+					Conn:      mocks.MockNodeConnection(),
 					Validator: m,
 					DB:        validatorDB,
 				})
@@ -1185,7 +1193,7 @@ func TestServer_SetGasLimit_InvalidPubKey(t *testing.T) {
 }
 
 func TestServer_DeleteGasLimit(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	pubkey1, err := hexutil.Decode("0xaf2e7ba294e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493")
 	pubkey2, err2 := hexutil.Decode("0xbedefeaa94e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2cdddddddddddddddddddddddd")
 	require.NoError(t, err)
@@ -1296,11 +1304,12 @@ func TestServer_DeleteGasLimit(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range [...]bool{false, true} {
 		for _, tt := range tests {
 			t.Run(fmt.Sprintf("%s/isSlashingProtectionMinimal:%v", tt.name, isSlashingProtectionMinimal), func(t *testing.T) {
-				m := &mock.Validator{}
+				m := &testutil.FakeValidator{}
 				err := m.SetProposerSettings(ctx, tt.proposerSettings)
 				require.NoError(t, err)
-				validatorDB := dbtest.SetupDB(t, [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
+				validatorDB := dbtest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
 				vs, err := client.NewValidatorService(ctx, &client.Config{
+					Conn:      mocks.MockNodeConnection(),
 					Validator: m,
 					DB:        validatorDB,
 				})
@@ -1333,7 +1342,7 @@ func TestServer_DeleteGasLimit(t *testing.T) {
 }
 
 func TestServer_ListRemoteKeys(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	app := cli.App{}
 	set := flag.NewFlagSet("test", 0)
 	newDir := filepath.Join(t.TempDir(), "new")
@@ -1349,8 +1358,9 @@ func TestServer_ListRemoteKeys(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false, Web3SignerConfig: config})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 		Web3SignerConfig: config,
@@ -1389,7 +1399,7 @@ func TestServer_ListRemoteKeys(t *testing.T) {
 }
 
 func TestServer_ImportRemoteKeys(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	app := cli.App{}
 	set := flag.NewFlagSet("test", 0)
 	newDir := filepath.Join(t.TempDir(), "new")
@@ -1405,8 +1415,9 @@ func TestServer_ImportRemoteKeys(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false, Web3SignerConfig: config})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 		Web3SignerConfig: config,
@@ -1450,7 +1461,7 @@ func TestServer_ImportRemoteKeys(t *testing.T) {
 }
 
 func TestServer_DeleteRemoteKeys(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	app := cli.App{}
 	set := flag.NewFlagSet("test", 0)
 	newDir := filepath.Join(t.TempDir(), "new")
@@ -1467,8 +1478,9 @@ func TestServer_DeleteRemoteKeys(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false, Web3SignerConfig: config})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   mocks.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 		Web3SignerConfig: config,
@@ -1511,7 +1523,7 @@ func TestServer_DeleteRemoteKeys(t *testing.T) {
 }
 
 func TestServer_ListFeeRecipientByPubkey(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	pubkey := "0xaf2e7ba294e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493"
 	byteval, err := hexutil.Decode(pubkey)
 	require.NoError(t, err)
@@ -1563,11 +1575,12 @@ func TestServer_ListFeeRecipientByPubkey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &mock.Validator{}
+			m := &testutil.FakeValidator{}
 			err := m.SetProposerSettings(ctx, tt.args)
 			require.NoError(t, err)
 
 			vs, err := client.NewValidatorService(ctx, &client.Config{
+				Conn:      mocks.MockNodeConnection(),
 				Validator: m,
 			})
 			require.NoError(t, err)
@@ -1589,10 +1602,11 @@ func TestServer_ListFeeRecipientByPubkey(t *testing.T) {
 }
 
 func TestServer_ListFeeRecipientByPubKey_NoFeeRecipientSet(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	vs, err := client.NewValidatorService(ctx, &client.Config{
-		Validator: &mock.Validator{},
+		Conn:      mocks.MockNodeConnection(),
+		Validator: &testutil.FakeValidator{},
 	})
 	require.NoError(t, err)
 
@@ -1638,7 +1652,7 @@ func TestServer_FeeRecipientByPubkey(t *testing.T) {
 	defer ctrl.Finish()
 
 	beaconClient := validatormock.NewMockValidatorClient(ctrl)
-	ctx := context.Background()
+	ctx := t.Context()
 	pubkey := "0xaf2e7ba294e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493"
 	byteval, err := hexutil.Decode(pubkey)
 	require.NoError(t, err)
@@ -1774,13 +1788,14 @@ func TestServer_FeeRecipientByPubkey(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range [...]bool{false, true} {
 		for _, tt := range tests {
 			t.Run(fmt.Sprintf("%s/isSlashingProtectionMinimal:%v", tt.name, isSlashingProtectionMinimal), func(t *testing.T) {
-				m := &mock.Validator{}
+				m := &testutil.FakeValidator{}
 				err := m.SetProposerSettings(ctx, tt.proposerSettings)
 				require.NoError(t, err)
-				validatorDB := dbtest.SetupDB(t, [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
+				validatorDB := dbtest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
 
 				// save a default here
 				vs, err := client.NewValidatorService(ctx, &client.Config{
+					Conn:      mocks.MockNodeConnection(),
 					Validator: m,
 					DB:        validatorDB,
 				})
@@ -1848,7 +1863,7 @@ func TestServer_SetFeeRecipientByPubkey_InvalidFeeRecipient(t *testing.T) {
 }
 
 func TestServer_DeleteFeeRecipientByPubkey(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	pubkey := "0xaf2e7ba294e03438ea819bd4033c6c1bf6b04320ee2075b77273c08d02f8a61bcc303c2c06bd3713cb442072ae591493"
 	byteval, err := hexutil.Decode(pubkey)
 	require.NoError(t, err)
@@ -1886,11 +1901,12 @@ func TestServer_DeleteFeeRecipientByPubkey(t *testing.T) {
 	for _, isSlashingProtectionMinimal := range [...]bool{false, true} {
 		for _, tt := range tests {
 			t.Run(fmt.Sprintf("%s/isSlashingProtectionMinimal:%v", tt.name, isSlashingProtectionMinimal), func(t *testing.T) {
-				m := &mock.Validator{}
+				m := &testutil.FakeValidator{}
 				err := m.SetProposerSettings(ctx, tt.proposerSettings)
 				require.NoError(t, err)
-				validatorDB := dbtest.SetupDB(t, [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
+				validatorDB := dbtest.SetupDB(t, t.TempDir(), [][fieldparams.BLSPubkeyLength]byte{}, isSlashingProtectionMinimal)
 				vs, err := client.NewValidatorService(ctx, &client.Config{
+					Conn:      mocks.MockNodeConnection(),
 					Validator: m,
 					DB:        validatorDB,
 				})
@@ -1939,8 +1955,9 @@ func TestServer_DeleteFeeRecipientByPubkey_InvalidPubKey(t *testing.T) {
 
 func TestServer_Graffiti(t *testing.T) {
 	graffiti := "graffiti"
-	m := &mock.Validator{}
-	vs, err := client.NewValidatorService(context.Background(), &client.Config{
+	m := &testutil.FakeValidator{}
+	vs, err := client.NewValidatorService(t.Context(), &client.Config{
+		Conn:      mocks.MockNodeConnection(),
 		Validator: m,
 	})
 	require.NoError(t, err)

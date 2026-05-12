@@ -6,13 +6,13 @@ import (
 	"sort"
 	"strings"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/progress"
+	"github.com/OffchainLabs/prysm/v7/validator/db"
+	"github.com/OffchainLabs/prysm/v7/validator/helpers"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
 	"github.com/pkg/errors"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/progress"
-	"github.com/prysmaticlabs/prysm/v5/validator/db"
-	"github.com/prysmaticlabs/prysm/v5/validator/helpers"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
 )
 
 // ExportStandardProtectionJSON extracts all slashing protection data from a validator database
@@ -139,7 +139,7 @@ func signedAttestationsByPubKey(ctx context.Context, validatorDB db.Database, pu
 		return nil, nil
 	}
 	signedAttestations := make([]*format.SignedAttestation, 0)
-	for i := 0; i < len(history); i++ {
+	for i := range history {
 		att := history[i]
 		// Special edge case due to a bug in Prysm's old slashing protection schema. The bug
 		// manifests itself as the first entry in attester slashing protection history

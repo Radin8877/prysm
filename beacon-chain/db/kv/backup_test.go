@@ -1,21 +1,20 @@
 package kv
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestStore_Backup(t *testing.T) {
-	db, err := NewKVStore(context.Background(), t.TempDir())
+	db, err := NewKVStore(t.Context(), t.TempDir())
 	require.NoError(t, err, "Failed to instantiate DB")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	head := util.NewBeaconBlock()
 	head.Block.Slot = 5000
@@ -53,9 +52,9 @@ func TestStore_Backup(t *testing.T) {
 }
 
 func TestStore_BackupMultipleBuckets(t *testing.T) {
-	db, err := NewKVStore(context.Background(), t.TempDir())
+	db, err := NewKVStore(t.Context(), t.TempDir())
 	require.NoError(t, err, "Failed to instantiate DB")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	startSlot := primitives.Slot(5000)
 

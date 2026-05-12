@@ -1,43 +1,43 @@
 package validator
 
 import (
-	"context"
 	"math"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/api/client/builder"
+	blockchainTest "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	builderTest "github.com/OffchainLabs/prysm/v7/beacon-chain/builder/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	dbTest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	powtesting "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	consensus_types "github.com/OffchainLabs/prysm/v7/consensus-types"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz"
+	v1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/client/builder"
-	blockchainTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	builderTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/builder/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	dbTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	powtesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	consensus_types "github.com/prysmaticlabs/prysm/v5/consensus-types"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz"
-	v1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestServer_setExecutionData(t *testing.T) {
 	hook := logTest.NewGlobal()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := params.BeaconConfig().Copy()
 	cfg.BellatrixForkEpoch = 0
 	cfg.CapellaForkEpoch = 0
@@ -52,11 +52,11 @@ func TestServer_setExecutionData(t *testing.T) {
 	b2pbCapella := util.NewBeaconBlockCapella()
 	b2rCapella, err := b2pbCapella.Block.HashTreeRoot()
 	require.NoError(t, err)
-	util.SaveBlock(t, context.Background(), beaconDB, b2pbCapella)
+	util.SaveBlock(t, t.Context(), beaconDB, b2pbCapella)
 	require.NoError(t, capellaTransitionState.SetFinalizedCheckpoint(&ethpb.Checkpoint{
 		Root: b2rCapella[:],
 	}))
-	require.NoError(t, beaconDB.SaveFeeRecipientsByValidatorIDs(context.Background(), []primitives.ValidatorIndex{0}, []common.Address{{}}))
+	require.NoError(t, beaconDB.SaveFeeRecipientsByValidatorIDs(t.Context(), []primitives.ValidatorIndex{0}, []common.Address{{}}))
 
 	denebTransitionState, _ := util.DeterministicGenesisStateDeneb(t, 1)
 	wrappedHeaderDeneb, err := blocks.WrappedExecutionPayloadHeaderDeneb(&v1.ExecutionPayloadHeaderDeneb{BlockNumber: 2})
@@ -65,7 +65,7 @@ func TestServer_setExecutionData(t *testing.T) {
 	b2pbDeneb := util.NewBeaconBlockDeneb()
 	b2rDeneb, err := b2pbDeneb.Block.HashTreeRoot()
 	require.NoError(t, err)
-	util.SaveBlock(t, context.Background(), beaconDB, b2pbDeneb)
+	util.SaveBlock(t, t.Context(), beaconDB, b2pbDeneb)
 	require.NoError(t, denebTransitionState.SetFinalizedCheckpoint(&ethpb.Checkpoint{
 		Root: b2rDeneb[:],
 	}))
@@ -98,12 +98,12 @@ func TestServer_setExecutionData(t *testing.T) {
 		blk, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockCapella())
 		require.NoError(t, err)
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		require.IsNil(t, builderBid)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -119,7 +119,7 @@ func TestServer_setExecutionData(t *testing.T) {
 				Timestamp:    uint64(time.Now().Unix()),
 				GasLimit:     gasLimit,
 				Pubkey:       make([]byte, fieldparams.BLSPubkeyLength)}}))
-		ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+		ti, err := slots.StartTime(time.Now(), 0)
 		require.NoError(t, err)
 		sk, err := bls.RandKey()
 		require.NoError(t, err)
@@ -157,22 +157,22 @@ func TestServer_setExecutionData(t *testing.T) {
 			HasConfigured: true,
 			Cfg:           &builderTest.Config{BeaconDB: beaconDB},
 		}
-		wb, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockBellatrix())
+		wb, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockCapella())
 		require.NoError(t, err)
 		chain := &blockchainTest.ChainService{ForkChoiceStore: doublylinkedtree.New(), Genesis: time.Now(), Block: wb}
 		vs.ForkchoiceFetcher = chain
-		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(uint64(time.Now().Unix()))
+		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(time.Now())
 		vs.TimeFetcher = chain
 		vs.HeadFetcher = chain
 		b := blk.Block()
 
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -188,7 +188,7 @@ func TestServer_setExecutionData(t *testing.T) {
 				Timestamp:    uint64(time.Now().Unix()),
 				GasLimit:     gasLimit,
 				Pubkey:       make([]byte, fieldparams.BLSPubkeyLength)}}))
-		ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+		ti, err := slots.StartTime(time.Now(), 0)
 		require.NoError(t, err)
 		sk, err := bls.RandKey()
 		require.NoError(t, err)
@@ -233,18 +233,18 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		chain := &blockchainTest.ChainService{ForkChoiceStore: doublylinkedtree.New(), Genesis: time.Now(), Block: wb}
 		vs.ForkFetcher = chain
-		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(uint64(time.Now().Unix()))
+		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(time.Now())
 		vs.TimeFetcher = chain
 		vs.HeadFetcher = chain
 
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -260,7 +260,7 @@ func TestServer_setExecutionData(t *testing.T) {
 				Timestamp:    uint64(time.Now().Unix()),
 				GasLimit:     gasLimit,
 				Pubkey:       make([]byte, fieldparams.BLSPubkeyLength)}}))
-		ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+		ti, err := slots.StartTime(time.Now(), 0)
 		require.NoError(t, err)
 		sk, err := bls.RandKey()
 		require.NoError(t, err)
@@ -304,18 +304,18 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		chain := &blockchainTest.ChainService{ForkChoiceStore: doublylinkedtree.New(), Genesis: time.Now(), Block: wb}
 		vs.ForkFetcher = chain
-		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(uint64(time.Now().Unix()))
+		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(time.Now())
 		vs.TimeFetcher = chain
 		vs.HeadFetcher = chain
 
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, math.MaxUint64)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, math.MaxUint64)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -331,7 +331,7 @@ func TestServer_setExecutionData(t *testing.T) {
 				Timestamp:    uint64(time.Now().Unix()),
 				GasLimit:     gasLimit,
 				Pubkey:       make([]byte, fieldparams.BLSPubkeyLength)}}))
-		ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+		ti, err := slots.StartTime(time.Now(), 0)
 		require.NoError(t, err)
 		sk, err := bls.RandKey()
 		require.NoError(t, err)
@@ -375,18 +375,18 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		chain := &blockchainTest.ChainService{ForkChoiceStore: doublylinkedtree.New(), Genesis: time.Now(), Block: wb}
 		vs.ForkFetcher = chain
-		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(uint64(time.Now().Unix()))
+		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(time.Now())
 		vs.TimeFetcher = chain
 		vs.HeadFetcher = chain
 
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, 0)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, 0)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -401,13 +401,13 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		vs.ExecutionEngineCaller = &powtesting.EngineClient{PayloadIDBytes: id, GetPayloadResponse: &blocks.GetPayloadResponse{ExecutionData: ed, Bid: elBid}}
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -428,13 +428,13 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		vs.ExecutionEngineCaller = &powtesting.EngineClient{PayloadIDBytes: id, GetPayloadResponse: &blocks.GetPayloadResponse{ExecutionData: ed, Bid: elBid}}
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -458,13 +458,13 @@ func TestServer_setExecutionData(t *testing.T) {
 
 		vs.ExecutionEngineCaller = &powtesting.EngineClient{PayloadIDBytes: id, GetPayloadResponse: &blocks.GetPayloadResponse{ExecutionData: ed, Bid: elBid}}
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.NoError(t, err)
 		_, err = builderBid.Header()
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -485,12 +485,12 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		vs.ExecutionEngineCaller = &powtesting.EngineClient{PayloadIDBytes: id, GetPayloadResponse: &blocks.GetPayloadResponse{ExecutionData: ed}}
 		b := blk.Block()
-		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, b, capellaTransitionState, false)
 		require.NoError(t, err)
 		builderBid, err := vs.getBuilderPayloadAndBlobs(ctx, b.Slot(), b.ProposerIndex(), gasLimit)
 		require.ErrorIs(t, consensus_types.ErrNilObjectWrapped, err) // Builder returns fault. Use local block
 		require.IsNil(t, builderBid)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, nil, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, nil, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 		e, err := blk.Block().Body().Execution()
@@ -520,15 +520,15 @@ func TestServer_setExecutionData(t *testing.T) {
 			PayloadIDBytes: id,
 			GetPayloadResponse: &blocks.GetPayloadResponse{
 				ExecutionData: ed,
-				BlobsBundle:   blobsBundle,
+				BlobsBundler:  blobsBundle,
 				Bid:           primitives.ZeroWei(),
 			},
 		}
 		blk.SetSlot(primitives.Slot(params.BeaconConfig().DenebForkEpoch) * params.BeaconConfig().SlotsPerEpoch)
-		res, err := vs.getLocalPayload(ctx, blk.Block(), capellaTransitionState)
+		res, err := vs.getLocalPayload(ctx, blk.Block(), capellaTransitionState, false)
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), res.ExecutionData.BlockNumber())
-		require.DeepEqual(t, res.BlobsBundle, blobsBundle)
+		require.DeepEqual(t, res.BlobsBundler, blobsBundle)
 	})
 	t.Run("Can get builder payload and blobs in Deneb", func(t *testing.T) {
 		cfg := params.BeaconConfig().Copy()
@@ -538,7 +538,7 @@ func TestServer_setExecutionData(t *testing.T) {
 
 		blk, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockDeneb())
 		require.NoError(t, err)
-		ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+		ti, err := slots.StartTime(time.Now(), 0)
 		require.NoError(t, err)
 		sk, err := bls.RandKey()
 		require.NoError(t, err)
@@ -594,7 +594,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		chain := &blockchainTest.ChainService{ForkChoiceStore: doublylinkedtree.New(), Genesis: time.Now(), Block: wb}
 		vs.ForkFetcher = chain
-		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(uint64(time.Now().Unix()))
+		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(time.Now())
 		vs.TimeFetcher = chain
 		vs.HeadFetcher = chain
 
@@ -618,9 +618,9 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.DeepEqual(t, bid.BlobKzgCommitments, builderKzgCommitments)
 		require.Equal(t, bid.Header.BlockNumber, builderPayload.BlockNumber()) // header should be the same from block
 
-		res, err := vs.getLocalPayload(ctx, blk.Block(), denebTransitionState)
+		res, err := vs.getLocalPayload(ctx, blk.Block(), denebTransitionState, false)
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 
@@ -636,7 +636,7 @@ func TestServer_setExecutionData(t *testing.T) {
 
 		blk, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockElectra())
 		require.NoError(t, err)
-		ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+		ti, err := slots.StartTime(time.Now(), 0)
 		require.NoError(t, err)
 		sk, err := bls.RandKey()
 		require.NoError(t, err)
@@ -718,7 +718,7 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.NoError(t, err)
 		chain := &blockchainTest.ChainService{ForkChoiceStore: doublylinkedtree.New(), Genesis: time.Now(), Block: wb}
 		vs.ForkFetcher = chain
-		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(uint64(time.Now().Unix()))
+		vs.ForkchoiceFetcher.SetForkChoiceGenesisTime(time.Now())
 		vs.TimeFetcher = chain
 		vs.HeadFetcher = chain
 
@@ -742,9 +742,9 @@ func TestServer_setExecutionData(t *testing.T) {
 		require.DeepEqual(t, bid.ExecutionRequests, eBid.ExecutionRequests())
 		require.Equal(t, bid.Header.BlockNumber, builderPayload.BlockNumber()) // header should be the same from block
 
-		res, err := vs.getLocalPayload(ctx, blk.Block(), denebTransitionState)
+		res, err := vs.getLocalPayload(ctx, blk.Block(), denebTransitionState, false)
 		require.NoError(t, err)
-		_, bundle, err := setExecutionData(context.Background(), blk, res, builderBid, defaultBuilderBoostFactor)
+		_, bundle, err := setExecutionData(t.Context(), blk, res, builderBid, defaultBuilderBoostFactor)
 		require.NoError(t, err)
 		require.IsNil(t, bundle)
 
@@ -773,7 +773,7 @@ func TestServer_getPayloadHeader(t *testing.T) {
 	params.OverrideBeaconConfig(cfg)
 	emptyRoot, err := ssz.TransactionsRoot([][]byte{})
 	require.NoError(t, err)
-	ti, err := slots.ToTime(uint64(time.Now().Unix()), 0)
+	ti, err := slots.StartTime(time.Now(), 0)
 	require.NoError(t, err)
 
 	sk, err := bls.RandKey()
@@ -815,7 +815,7 @@ func TestServer_getPayloadHeader(t *testing.T) {
 	wr, err := ssz.WithdrawalSliceRoot(withdrawals, fieldparams.MaxWithdrawalsPerPayload)
 	require.NoError(t, err)
 
-	tiCapella, err := slots.ToTime(uint64(genesis.Unix()), primitives.Slot(fakeCapellaEpoch)*params.BeaconConfig().SlotsPerEpoch)
+	tiCapella, err := slots.StartTime(genesis, primitives.Slot(fakeCapellaEpoch)*params.BeaconConfig().SlotsPerEpoch)
 	require.NoError(t, err)
 	bidCapella := &ethpb.BuilderBidCapella{
 		Header: &v1.ExecutionPayloadHeaderCapella{
@@ -873,6 +873,7 @@ func TestServer_getPayloadHeader(t *testing.T) {
 		err                   string
 		returnedHeader        *v1.ExecutionPayloadHeader
 		returnedHeaderCapella *v1.ExecutionPayloadHeaderCapella
+		forkVersion           int
 	}{
 		{
 			name: "can't request before bellatrix epoch",
@@ -974,7 +975,7 @@ func TestServer_getPayloadHeader(t *testing.T) {
 					return wb
 				}(),
 			},
-			err: "is different from head block version",
+			err: "builder bid response version: 3 is not compatible with expected version: 2 for epoch 1",
 		},
 		{
 			name: "different bid version during hard fork",
@@ -983,7 +984,7 @@ func TestServer_getPayloadHeader(t *testing.T) {
 			},
 			fetcher: &blockchainTest.ChainService{
 				Block: func() interfaces.ReadOnlySignedBeaconBlock {
-					wb, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockBellatrix())
+					wb, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockCapella())
 					require.NoError(t, err)
 					wb.SetSlot(primitives.Slot(fakeCapellaEpoch) * params.BeaconConfig().SlotsPerEpoch)
 					return wb
@@ -1006,14 +1007,105 @@ func TestServer_getPayloadHeader(t *testing.T) {
 			},
 			err: "incorrect header gas limit 30000000 != 31000000",
 		},
+		{
+			name: "electra bid with fulu head block - compatible",
+			mock: func() *builderTest.MockBuilderService {
+				// Create Electra bid
+				requests := &v1.ExecutionRequests{
+					Deposits: []*v1.DepositRequest{
+						{
+							Pubkey:                bytesutil.PadTo([]byte{byte('a')}, fieldparams.BLSPubkeyLength),
+							WithdrawalCredentials: bytesutil.PadTo([]byte{byte('b')}, fieldparams.RootLength),
+							Amount:                params.BeaconConfig().MinActivationBalance,
+							Signature:             bytesutil.PadTo([]byte{byte('c')}, fieldparams.BLSSignatureLength),
+							Index:                 0,
+						},
+					},
+					Withdrawals: []*v1.WithdrawalRequest{
+						{
+							SourceAddress:   bytesutil.PadTo([]byte{byte('d')}, common.AddressLength),
+							ValidatorPubkey: bytesutil.PadTo([]byte{byte('e')}, fieldparams.BLSPubkeyLength),
+							Amount:          params.BeaconConfig().MinActivationBalance,
+						},
+					},
+					Consolidations: []*v1.ConsolidationRequest{
+						{
+							SourceAddress: bytesutil.PadTo([]byte{byte('f')}, common.AddressLength),
+							SourcePubkey:  bytesutil.PadTo([]byte{byte('g')}, fieldparams.BLSPubkeyLength),
+							TargetPubkey:  bytesutil.PadTo([]byte{byte('h')}, fieldparams.BLSPubkeyLength),
+						},
+					},
+				}
+
+				electraBid := &ethpb.BuilderBidElectra{
+					Header: &v1.ExecutionPayloadHeaderDeneb{
+						FeeRecipient:     make([]byte, fieldparams.FeeRecipientLength),
+						StateRoot:        make([]byte, fieldparams.RootLength),
+						ReceiptsRoot:     make([]byte, fieldparams.RootLength),
+						LogsBloom:        make([]byte, fieldparams.LogsBloomLength),
+						PrevRandao:       make([]byte, fieldparams.RootLength),
+						BaseFeePerGas:    make([]byte, fieldparams.RootLength),
+						BlockHash:        make([]byte, fieldparams.RootLength),
+						TransactionsRoot: bytesutil.PadTo([]byte{1}, fieldparams.RootLength),
+						ParentHash:       params.BeaconConfig().ZeroHash[:],
+						Timestamp:        uint64(ti.Unix()),
+						BlockNumber:      2,
+						WithdrawalsRoot:  make([]byte, fieldparams.RootLength),
+						BlobGasUsed:      123,
+						ExcessBlobGas:    456,
+						GasLimit:         gasLimit,
+					},
+					Pubkey:             sk.PublicKey().Marshal(),
+					Value:              bytesutil.PadTo([]byte{1, 2, 3}, 32),
+					BlobKzgCommitments: [][]byte{bytesutil.PadTo([]byte{2}, fieldparams.BLSPubkeyLength)},
+					ExecutionRequests:  requests,
+				}
+
+				d := params.BeaconConfig().DomainApplicationBuilder
+				domain, err := signing.ComputeDomain(d, nil, nil)
+				require.NoError(t, err)
+				sr, err := signing.ComputeSigningRoot(electraBid, domain)
+				require.NoError(t, err)
+
+				sBidElectra := &ethpb.SignedBuilderBidElectra{
+					Message:   electraBid,
+					Signature: sk.Sign(sr[:]).Marshal(),
+				}
+
+				return &builderTest.MockBuilderService{
+					BidElectra: sBidElectra,
+				}
+			}(),
+			fetcher: &blockchainTest.ChainService{
+				Block: func() interfaces.ReadOnlySignedBeaconBlock {
+					// Create Fulu head block
+					wb, err := blocks.NewSignedBeaconBlock(util.NewBeaconBlockFulu())
+					require.NoError(t, err)
+					wb.SetSlot(primitives.Slot(params.BeaconConfig().BellatrixForkEpoch) * params.BeaconConfig().SlotsPerEpoch)
+					return wb
+				}(),
+			},
+			// Should succeed because Electra bids are compatible with Fulu head blocks
+			forkVersion: version.Fulu,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.forkVersion != 0 {
+				params.SetupTestConfigCleanup(t)
+				cfg := params.BeaconConfig()
+				if tc.forkVersion == version.Fulu {
+					cfg.FuluForkEpoch = 0
+					cfg.BellatrixForkEpoch = 0
+					cfg.InitializeForkSchedule()
+				}
+				params.OverrideBeaconConfig(cfg)
+			}
 			vs := &Server{BeaconDB: dbTest.SetupDB(t), BlockBuilder: tc.mock, HeadFetcher: tc.fetcher, TimeFetcher: &blockchainTest.ChainService{
 				Genesis: genesis,
 			}}
 			regCache := cache.NewRegistrationCache()
-			regCache.UpdateIndexToRegisteredMap(context.Background(), map[primitives.ValidatorIndex]*ethpb.ValidatorRegistrationV1{
+			regCache.UpdateIndexToRegisteredMap(t.Context(), map[primitives.ValidatorIndex]*ethpb.ValidatorRegistrationV1{
 				0: {
 					GasLimit:     gasLimit,
 					FeeRecipient: make([]byte, 20),
@@ -1021,9 +1113,9 @@ func TestServer_getPayloadHeader(t *testing.T) {
 				},
 			})
 			tc.mock.RegistrationCache = regCache
-			hb, err := vs.HeadFetcher.HeadBlock(context.Background())
+			hb, err := vs.HeadFetcher.HeadBlock(t.Context())
 			require.NoError(t, err)
-			bid, err := vs.getPayloadHeaderFromBuilder(context.Background(), hb.Block().Slot(), 0, 30000000)
+			bid, err := vs.getPayloadHeaderFromBuilder(t.Context(), hb.Block().Slot(), 0, 30000000)
 			if tc.err != "" {
 				require.ErrorContains(t, tc.err, err)
 			} else {
@@ -1219,6 +1311,109 @@ func Test_expectedGasLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := expectedGasLimit(tt.args.parentGasLimit, tt.args.targetGasLimit); got != tt.want {
 				t.Errorf("expectedGasLimit() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsVersionCompatible(t *testing.T) {
+	tests := []struct {
+		name               string
+		bidVersion         int
+		currentForkVersion int
+		want               bool
+	}{
+		{
+			name:               "Exact version match - Bellatrix",
+			bidVersion:         version.Bellatrix,
+			currentForkVersion: version.Bellatrix,
+			want:               true,
+		},
+		{
+			name:               "Exact version match - Capella",
+			bidVersion:         version.Capella,
+			currentForkVersion: version.Capella,
+			want:               true,
+		},
+		{
+			name:               "Exact version match - Deneb",
+			bidVersion:         version.Deneb,
+			currentForkVersion: version.Deneb,
+			want:               true,
+		},
+		{
+			name:               "Exact version match - Electra",
+			bidVersion:         version.Electra,
+			currentForkVersion: version.Electra,
+			want:               true,
+		},
+		{
+			name:               "Exact version match - Fulu",
+			bidVersion:         version.Fulu,
+			currentForkVersion: version.Fulu,
+			want:               true,
+		},
+		{
+			name:               "Electra bid with Fulu head block - Compatible",
+			bidVersion:         version.Electra,
+			currentForkVersion: version.Fulu,
+			want:               true,
+		},
+		{
+			name:               "Fulu bid with Electra head block - Not compatible",
+			bidVersion:         version.Fulu,
+			currentForkVersion: version.Electra,
+			want:               false,
+		},
+		{
+			name:               "Deneb bid with Electra head block - Not compatible",
+			bidVersion:         version.Deneb,
+			currentForkVersion: version.Electra,
+			want:               false,
+		},
+		{
+			name:               "Electra bid with Deneb head block - Not compatible",
+			bidVersion:         version.Electra,
+			currentForkVersion: version.Deneb,
+			want:               false,
+		},
+		{
+			name:               "Capella bid with Deneb head block - Not compatible",
+			bidVersion:         version.Capella,
+			currentForkVersion: version.Deneb,
+			want:               false,
+		},
+		{
+			name:               "Bellatrix bid with Capella head block - Not compatible",
+			bidVersion:         version.Bellatrix,
+			currentForkVersion: version.Capella,
+			want:               false,
+		},
+		{
+			name:               "Phase0 bid with Altair head block - Not compatible",
+			bidVersion:         version.Phase0,
+			currentForkVersion: version.Altair,
+			want:               false,
+		},
+		{
+			name:               "Deneb bid with Fulu head block - Not compatible",
+			bidVersion:         version.Deneb,
+			currentForkVersion: version.Fulu,
+			want:               false,
+		},
+		{
+			name:               "Capella bid with Fulu head block - Not compatible",
+			bidVersion:         version.Capella,
+			currentForkVersion: version.Fulu,
+			want:               false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isVersionCompatible(tt.bidVersion, tt.currentForkVersion)
+			if got != tt.want {
+				t.Errorf("isVersionCompatible(%d, %d) = %v, want %v", tt.bidVersion, tt.currentForkVersion, got, tt.want)
 			}
 		})
 	}

@@ -5,16 +5,16 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	light_client "github.com/OffchainLabs/prysm/v7/consensus-types/light-client"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	light_client "github.com/prysmaticlabs/prysm/v5/consensus-types/light-client"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	bolt "go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 )
@@ -153,6 +153,13 @@ func decodeLightClientBootstrap(enc []byte) (interfaces.LightClientBootstrap, []
 		}
 		m = bootstrap
 		syncCommitteeHash = enc[len(altairKey) : len(altairKey)+32]
+	case hasBellatrixKey(enc):
+		bootstrap := &ethpb.LightClientBootstrapAltair{}
+		if err := bootstrap.UnmarshalSSZ(enc[len(bellatrixKey)+32:]); err != nil {
+			return nil, nil, errors.Wrap(err, "could not unmarshal Bellatrix light client bootstrap")
+		}
+		m = bootstrap
+		syncCommitteeHash = enc[len(bellatrixKey) : len(bellatrixKey)+32]
 	case hasCapellaKey(enc):
 		bootstrap := &ethpb.LightClientBootstrapCapella{}
 		if err := bootstrap.UnmarshalSSZ(enc[len(capellaKey)+32:]); err != nil {
@@ -167,13 +174,20 @@ func decodeLightClientBootstrap(enc []byte) (interfaces.LightClientBootstrap, []
 		}
 		m = bootstrap
 		syncCommitteeHash = enc[len(denebKey) : len(denebKey)+32]
-	case hasElectraKey(enc):
+	case HasElectraKey(enc):
 		bootstrap := &ethpb.LightClientBootstrapElectra{}
-		if err := bootstrap.UnmarshalSSZ(enc[len(electraKey)+32:]); err != nil {
+		if err := bootstrap.UnmarshalSSZ(enc[len(ElectraKey)+32:]); err != nil {
 			return nil, nil, errors.Wrap(err, "could not unmarshal Electra light client bootstrap")
 		}
 		m = bootstrap
-		syncCommitteeHash = enc[len(electraKey) : len(electraKey)+32]
+		syncCommitteeHash = enc[len(ElectraKey) : len(ElectraKey)+32]
+	case hasFuluKey(enc):
+		bootstrap := &ethpb.LightClientBootstrapElectra{}
+		if err := bootstrap.UnmarshalSSZ(enc[len(fuluKey)+32:]); err != nil {
+			return nil, nil, errors.Wrap(err, "could not unmarshal Electra light client bootstrap")
+		}
+		m = bootstrap
+		syncCommitteeHash = enc[len(fuluKey) : len(fuluKey)+32]
 	default:
 		return nil, nil, errors.New("decoding of saved light client bootstrap is unsupported")
 	}
@@ -215,7 +229,7 @@ func (s *Store) LightClientUpdates(ctx context.Context, startPeriod, endPeriod u
 	if err != nil {
 		return nil, err
 	}
-	return updates, err
+	return updates, nil
 }
 
 func (s *Store) LightClientUpdate(ctx context.Context, period uint64) (interfaces.LightClientUpdate, error) {
@@ -265,6 +279,12 @@ func decodeLightClientUpdate(enc []byte) (interfaces.LightClientUpdate, error) {
 			return nil, errors.Wrap(err, "could not unmarshal Altair light client update")
 		}
 		m = update
+	case hasBellatrixKey(enc):
+		update := &ethpb.LightClientUpdateAltair{}
+		if err := update.UnmarshalSSZ(enc[len(bellatrixKey):]); err != nil {
+			return nil, errors.Wrap(err, "could not unmarshal Bellatrix light client update")
+		}
+		m = update
 	case hasCapellaKey(enc):
 		update := &ethpb.LightClientUpdateCapella{}
 		if err := update.UnmarshalSSZ(enc[len(capellaKey):]); err != nil {
@@ -277,10 +297,16 @@ func decodeLightClientUpdate(enc []byte) (interfaces.LightClientUpdate, error) {
 			return nil, errors.Wrap(err, "could not unmarshal Deneb light client update")
 		}
 		m = update
-	case hasElectraKey(enc):
+	case HasElectraKey(enc):
 		update := &ethpb.LightClientUpdateElectra{}
-		if err := update.UnmarshalSSZ(enc[len(electraKey):]); err != nil {
+		if err := update.UnmarshalSSZ(enc[len(ElectraKey):]); err != nil {
 			return nil, errors.Wrap(err, "could not unmarshal Electra light client update")
+		}
+		m = update
+	case hasFuluKey(enc):
+		update := &ethpb.LightClientUpdateElectra{}
+		if err := update.UnmarshalSSZ(enc[len(fuluKey):]); err != nil {
+			return nil, errors.Wrap(err, "could not unmarshal Fulu light client update")
 		}
 		m = update
 	default:
@@ -291,12 +317,16 @@ func decodeLightClientUpdate(enc []byte) (interfaces.LightClientUpdate, error) {
 
 func keyForLightClientUpdate(v int) ([]byte, error) {
 	switch v {
+	case version.Fulu:
+		return fuluKey, nil
 	case version.Electra:
-		return electraKey, nil
+		return ElectraKey, nil
 	case version.Deneb:
 		return denebKey, nil
 	case version.Capella:
 		return capellaKey, nil
+	case version.Bellatrix:
+		return bellatrixKey, nil
 	case version.Altair:
 		return altairKey, nil
 	default:

@@ -2,39 +2,38 @@ package client
 
 import (
 	"context"
-	"net/http"
-	"strings"
 	"time"
 
-	"github.com/dgraph-io/ristretto"
+	eventClient "github.com/OffchainLabs/prysm/v7/api/client/event"
+	grpcutil "github.com/OffchainLabs/prysm/v7/api/grpc"
+	"github.com/OffchainLabs/prysm/v7/api/rest"
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	beaconApi "github.com/OffchainLabs/prysm/v7/validator/client/beacon-api"
+	beaconChainClientFactory "github.com/OffchainLabs/prysm/v7/validator/client/beacon-chain-client-factory"
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
+	nodeclientfactory "github.com/OffchainLabs/prysm/v7/validator/client/node-client-factory"
+	validatorclientfactory "github.com/OffchainLabs/prysm/v7/validator/client/validator-client-factory"
+	"github.com/OffchainLabs/prysm/v7/validator/db"
+	"github.com/OffchainLabs/prysm/v7/validator/graffiti"
+	validatorHelpers "github.com/OffchainLabs/prysm/v7/validator/helpers"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/local"
+	remoteweb3signer "github.com/OffchainLabs/prysm/v7/validator/keymanager/remote-web3signer"
+	"github.com/dgraph-io/ristretto/v2"
 	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	grpcopentracing "github.com/grpc-ecosystem/go-grpc-middleware/tracing/opentracing"
 	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/pkg/errors"
-	grpcutil "github.com/prysmaticlabs/prysm/v5/api/grpc"
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	lruwrpr "github.com/prysmaticlabs/prysm/v5/cache/lru"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	beaconApi "github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api"
-	beaconChainClientFactory "github.com/prysmaticlabs/prysm/v5/validator/client/beacon-chain-client-factory"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
-	nodeclientfactory "github.com/prysmaticlabs/prysm/v5/validator/client/node-client-factory"
-	validatorclientfactory "github.com/prysmaticlabs/prysm/v5/validator/client/validator-client-factory"
-	"github.com/prysmaticlabs/prysm/v5/validator/db"
-	"github.com/prysmaticlabs/prysm/v5/validator/graffiti"
-	validatorHelpers "github.com/prysmaticlabs/prysm/v5/validator/helpers"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/local"
-	remoteweb3signer "github.com/prysmaticlabs/prysm/v5/validator/keymanager/remote-web3signer"
-	"go.opencensus.io/plugin/ocgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 )
 
 // ValidatorService represents a service to manage the validator client
@@ -52,11 +51,15 @@ type ValidatorService struct {
 	interopKeysConfig       *local.InteropKeymanagerConfig
 	web3SignerConfig        *remoteweb3signer.SetupConfig
 	proposerSettings        *proposer.Settings
+	maxHealthChecks         int
 	validatorsRegBatchSize  int
-	useWeb                  bool
+	enableAPI               bool
 	emitAccountMetrics      bool
 	logValidatorPerformance bool
 	distributed             bool
+	disableDutiesPolling    bool
+	stateless               bool
+	closeClientFunc         func() // validator client stop function is used here
 }
 
 // Config for the validator service.
@@ -65,6 +68,8 @@ type Config struct {
 	DB                      db.Database
 	Wallet                  *wallet.Wallet
 	WalletInitializedFeed   *event.Feed
+	Conn                    validatorHelpers.NodeConnection // Optional: pre-built connection (if nil, built from endpoint configs)
+	MaxHealthChecks         int
 	GRPCMaxCallRecvMsgSize  int
 	GRPCRetries             uint
 	GRPCRetryDelay          time.Duration
@@ -72,6 +77,7 @@ type Config struct {
 	BeaconNodeGRPCEndpoint  string
 	BeaconNodeCert          string
 	BeaconApiEndpoint       string
+	BeaconApiHeaders        map[string][]string
 	BeaconApiTimeout        time.Duration
 	Graffiti                string
 	GraffitiStruct          *graffiti.Graffiti
@@ -79,10 +85,13 @@ type Config struct {
 	Web3SignerConfig        *remoteweb3signer.SetupConfig
 	ProposerSettings        *proposer.Settings
 	ValidatorsRegBatchSize  int
-	UseWeb                  bool
+	EnableAPI               bool
 	LogValidatorPerformance bool
 	EmitAccountMetrics      bool
 	Distributed             bool
+	DisableDutiesPolling    bool
+	Stateless               bool
+	CloseClientFunc         func()
 }
 
 // NewValidatorService creates a new validator service for the service
@@ -102,10 +111,20 @@ func NewValidatorService(ctx context.Context, cfg *Config) (*ValidatorService, e
 		web3SignerConfig:        cfg.Web3SignerConfig,
 		proposerSettings:        cfg.ProposerSettings,
 		validatorsRegBatchSize:  cfg.ValidatorsRegBatchSize,
-		useWeb:                  cfg.UseWeb,
+		enableAPI:               cfg.EnableAPI,
 		emitAccountMetrics:      cfg.EmitAccountMetrics,
 		logValidatorPerformance: cfg.LogValidatorPerformance,
 		distributed:             cfg.Distributed,
+		disableDutiesPolling:    cfg.DisableDutiesPolling,
+		stateless:               cfg.Stateless,
+		closeClientFunc:         cfg.CloseClientFunc,
+		maxHealthChecks:         cfg.MaxHealthChecks,
+	}
+
+	// Use pre-built connection if provided
+	if cfg.Conn != nil {
+		s.conn = cfg.Conn
+		return s, nil
 	}
 
 	dialOpts := ConstructDialOptions(
@@ -120,18 +139,21 @@ func NewValidatorService(ctx context.Context, cfg *Config) (*ValidatorService, e
 
 	s.ctx = grpcutil.AppendHeaders(ctx, cfg.GRPCHeaders)
 
-	grpcConn, err := grpc.DialContext(ctx, cfg.BeaconNodeGRPCEndpoint, dialOpts...)
+	conn, err := validatorHelpers.NewNodeConnection(
+		validatorHelpers.WithGRPC(s.ctx, cfg.BeaconNodeGRPCEndpoint, dialOpts),
+		validatorHelpers.WithREST(cfg.BeaconApiEndpoint,
+			rest.WithHttpHeaders(cfg.BeaconApiHeaders),
+			rest.WithHttpTimeout(cfg.BeaconApiTimeout),
+			rest.WithTracing(),
+		),
+	)
 	if err != nil {
 		return s, err
 	}
-	if cfg.BeaconNodeCert != "" {
+	if cfg.BeaconNodeCert != "" && cfg.BeaconNodeGRPCEndpoint != "" {
 		log.Info("Established secure gRPC connection")
 	}
-	s.conn = validatorHelpers.NewNodeConnection(
-		grpcConn,
-		cfg.BeaconApiEndpoint,
-		cfg.BeaconApiTimeout,
-	)
+	s.conn = conn
 
 	return s, nil
 }
@@ -139,16 +161,14 @@ func NewValidatorService(ctx context.Context, cfg *Config) (*ValidatorService, e
 // Start the validator service. Launches the main go routine for the validator
 // client.
 func (v *ValidatorService) Start() {
-	cache, err := ristretto.NewCache(&ristretto.Config{
+	cache, err := ristretto.NewCache(&ristretto.Config[string, proto.Message]{
 		NumCounters: 1920, // number of keys to track.
 		MaxCost:     192,  // maximum cost of cache, 1 item = 1 cost.
 		BufferItems: 64,   // number of keys per Get buffer.
 	})
 	if err != nil {
-		panic(err)
+		panic(err) // lint:nopanic -- Only errors on misconfiguration of config values.
 	}
-
-	aggregatedSlotCommitteeIDCache := lruwrpr.New(int(params.BeaconConfig().MaxCommitteesPerSlot))
 
 	sPubKeys, err := v.db.EIPImportBlacklistedPublicKeys(v.ctx)
 	if err != nil {
@@ -166,68 +186,105 @@ func (v *ValidatorService) Start() {
 		return
 	}
 
-	u := strings.ReplaceAll(v.conn.GetBeaconApiUrl(), " ", "")
-	hosts := strings.Split(u, ",")
-	if len(hosts) == 0 {
-		log.WithError(err).Error("No API hosts provided")
+	restProvider := v.conn.GetRestConnectionProvider()
+	if restProvider == nil || len(restProvider.Hosts()) == 0 {
+		log.Error("No REST API hosts provided")
 		return
 	}
-	restHandler := beaconApi.NewBeaconApiJsonRestHandler(
-		http.Client{Timeout: v.conn.GetBeaconApiTimeout()},
-		hosts[0],
-	)
 
-	validatorClient := validatorclientfactory.NewValidatorClient(v.conn, restHandler)
+	validatorClient := validatorclientfactory.NewValidatorClient(v.conn, beaconApi.WithStateless(v.stateless))
 
-	valStruct := &validator{
-		slotFeed:                       new(event.Feed),
-		startBalances:                  make(map[[fieldparams.BLSPubkeyLength]byte]uint64),
-		prevEpochBalances:              make(map[[fieldparams.BLSPubkeyLength]byte]uint64),
-		blacklistedPubkeys:             slashablePublicKeys,
-		pubkeyToStatus:                 make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
-		wallet:                         v.wallet,
-		walletInitializedChan:          make(chan *wallet.Wallet, 1),
-		walletInitializedFeed:          v.walletInitializedFeed,
-		graffiti:                       v.graffiti,
-		graffitiStruct:                 v.graffitiStruct,
-		graffitiOrderedIndex:           graffitiOrderedIndex,
-		beaconNodeHosts:                hosts,
-		currentHostIndex:               0,
-		validatorClient:                validatorClient,
-		chainClient:                    beaconChainClientFactory.NewChainClient(v.conn, restHandler),
-		nodeClient:                     nodeclientfactory.NewNodeClient(v.conn, restHandler),
-		prysmChainClient:               beaconChainClientFactory.NewPrysmChainClient(v.conn, restHandler),
-		db:                             v.db,
-		km:                             nil,
-		web3SignerConfig:               v.web3SignerConfig,
-		proposerSettings:               v.proposerSettings,
-		signedValidatorRegistrations:   make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
-		validatorsRegBatchSize:         v.validatorsRegBatchSize,
-		interopKeysConfig:              v.interopKeysConfig,
-		attSelections:                  make(map[attSelectionKey]iface.BeaconCommitteeSelection),
-		aggregatedSlotCommitteeIDCache: aggregatedSlotCommitteeIDCache,
-		domainDataCache:                cache,
-		voteStats:                      voteStats{startEpoch: primitives.Epoch(^uint64(0))},
-		syncCommitteeStats:             syncCommitteeStats{},
-		submittedAtts:                  make(map[submittedAttKey]*submittedAtt),
-		submittedAggregates:            make(map[submittedAttKey]*submittedAtt),
-		logValidatorPerformance:        v.logValidatorPerformance,
-		emitAccountMetrics:             v.emitAccountMetrics,
-		useWeb:                         v.useWeb,
-		distributed:                    v.distributed,
+	v.validator = &validator{
+		slotFeed:                     new(event.Feed),
+		startBalances:                make(map[[fieldparams.BLSPubkeyLength]byte]uint64),
+		prevEpochBalances:            make(map[[fieldparams.BLSPubkeyLength]byte]uint64),
+		blacklistedPubkeys:           slashablePublicKeys,
+		pubkeyToStatus:               make(map[[fieldparams.BLSPubkeyLength]byte]*validatorStatus),
+		wallet:                       v.wallet,
+		walletInitializedChan:        make(chan *wallet.Wallet, 1),
+		walletInitializedFeed:        v.walletInitializedFeed,
+		graffiti:                     v.graffiti,
+		graffitiStruct:               v.graffitiStruct,
+		graffitiOrderedIndex:         graffitiOrderedIndex,
+		conn:                         v.conn,
+		validatorClient:              validatorClient,
+		chainClient:                  beaconChainClientFactory.NewChainClient(v.conn),
+		nodeClient:                   nodeclientfactory.NewNodeClient(v.conn),
+		prysmChainClient:             beaconChainClientFactory.NewPrysmChainClient(v.conn),
+		db:                           v.db,
+		km:                           nil,
+		web3SignerConfig:             v.web3SignerConfig,
+		proposerSettings:             v.proposerSettings,
+		signedValidatorRegistrations: make(map[[fieldparams.BLSPubkeyLength]byte]*ethpb.SignedValidatorRegistrationV1),
+		validatorsRegBatchSize:       v.validatorsRegBatchSize,
+		interopKeysConfig:            v.interopKeysConfig,
+		domainDataCache:              cache,
+		voteStats:                    voteStats{startEpoch: primitives.Epoch(^uint64(0))},
+		syncCommitteeStats:           syncCommitteeStats{},
+		submittedAtts:                make(map[submittedAttKey]*submittedAtt),
+		submittedAggregates:          make(map[submittedAttKey]*submittedAtt),
+		logValidatorPerformance:      v.logValidatorPerformance,
+		emitAccountMetrics:           v.emitAccountMetrics,
+		enableAPI:                    v.enableAPI,
+		duties:                       &dutyStore{},
+		submittedPrefSlots:           make(map[primitives.Slot]bool),
+		distributed:                  v.distributed,
+		disableDutiesPolling:         v.disableDutiesPolling,
+		accountsChangedChannel:       make(chan [][fieldparams.BLSPubkeyLength]byte, 1),
+		eventsChannel:                make(chan *eventClient.Event, 1),
 	}
 
-	v.validator = valStruct
-	go run(v.ctx, v.validator)
+	val := v.validator.(*validator)
+	if v.distributed {
+		val.aggSelector = newDistributedSelector(val)
+	} else {
+		selector, err := newLocalSelector(val)
+		if err != nil {
+			log.WithError(err).Error("Could not create aggregator selector")
+			return
+		}
+		val.aggSelector = selector
+	}
+
+	hm := newHealthMonitor(v.ctx, v.cancel, v.maxHealthChecks, v.validator)
+	hm.Start()
+	defer v.closeClientFunc()
+
+	for {
+		select {
+		case <-v.ctx.Done():
+			log.Info("Validator service context canceled, stopping")
+			return
+		case isHealthy := <-hm.HealthyChan():
+			if !isHealthy {
+				// wait until the next health tracker update
+				log.WithField("url", v.validator.Host()).Warn("Validator service health check failed, waiting for healthy beacon node...")
+				continue
+			}
+
+			log.Info("Starting validator runner")
+			runnerCtx, runnerCancel := context.WithCancel(v.ctx)
+
+			runner, err := newRunner(runnerCtx, v.validator, hm)
+			if err != nil {
+				log.WithError(err).Error("Could not create validator runner")
+				runnerCancel() // Ensure context is cancelled
+				return
+			}
+
+			go v.validator.StartEventStream(runnerCtx, eventClient.DefaultEventTopics)
+
+			runner.run(runnerCtx)
+			// run is finished if we get to this point
+			runnerCancel()
+		}
+	}
 }
 
 // Stop the validator service.
 func (v *ValidatorService) Stop() error {
 	v.cancel()
 	log.Info("Stopping service")
-	if v.conn != nil {
-		return v.conn.GetGrpcClientConn().Close()
-	}
 	return nil
 }
 
@@ -308,7 +365,7 @@ func ConstructDialOptions(
 			grpcretry.WithMax(grpcRetries),
 			grpcretry.WithBackoff(grpcretry.BackoffLinear(grpcRetryDelay)),
 		),
-		grpc.WithStatsHandler(&ocgrpc.ClientHandler{}),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithUnaryInterceptor(middleware.ChainUnaryClient(
 			grpcopentracing.UnaryClientInterceptor(),
 			grpcprometheus.UnaryClientInterceptor,
@@ -321,7 +378,6 @@ func ConstructDialOptions(
 			grpcprometheus.StreamClientInterceptor,
 			grpcretry.StreamClientInterceptor(),
 		),
-		grpc.WithResolvers(&multipleEndpointsGrpcResolverBuilder{}),
 	}
 
 	dialOpts = append(dialOpts, extraOpts...)

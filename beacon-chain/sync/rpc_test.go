@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	prysmP2P "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/encoder"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	libp2pcore "github.com/libp2p/go-libp2p/core"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	prysmP2P "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func init() {
@@ -51,7 +51,7 @@ func expectResetStream(t *testing.T, stream network.Stream) {
 func TestRegisterRPC_ReceivesValidMessage(t *testing.T) {
 	p2p := p2ptest.NewTestP2P(t)
 	r := &Service{
-		ctx:         context.Background(),
+		ctx:         t.Context(),
 		cfg:         &config{p2p: p2p},
 		rateLimiter: newRateLimiter(p2p),
 	}
@@ -59,7 +59,7 @@ func TestRegisterRPC_ReceivesValidMessage(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	topic := "/testing/foobar/1"
-	handler := func(ctx context.Context, msg interface{}, stream libp2pcore.Stream) error {
+	handler := func(ctx context.Context, msg any, stream libp2pcore.Stream) error {
 		m, ok := msg.(*ethpb.Fork)
 		if !ok {
 			t.Error("Object is not of type *pb.TestSimpleMessage")
@@ -89,13 +89,13 @@ func TestRPC_ReceivesInvalidMessage(t *testing.T) {
 	remotePeer.Connect(p2p)
 
 	r := &Service{
-		ctx:         context.Background(),
+		ctx:         t.Context(),
 		cfg:         &config{p2p: p2p},
 		rateLimiter: newRateLimiter(p2p),
 	}
 
 	topic := "/testing/foobar/1"
-	handler := func(ctx context.Context, msg interface{}, stream libp2pcore.Stream) error {
+	handler := func(ctx context.Context, msg any, stream libp2pcore.Stream) error {
 		m, ok := msg.(*ethpb.Fork)
 		if !ok {
 			t.Error("Object is not of type *pb.Fork")
@@ -112,7 +112,7 @@ func TestRPC_ReceivesInvalidMessage(t *testing.T) {
 	}()
 	r.registerRPC(topic, handler)
 
-	stream, err := remotePeer.Host().NewStream(context.Background(), p2p.BHost.ID(), protocol.ID(topic+p2p.Encoding().ProtocolSuffix()))
+	stream, err := remotePeer.Host().NewStream(t.Context(), p2p.BHost.ID(), protocol.ID(topic+p2p.Encoding().ProtocolSuffix()))
 	require.NoError(t, err)
 	// Write invalid SSZ object to peer.
 	_, err = stream.Write([]byte("JUNK MESSAGE"))

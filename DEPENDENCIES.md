@@ -2,7 +2,7 @@
 
 Prysm is go project with many complicated dependencies, including some c++ based libraries. There
 are two parts to Prysm's dependency management. Go modules and bazel managed dependencies. Be sure 
-to read [Why Bazel?](https://github.com/prysmaticlabs/documentation/issues/138) to fully
+to read [Why Bazel?](https://prysm.offchainlabs.com/docs/install-prysm/install-with-bazel/#why-bazel) to fully
 understand the reasoning behind an additional layer of build tooling via Bazel rather than a pure
 "go build" project.
 
@@ -55,12 +55,12 @@ bazel build //beacon-chain --config=release
 ## Adding / updating dependencies
 
 1. Add your dependency as you would with go modules. I.e. `go get ...`
-1. Run `bazel run //:gazelle -- update-repos -from_file=go.mod` to update the bazel managed dependencies.
+1. Run `bazel run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%prysm_deps -prune=true` to update the bazel managed dependencies.
 
 Example:
 
 ```bash
-go get github.com/prysmaticlabs/example@v1.2.3
+go get github.com/OffchainLabs/example@v1.2.3
 bazel run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%prysm_deps -prune=true
 ```
 
@@ -72,7 +72,7 @@ Do NOT add new `go_repository` to the WORKSPACE file. All dependencies should li
 
 To enable conditional compilation and custom configuration for tests (where compiled code has more 
 debug info, while not being completely optimized), we rely on Go's build tags/constraints mechanism 
-(see official docs on [build constraints](https://golang.org/pkg/go/build/#hdr-Build_Constraints)). 
+(see official docs on [build constraints](https://pkg.go.dev/go/build#hdr-Build_Constraints)). 
 Therefore, whenever using `go test`, do not forget to pass in extra build tag, eg:
 
 ```bash

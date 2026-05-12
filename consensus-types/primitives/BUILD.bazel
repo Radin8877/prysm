@@ -3,6 +3,8 @@ load("@prysm//tools/go:def.bzl", "go_library", "go_test")
 go_library(
     name = "go_default_library",
     srcs = [
+        "basis_points.go",
+        "builder_index.go",
         "committee_bits_mainnet.go",
         "committee_bits_minimal.go",  # keep
         "committee_index.go",
@@ -11,14 +13,13 @@ go_library(
         "execution_address.go",
         "kzg.go",
         "payload_id.go",
-        "randao.go",
         "slot.go",
         "sszbytes.go",
         "sszuint64.go",
         "validator.go",
         "wei.go",
     ],
-    importpath = "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives",
+    importpath = "github.com/OffchainLabs/prysm/v7/consensus-types/primitives",
     visibility = ["//visibility:public"],
     deps = [
         "//math:go_default_library",
@@ -31,6 +32,7 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
+        "builder_index_test.go",
         "committee_index_test.go",
         "domain_test.go",
         "epoch_test.go",

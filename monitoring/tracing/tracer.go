@@ -3,14 +3,17 @@
 package tracing
 
 import (
+	"context"
 	"errors"
 	"time"
 
-	prysmTrace "github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
+	prysmTrace "github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
@@ -20,7 +23,7 @@ import (
 var log = logrus.WithField("prefix", "tracing")
 
 // Setup creates and initializes a new Jaegar tracing configuration with opentelemetry.
-func Setup(serviceName, processName, endpoint string, sampleFraction float64, enable bool) error {
+func Setup(ctx context.Context, serviceName, processName, endpoint string, sampleFraction float64, enable bool) error {
 	if !enable {
 		otel.SetTracerProvider(noop.NewTracerProvider())
 		return nil
@@ -31,8 +34,8 @@ func Setup(serviceName, processName, endpoint string, sampleFraction float64, en
 		return errors.New("tracing service name cannot be empty")
 	}
 
-	log.Infof("Starting Jaeger exporter endpoint at address = %s", endpoint)
-	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(endpoint)))
+	log.WithField("endpoint", endpoint).Info("Starting otel exporter endpoint")
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpoint))
 	if err != nil {
 		return err
 	}
@@ -42,17 +45,19 @@ func Setup(serviceName, processName, endpoint string, sampleFraction float64, en
 			exporter,
 			trace.WithMaxExportBatchSize(trace.DefaultMaxExportBatchSize),
 			trace.WithBatchTimeout(trace.DefaultScheduleDelay*time.Millisecond),
-			trace.WithMaxExportBatchSize(trace.DefaultMaxExportBatchSize),
 		),
 		trace.WithResource(
 			resource.NewWithAttributes(
 				semconv.SchemaURL,
 				semconv.ServiceNameKey.String(serviceName),
 				attribute.String("process_name", processName),
+				attribute.String("build", version.BuildData()),
 			),
 		),
 	)
 
 	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
 	return nil
 }

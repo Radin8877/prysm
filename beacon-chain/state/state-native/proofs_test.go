@@ -1,18 +1,17 @@
 package state_native_test
 
 import (
-	"context"
 	"testing"
 
+	statenative "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	statenative "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestBeaconStateMerkleProofs_phase0_notsupported(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st, _ := util.DeterministicGenesisState(t, 256)
 	t.Run("current sync committee", func(t *testing.T) {
 		_, err := st.CurrentSyncCommitteeProof(ctx)
@@ -22,13 +21,9 @@ func TestBeaconStateMerkleProofs_phase0_notsupported(t *testing.T) {
 		_, err := st.NextSyncCommitteeProof(ctx)
 		require.ErrorContains(t, "not supported", err)
 	})
-	t.Run("finalized root", func(t *testing.T) {
-		_, err := st.FinalizedRootProof(ctx)
-		require.ErrorContains(t, "not supported", err)
-	})
 }
 func TestBeaconStateMerkleProofs_altair(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	altair, err := util.NewBeaconStateAltair()
 	require.NoError(t, err)
 	htr, err := altair.HashTreeRoot(ctx)
@@ -97,7 +92,7 @@ func TestBeaconStateMerkleProofs_altair(t *testing.T) {
 }
 
 func TestBeaconStateMerkleProofs_bellatrix(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	bellatrix, err := util.NewBeaconStateBellatrix()
 	require.NoError(t, err)
 	htr, err := bellatrix.HashTreeRoot(ctx)

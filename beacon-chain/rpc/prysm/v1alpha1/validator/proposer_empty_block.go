@@ -1,12 +1,12 @@
 package validator
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -16,8 +16,13 @@ func getEmptyBlock(slot primitives.Slot) (interfaces.SignedBeaconBlock, error) {
 	var err error
 	epoch := slots.ToEpoch(slot)
 	switch {
+	case epoch >= params.BeaconConfig().GloasForkEpoch:
+		sBlk, err = blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlockGloas{Block: &ethpb.BeaconBlockGloas{Body: &ethpb.BeaconBlockBodyGloas{}}})
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Could not initialize block for proposal: %v", err)
+		}
 	case epoch >= params.BeaconConfig().FuluForkEpoch:
-		sBlk, err = blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlockFulu{Block: &ethpb.BeaconBlockFulu{Body: &ethpb.BeaconBlockBodyFulu{}}})
+		sBlk, err = blocks.NewSignedBeaconBlock(&ethpb.SignedBeaconBlockFulu{Block: &ethpb.BeaconBlockElectra{Body: &ethpb.BeaconBlockBodyElectra{}}})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Could not initialize block for proposal: %v", err)
 		}

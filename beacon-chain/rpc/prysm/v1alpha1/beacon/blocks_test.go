@@ -1,27 +1,26 @@
 package beacon
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"testing"
 
-	chainMock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	chainMock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbTest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -35,7 +34,7 @@ func TestServer_GetChainHead_NoGenesis(t *testing.T) {
 
 	genBlock := util.NewBeaconBlock()
 	genBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'G'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, genBlock)
+	util.SaveBlock(t, t.Context(), db, genBlock)
 	gRoot, err := genBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 	cases := []struct {
@@ -80,7 +79,7 @@ func TestServer_GetChainHead_NoGenesis(t *testing.T) {
 				OptimisticModeFetcher: &chainMock.ChainService{},
 			},
 		}
-		_, err = bs.GetChainHead(context.Background(), nil)
+		_, err = bs.GetChainHead(t.Context(), nil)
 		require.ErrorContains(t, "could not get genesis block", err)
 	}
 }
@@ -97,10 +96,10 @@ func TestServer_GetChainHead_NoFinalizedBlock(t *testing.T) {
 
 	genBlock := util.NewBeaconBlock()
 	genBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'G'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, genBlock)
+	util.SaveBlock(t, t.Context(), db, genBlock)
 	gRoot, err := genBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
-	require.NoError(t, db.SaveGenesisBlockRoot(context.Background(), gRoot))
+	require.NoError(t, db.SaveGenesisBlockRoot(t.Context(), gRoot))
 
 	wsb, err := blocks.NewSignedBeaconBlock(genBlock)
 	require.NoError(t, err)
@@ -117,7 +116,7 @@ func TestServer_GetChainHead_NoFinalizedBlock(t *testing.T) {
 		},
 	}
 
-	_, err = bs.GetChainHead(context.Background(), nil)
+	_, err = bs.GetChainHead(t.Context(), nil)
 	require.ErrorContains(t, "could not get finalized block", err)
 }
 
@@ -128,7 +127,7 @@ func TestServer_GetChainHead_NoHeadBlock(t *testing.T) {
 			OptimisticModeFetcher: &chainMock.ChainService{},
 		},
 	}
-	_, err := bs.GetChainHead(context.Background(), nil)
+	_, err := bs.GetChainHead(t.Context(), nil)
 	assert.ErrorContains(t, "head block of chain was nil", err)
 }
 
@@ -139,29 +138,29 @@ func TestServer_GetChainHead(t *testing.T) {
 	db := dbTest.SetupDB(t)
 	genBlock := util.NewBeaconBlock()
 	genBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'G'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, genBlock)
+	util.SaveBlock(t, t.Context(), db, genBlock)
 	gRoot, err := genBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
-	require.NoError(t, db.SaveGenesisBlockRoot(context.Background(), gRoot))
+	require.NoError(t, db.SaveGenesisBlockRoot(t.Context(), gRoot))
 
 	finalizedBlock := util.NewBeaconBlock()
 	finalizedBlock.Block.Slot = 1
 	finalizedBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'A'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, finalizedBlock)
+	util.SaveBlock(t, t.Context(), db, finalizedBlock)
 	fRoot, err := finalizedBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 
 	justifiedBlock := util.NewBeaconBlock()
 	justifiedBlock.Block.Slot = 2
 	justifiedBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'B'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, justifiedBlock)
+	util.SaveBlock(t, t.Context(), db, justifiedBlock)
 	jRoot, err := justifiedBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 
 	prevJustifiedBlock := util.NewBeaconBlock()
 	prevJustifiedBlock.Block.Slot = 3
 	prevJustifiedBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'C'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, prevJustifiedBlock)
+	util.SaveBlock(t, t.Context(), db, prevJustifiedBlock)
 	pjRoot, err := prevJustifiedBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 
@@ -191,7 +190,7 @@ func TestServer_GetChainHead(t *testing.T) {
 		},
 	}
 
-	head, err := bs.GetChainHead(context.Background(), nil)
+	head, err := bs.GetChainHead(t.Context(), nil)
 	require.NoError(t, err)
 	assert.Equal(t, primitives.Epoch(3), head.PreviousJustifiedEpoch, "Unexpected PreviousJustifiedEpoch")
 	assert.Equal(t, primitives.Epoch(2), head.JustifiedEpoch, "Unexpected JustifiedEpoch")
@@ -207,7 +206,7 @@ func TestServer_GetChainHead(t *testing.T) {
 
 func TestServer_ListBeaconBlocks_NoResults(t *testing.T) {
 	db := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	bs := &Server{
 		BeaconDB: db,
@@ -304,7 +303,7 @@ func TestServer_ListBeaconBlocks_Genesis(t *testing.T) {
 
 func runListBlocksGenesis(t *testing.T, blk interfaces.ReadOnlySignedBeaconBlock, blkContainer *ethpb.BeaconBlockContainer) {
 	db := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	bs := &Server{
 		BeaconDB: db,
@@ -407,7 +406,7 @@ func TestServer_ListBeaconBlocks_Genesis_MultiBlocks(t *testing.T) {
 func runListBeaconBlocksGenesisMultiBlocks(t *testing.T, genBlock interfaces.ReadOnlySignedBeaconBlock,
 	blockCreator func(i primitives.Slot) interfaces.ReadOnlySignedBeaconBlock) {
 	db := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	bs := &Server{
 		BeaconDB: db,
@@ -420,7 +419,7 @@ func runListBeaconBlocksGenesisMultiBlocks(t *testing.T, genBlock interfaces.Rea
 
 	count := primitives.Slot(100)
 	blks := make([]interfaces.ReadOnlySignedBeaconBlock, count)
-	for i := primitives.Slot(0); i < count; i++ {
+	for i := range count {
 		blks[i] = blockCreator(i)
 	}
 	require.NoError(t, db.SaveBlocks(ctx, blks))
@@ -550,12 +549,12 @@ func runListBeaconBlocksPagination(t *testing.T, orphanedBlk interfaces.ReadOnly
 	chain := &chainMock.ChainService{
 		CanonicalRoots: map[[32]byte]bool{},
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	count := primitives.Slot(100)
 	blks := make([]interfaces.ReadOnlySignedBeaconBlock, count)
 	blkContainers := make([]*ethpb.BeaconBlockContainer, count)
-	for i := primitives.Slot(0); i < count; i++ {
+	for i := range count {
 		b := blockCreator(i)
 		root, err := b.Block().HashTreeRoot()
 		require.NoError(t, err)

@@ -1,7 +1,6 @@
 package accounts
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,14 +8,14 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/local"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/local"
 )
 
 func TestImportAccounts_NoPassword(t *testing.T) {
@@ -46,7 +45,7 @@ func TestImportAccounts_NoPassword(t *testing.T) {
 	require.NoError(t, err)
 	importer, ok := km.(keymanager.Importer)
 	require.Equal(t, true, ok)
-	resp, err := ImportAccounts(context.Background(), &ImportAccountsConfig{
+	resp, err := ImportAccounts(t.Context(), &ImportAccountsConfig{
 		Keystores:       []*keymanager.Keystore{{}},
 		Importer:        importer,
 		AccountPassword: "",

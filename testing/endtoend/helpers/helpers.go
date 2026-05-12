@@ -14,17 +14,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	e2e "github.com/OffchainLabs/prysm/v7/testing/endtoend/params"
+	e2etypes "github.com/OffchainLabs/prysm/v7/testing/endtoend/types"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	e2e "github.com/prysmaticlabs/prysm/v5/testing/endtoend/params"
-	e2etypes "github.com/prysmaticlabs/prysm/v5/testing/endtoend/types"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -196,7 +197,7 @@ random:
   - "Takoyaki"
 `)
 	f := filepath.Join(testDir, "graffiti.yaml")
-	if err := os.WriteFile(f, b, os.ModePerm); err != nil {
+	if err := os.WriteFile(f, b, 0600); err != nil {
 		return "", err
 	}
 	return f, nil
@@ -211,12 +212,14 @@ func LogOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 		LogErrorOutput(t, beaconLogFile, "beacon chain node", i)
+		_ = beaconLogFile.Close()
 
 		validatorLogFile, err := os.Open(path.Join(e2e.TestParams.LogPath, fmt.Sprintf(e2e.ValidatorLogFileName, i)))
 		if err != nil {
 			t.Fatal(err)
 		}
 		LogErrorOutput(t, validatorLogFile, "validator client", i)
+		_ = validatorLogFile.Close()
 	}
 
 	t.Logf("Ending time: %s\n", time.Now().String())
@@ -277,10 +280,10 @@ func writeURLRespAtPath(url, fp string) error {
 	}
 
 	file, err := os.Create(filepath.Clean(fp))
-
 	if err != nil {
 		return err
 	}
+	defer func() { _ = file.Close() }()
 	if _, err = file.Write(body); err != nil {
 		return err
 	}
@@ -303,7 +306,7 @@ func NewLocalConnection(ctx context.Context, port int) (*grpc.ClientConn, error)
 // NewLocalConnections returns number of GRPC connections, along with function to close all of them.
 func NewLocalConnections(ctx context.Context, numConns int) ([]*grpc.ClientConn, func(), error) {
 	conns := make([]*grpc.ClientConn, numConns)
-	for i := 0; i < len(conns); i++ {
+	for i := range conns {
 		conn, err := NewLocalConnection(ctx, e2e.TestParams.Ports.PrysmBeaconNodeRPCPort+i)
 		if err != nil {
 			return nil, nil, err
@@ -322,7 +325,7 @@ func NewLocalConnections(ctx context.Context, numConns int) ([]*grpc.ClientConn,
 // BeaconAPIHostnames constructs a hostname:port string for the
 func BeaconAPIHostnames(numConns int) []string {
 	hostnames := make([]string, 0)
-	for i := 0; i < numConns; i++ {
+	for i := range numConns {
 		port := e2e.TestParams.Ports.PrysmBeaconNodeHTTPPort + i
 		hostnames = append(hostnames, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	}
@@ -379,6 +382,29 @@ func WaitOnNodes(ctx context.Context, nodes []e2etypes.ComponentRunner, nodesSta
 	}()
 
 	return g.Wait()
+}
+
+// GracefulStop sends SIGTERM to a process and gives it 5 seconds to exit before
+// sending SIGKILL. It does not call p.Wait() since the caller (cmd.Wait in Start)
+// is expected to handle process reaping.
+func GracefulStop(p *os.Process) error {
+	if p == nil {
+		return nil
+	}
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		// Process may have already exited; try kill as last resort.
+		return p.Kill()
+	}
+	// Give the process time to handle SIGTERM and exit cleanly.
+	// The parent goroutine's cmd.Wait() will detect the exit.
+	// If still alive after the grace period, force kill.
+	time.AfterFunc(5*time.Second, func() {
+		// Signal(0) checks if the process is still alive without sending a signal.
+		if err := p.Signal(syscall.Signal(0)); err == nil {
+			_ = p.Kill()
+		}
+	})
+	return nil
 }
 
 func MinerRPCClient() (*ethclient.Client, error) {

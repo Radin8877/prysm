@@ -1,11 +1,10 @@
 package blocks
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestComputeBlockBodyFieldRoots_Phase0(t *testing.T) {
@@ -16,7 +15,7 @@ func TestComputeBlockBodyFieldRoots_Phase0(t *testing.T) {
 	b, ok := i.(*BeaconBlockBody)
 	require.Equal(t, true, ok)
 
-	fieldRoots, err := ComputeBlockBodyFieldRoots(context.Background(), b)
+	fieldRoots, err := ComputeBlockBodyFieldRoots(t.Context(), b)
 	require.NoError(t, err)
 	trie, err := trie.GenerateTrieFromItems(fieldRoots, 3)
 	require.NoError(t, err)
@@ -39,7 +38,7 @@ func TestComputeBlockBodyFieldRoots_Altair(t *testing.T) {
 	b, ok := i.(*BeaconBlockBody)
 	require.Equal(t, true, ok)
 
-	fieldRoots, err := ComputeBlockBodyFieldRoots(context.Background(), b)
+	fieldRoots, err := ComputeBlockBodyFieldRoots(t.Context(), b)
 	require.NoError(t, err)
 	trie, err := trie.GenerateTrieFromItems(fieldRoots, 4)
 	require.NoError(t, err)
@@ -62,7 +61,7 @@ func TestComputeBlockBodyFieldRoots_Bellatrix(t *testing.T) {
 	b, ok := i.(*BeaconBlockBody)
 	require.Equal(t, true, ok)
 
-	fieldRoots, err := ComputeBlockBodyFieldRoots(context.Background(), b)
+	fieldRoots, err := ComputeBlockBodyFieldRoots(t.Context(), b)
 	require.NoError(t, err)
 	trie, err := trie.GenerateTrieFromItems(fieldRoots, 4)
 	require.NoError(t, err)
@@ -85,7 +84,7 @@ func TestComputeBlockBodyFieldRoots_Capella(t *testing.T) {
 	b, ok := i.(*BeaconBlockBody)
 	require.Equal(t, true, ok)
 
-	fieldRoots, err := ComputeBlockBodyFieldRoots(context.Background(), b)
+	fieldRoots, err := ComputeBlockBodyFieldRoots(t.Context(), b)
 	require.NoError(t, err)
 	trie, err := trie.GenerateTrieFromItems(fieldRoots, 4)
 	require.NoError(t, err)
@@ -108,7 +107,7 @@ func TestComputeBlockBodyFieldRoots_Deneb(t *testing.T) {
 	b, ok := i.(*BeaconBlockBody)
 	require.Equal(t, true, ok)
 
-	fieldRoots, err := ComputeBlockBodyFieldRoots(context.Background(), b)
+	fieldRoots, err := ComputeBlockBodyFieldRoots(t.Context(), b)
 	require.NoError(t, err)
 	trie, err := trie.GenerateTrieFromItems(fieldRoots, 4)
 	require.NoError(t, err)
@@ -131,7 +130,7 @@ func TestComputeBlockBodyFieldRoots_Electra(t *testing.T) {
 	b, ok := i.(*BeaconBlockBody)
 	require.Equal(t, true, ok)
 
-	fieldRoots, err := ComputeBlockBodyFieldRoots(context.Background(), b)
+	fieldRoots, err := ComputeBlockBodyFieldRoots(t.Context(), b)
 	require.NoError(t, err)
 	trie, err := trie.GenerateTrieFromItems(fieldRoots, 4)
 	require.NoError(t, err)

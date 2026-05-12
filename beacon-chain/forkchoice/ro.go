@@ -1,9 +1,9 @@
 package forkchoice
 
 import (
-	forkchoicetypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/types"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 )
 
 // ROForkChoice is an implementation of forkchoice.Getter which calls `Rlock`/`RUnlock`
@@ -28,6 +28,20 @@ type ROWrappable interface {
 // given value after first using its Locker methods to make sure it is correctly locked.
 func NewROForkChoice(w ROWrappable) *ROForkChoice {
 	return &ROForkChoice{getter: w, l: w}
+}
+
+// HasFullNode delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) HasFullNode(root [32]byte) bool {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.HasFullNode(root)
+}
+
+// FullBeatsEmpty delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) FullBeatsEmpty(root [32]byte) bool {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.FullBeatsEmpty(root)
 }
 
 // HasNode delegates to the underlying forkchoice call, under a lock.
@@ -114,11 +128,11 @@ func (ro *ROForkChoice) HighestReceivedBlockSlot() primitives.Slot {
 	return ro.getter.HighestReceivedBlockSlot()
 }
 
-// HighestReceivedBlockDelay delegates to the underlying forkchoice call, under a lock.
-func (ro *ROForkChoice) HighestReceivedBlockDelay() primitives.Slot {
+// HighestReceivedBlockRoot delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) HighestReceivedBlockRoot() [32]byte {
 	ro.l.RLock()
 	defer ro.l.RUnlock()
-	return ro.getter.HighestReceivedBlockDelay()
+	return ro.getter.HighestReceivedBlockRoot()
 }
 
 // ReceivedBlocksLastEpoch delegates to the underlying forkchoice call, under a lock.
@@ -133,6 +147,20 @@ func (ro *ROForkChoice) Weight(root [32]byte) (uint64, error) {
 	ro.l.RLock()
 	defer ro.l.RUnlock()
 	return ro.getter.Weight(root)
+}
+
+// ConsensusNodeWeight delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) ConsensusNodeWeight(root [32]byte) (uint64, error) {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.ConsensusNodeWeight(root)
+}
+
+// PayloadWeights delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) PayloadWeights(root [32]byte) (uint64, uint64, error) {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.PayloadWeights(root)
 }
 
 // IsOptimistic delegates to the underlying forkchoice call, under a lock.
@@ -156,11 +184,18 @@ func (ro *ROForkChoice) Slot(root [32]byte) (primitives.Slot, error) {
 	return ro.getter.Slot(root)
 }
 
-// LastRoot delegates to the underlying forkchoice call, under a lock.
-func (ro *ROForkChoice) LastRoot(e primitives.Epoch) [32]byte {
+// DependentRoot delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) DependentRoot(epoch primitives.Epoch) ([32]byte, error) {
 	ro.l.RLock()
 	defer ro.l.RUnlock()
-	return ro.getter.LastRoot(e)
+	return ro.getter.DependentRoot(epoch)
+}
+
+// DependentRootForEpoch delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) DependentRootForEpoch(root [32]byte, epoch primitives.Epoch) ([32]byte, error) {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.DependentRootForEpoch(root, epoch)
 }
 
 // TargetRootForEpoch delegates to the underlying forkchoice call, under a lock.
@@ -175,4 +210,18 @@ func (ro *ROForkChoice) ParentRoot(root [32]byte) ([32]byte, error) {
 	ro.l.RLock()
 	defer ro.l.RUnlock()
 	return ro.getter.ParentRoot(root)
+}
+
+// BlockHash delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) BlockHash(root [32]byte) ([32]byte, error) {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.BlockHash(root)
+}
+
+// CanonicalNodeAtSlot delegates to the underlying forkchoice call, under a lock.
+func (ro *ROForkChoice) CanonicalNodeAtSlot(slot primitives.Slot) ([32]byte, bool) {
+	ro.l.RLock()
+	defer ro.l.RUnlock()
+	return ro.getter.CanonicalNodeAtSlot(slot)
 }

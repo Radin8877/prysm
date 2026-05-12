@@ -5,18 +5,19 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/gloas"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	consensusblocks "github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	consensusblocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
 )
 
 // ProcessAttestationsNoVerifySignature applies processing operations to a block's inner attestation
@@ -26,11 +27,17 @@ func ProcessAttestationsNoVerifySignature(
 	beaconState state.BeaconState,
 	b interfaces.ReadOnlyBeaconBlock,
 ) (state.BeaconState, error) {
+	ctx, span := trace.StartSpan(ctx, "altair.ProcessAttestationsNoVerifySignature")
+	defer span.End()
+
 	if b == nil || b.IsNil() {
 		return nil, consensusblocks.ErrNilBeaconBlock
 	}
+
 	body := b.Body()
-	totalBalance, err := helpers.TotalActiveBalance(beaconState)
+	span.SetAttributes(trace.Int64Attribute("count", int64(len(body.Attestations()))))
+
+	totalBalance, err := helpers.TotalActiveBalance(ctx, beaconState)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +73,7 @@ func ProcessAttestationNoVerifySignature(
 	if err != nil {
 		return nil, err
 	}
-	committees, err := helpers.AttestationCommittees(ctx, beaconState, att)
+	committees, err := helpers.AttestationCommitteesFromState(ctx, beaconState, att)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +82,11 @@ func ProcessAttestationNoVerifySignature(
 		return nil, err
 	}
 
-	return SetParticipationAndRewardProposer(ctx, beaconState, att.GetData().Target.Epoch, indices, participatedFlags, totalBalance)
+	if err := beaconState.UpdatePendingPaymentWeight(att, indices, participatedFlags); err != nil {
+		return nil, errors.Wrap(err, "failed to update pending payment weight")
+	}
+
+	return SetParticipationAndRewardProposer(ctx, beaconState, att.GetData().Target.Epoch, indices, participatedFlags, totalBalance, att)
 }
 
 // SetParticipationAndRewardProposer retrieves and sets the epoch participation bits in state. Based on the epoch participation, it rewards
@@ -105,7 +116,9 @@ func SetParticipationAndRewardProposer(
 	beaconState state.BeaconState,
 	targetEpoch primitives.Epoch,
 	indices []uint64,
-	participatedFlags map[uint8]bool, totalBalance uint64) (state.BeaconState, error) {
+	participatedFlags map[uint8]bool,
+	totalBalance uint64,
+	att ethpb.Att) (state.BeaconState, error) {
 	var proposerRewardNumerator uint64
 	currentEpoch := time.CurrentEpoch(beaconState)
 	var stateErr error
@@ -165,7 +178,7 @@ func AddValidatorFlag(flag, flagPosition uint8) (uint8, error) {
 //	        if flag_index in participation_flag_indices and not has_flag(epoch_participation[index], flag_index):
 //	            epoch_participation[index] = add_flag(epoch_participation[index], flag_index)
 //	            proposer_reward_numerator += get_base_reward(state, index) * weight
-func EpochParticipation(beaconState state.BeaconState, indices []uint64, epochParticipation []byte, participatedFlags map[uint8]bool, totalBalance uint64) (uint64, []byte, error) {
+func EpochParticipation(beaconState state.ReadOnlyBeaconState, indices []uint64, epochParticipation []byte, participatedFlags map[uint8]bool, totalBalance uint64) (uint64, []byte, error) {
 	cfg := params.BeaconConfig()
 	sourceFlagIndex := cfg.TimelySourceFlagIndex
 	targetFlagIndex := cfg.TimelyTargetFlagIndex
@@ -267,7 +280,7 @@ func RewardProposer(ctx context.Context, beaconState state.BeaconState, proposer
 //	    participation_flag_indices.append(TIMELY_HEAD_FLAG_INDEX)
 //
 //	return participation_flag_indices
-func AttestationParticipationFlagIndices(beaconState state.BeaconState, data *ethpb.AttestationData, delay primitives.Slot) (map[uint8]bool, error) {
+func AttestationParticipationFlagIndices(beaconState state.ReadOnlyBeaconState, data *ethpb.AttestationData, delay primitives.Slot) (map[uint8]bool, error) {
 	currEpoch := time.CurrentEpoch(beaconState)
 	var justifiedCheckpt *ethpb.Checkpoint
 	if data.Target.Epoch == currEpoch {
@@ -299,6 +312,19 @@ func AttestationParticipationFlagIndices(beaconState state.BeaconState, data *et
 		participatedFlags[targetFlagIndex] = true
 	}
 	matchedSrcTgtHead := matchedHead && matchedSrcTgt
+
+	var beaconBlockRoot [32]byte
+	copy(beaconBlockRoot[:], data.BeaconBlockRoot)
+	matchingPayload, err := gloas.MatchingPayload(
+		beaconState,
+		beaconBlockRoot,
+		data.Slot,
+		uint64(data.CommitteeIndex),
+	)
+	if err != nil {
+		return nil, err
+	}
+	matchedSrcTgtHead = matchedSrcTgtHead && matchingPayload
 	if matchedSrcTgtHead && delay == cfg.MinAttestationInclusionDelay {
 		participatedFlags[headFlagIndex] = true
 	}
@@ -312,7 +338,7 @@ func AttestationParticipationFlagIndices(beaconState state.BeaconState, data *et
 //	is_matching_source = data.source == justified_checkpoint
 //	is_matching_target = is_matching_source and data.target.root == get_block_root(state, data.target.epoch)
 //	is_matching_head = is_matching_target and data.beacon_block_root == get_block_root_at_slot(state, data.slot)
-func MatchingStatus(beaconState state.BeaconState, data *ethpb.AttestationData, cp *ethpb.Checkpoint) (matchedSrc, matchedTgt, matchedHead bool, err error) {
+func MatchingStatus(beaconState state.ReadOnlyBeaconState, data *ethpb.AttestationData, cp *ethpb.Checkpoint) (matchedSrc, matchedTgt, matchedHead bool, err error) {
 	matchedSrc = attestation.CheckPointIsEqual(data.Source, cp)
 
 	r, err := helpers.BlockRoot(beaconState, data.Target.Epoch)

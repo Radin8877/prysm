@@ -9,25 +9,25 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/shared"
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/validator"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	"github.com/OffchainLabs/prysm/v7/validator/client"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/derived"
+	slashingprotection "github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/eth/shared"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/validator"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/validator/client"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/derived"
-	slashingprotection "github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -63,7 +63,7 @@ func (s *Server) ListKeystores(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keystoreResponse := make([]*Keystore, len(pubKeys))
-	for i := 0; i < len(pubKeys); i++ {
+	for i := range pubKeys {
 		keystoreResponse[i] = &Keystore{
 			ValidatingPubkey: hexutil.Encode(pubKeys[i][:]),
 		}
@@ -276,7 +276,7 @@ func (s *Server) transformDeletedKeysStatuses(
 		return nil, errors.Wrap(err, "could not get public keys from DB")
 	}
 	if len(pubKeysInDB) > 0 {
-		for i := 0; i < len(pubKeys); i++ {
+		for i := range pubKeys {
 			keyExistsInDB := pubKeysInDB[bytesutil.ToBytes48(pubKeys[i])]
 			if keyExistsInDB && statuses[i].Status == keymanager.StatusNotFound {
 				statuses[i].Status = keymanager.StatusNotActive
@@ -419,7 +419,7 @@ func (s *Server) ListRemoteKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keystoreResponse := make([]*RemoteKey, len(pubKeys))
-	for i := 0; i < len(pubKeys); i++ {
+	for i := range pubKeys {
 		keystoreResponse[i] = &RemoteKey{
 			Pubkey:   hexutil.Encode(pubKeys[i][:]),
 			Url:      s.validatorService.RemoteSignerConfig().BaseEndpoint,

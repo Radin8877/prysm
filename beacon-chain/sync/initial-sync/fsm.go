@@ -3,14 +3,12 @@ package initialsync
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 const (
@@ -45,13 +43,12 @@ type stateMachine struct {
 	smm     *stateMachineManager
 	start   primitives.Slot
 	state   stateID
-	pid     peer.ID
-	bwb     []blocks.BlockWithROBlobs
+	fetched fetchRequestResponse
 	updated time.Time
 }
 
 // eventHandlerFn is an event handler function's signature.
-type eventHandlerFn func(m *stateMachine, data interface{}) (newState stateID, err error)
+type eventHandlerFn func(m *stateMachine, data any) (newState stateID, err error)
 
 // newStateMachineManager returns fully initialized state machine manager.
 func newStateMachineManager() *stateMachineManager {
@@ -78,7 +75,7 @@ func (smm *stateMachineManager) addStateMachine(startSlot primitives.Slot) *stat
 		smm:     smm,
 		start:   startSlot,
 		state:   stateNew,
-		bwb:     []blocks.BlockWithROBlobs{},
+		fetched: fetchRequestResponse{},
 		updated: prysmTime.Now(),
 	}
 	smm.recalculateMachineAttribs()
@@ -90,7 +87,7 @@ func (smm *stateMachineManager) removeStateMachine(startSlot primitives.Slot) er
 	if _, ok := smm.machines[startSlot]; !ok {
 		return fmt.Errorf("state for machine %v is not found", startSlot)
 	}
-	smm.machines[startSlot].bwb = nil
+	smm.machines[startSlot].fetched = fetchRequestResponse{}
 	delete(smm.machines, startSlot)
 	smm.recalculateMachineAttribs()
 	return nil
@@ -113,9 +110,7 @@ func (smm *stateMachineManager) recalculateMachineAttribs() {
 	for key := range smm.machines {
 		keys = append(keys, key)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		return keys[i] < keys[j]
-	})
+	slices.Sort(keys)
 	smm.keys = keys
 }
 
@@ -162,7 +157,7 @@ func (m *stateMachine) setState(name stateID) {
 }
 
 // trigger invokes the event handler on a given state machine.
-func (m *stateMachine) trigger(event eventID, data interface{}) error {
+func (m *stateMachine) trigger(event eventID, data any) error {
 	handlers, ok := m.smm.handlers[m.state]
 	if !ok {
 		return fmt.Errorf("no event handlers registered for event: %v, state: %v", event, m.state)
@@ -185,6 +180,10 @@ func (m *stateMachine) isFirst() bool {
 // isLast checks whether a given machine has the highest start slot.
 func (m *stateMachine) isLast() bool {
 	return m.start == m.smm.keys[len(m.smm.keys)-1]
+}
+
+func (m *stateMachine) numFetched() int {
+	return len(m.fetched.bwb)
 }
 
 // String returns human-readable representation of a FSM state.

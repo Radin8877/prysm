@@ -3,19 +3,18 @@
 package cache
 
 import (
-	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	fuzz "github.com/google/gofuzz"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestCommitteeKeyFuzz_OK(t *testing.T) {
 	fuzzer := fuzz.NewWithSeed(0)
 	c := &Committees{}
 
-	for i := 0; i < 100000; i++ {
+	for range 100000 {
 		fuzzer.Fuzz(c)
 		k, err := committeeKeyFn(c)
 		require.NoError(t, err)
@@ -28,10 +27,10 @@ func TestCommitteeCache_FuzzCommitteesByEpoch(t *testing.T) {
 	fuzzer := fuzz.NewWithSeed(0)
 	c := &Committees{}
 
-	for i := 0; i < 100000; i++ {
+	for range 100000 {
 		fuzzer.Fuzz(c)
-		require.NoError(t, cache.AddCommitteeShuffledList(context.Background(), c))
-		_, err := cache.Committee(context.Background(), 0, c.Seed, 0)
+		require.NoError(t, cache.AddCommitteeShuffledList(t.Context(), c))
+		_, err := cache.Committee(t.Context(), 0, c.Seed, 0)
 		require.NoError(t, err)
 	}
 
@@ -43,11 +42,11 @@ func TestCommitteeCache_FuzzActiveIndices(t *testing.T) {
 	fuzzer := fuzz.NewWithSeed(0)
 	c := &Committees{}
 
-	for i := 0; i < 100000; i++ {
+	for range 100000 {
 		fuzzer.Fuzz(c)
-		require.NoError(t, cache.AddCommitteeShuffledList(context.Background(), c))
+		require.NoError(t, cache.AddCommitteeShuffledList(t.Context(), c))
 
-		indices, err := cache.ActiveIndices(context.Background(), c.Seed)
+		indices, err := cache.ActiveIndices(t.Context(), c.Seed)
 		require.NoError(t, err)
 		assert.DeepEqual(t, c.SortedIndices, indices)
 	}

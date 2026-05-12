@@ -1,17 +1,16 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestStore_DepositContract(t *testing.T) {
 	db := setupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	contractAddress := common.Address{1, 2, 3}
 	retrieved, err := db.DepositContractAddress(ctx)
 	require.NoError(t, err)

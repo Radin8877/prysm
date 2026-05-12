@@ -25,13 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/sirupsen/logrus"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
 	"github.com/urfave/cli/v2"
 )
-
-var log = logrus.WithField("prefix", "flags")
 
 const enabledFeatureFlag = "Enabled feature flag"
 const disabledFeatureFlag = "Disabled feature flag"
@@ -39,7 +37,6 @@ const disabledFeatureFlag = "Disabled feature flag"
 // Flags is a struct to represent which features the client will perform on runtime.
 type Flags struct {
 	// Feature related flags.
-	EnableExperimentalState             bool // EnableExperimentalState turns on the latest and greatest (but potentially unstable) changes to the beacon state.
 	WriteSSZStateTransitions            bool // WriteSSZStateTransitions to tmp directory.
 	EnablePeerScorer                    bool // EnablePeerScorer enables experimental peer scoring in p2p.
 	EnableLightClient                   bool // EnableLightClient enables light client APIs.
@@ -48,8 +45,11 @@ type Flags struct {
 	EnableDoppelGanger                  bool // EnableDoppelGanger enables doppelganger protection on startup for the validator.
 	EnableHistoricalSpaceRepresentation bool // EnableHistoricalSpaceRepresentation enables the saving of registry validators in separate buckets to save space
 	EnableBeaconRESTApi                 bool // EnableBeaconRESTApi enables experimental usage of the beacon REST API by the validator when querying a beacon node
-	DisableCommitteeAwarePacking        bool // DisableCommitteeAwarePacking changes the attestation packing algorithm to one that is not aware of attesting committees.
 	EnableExperimentalAttestationPool   bool // EnableExperimentalAttestationPool enables an experimental attestation pool design.
+	DisableDutiesV2                     bool // DisableDutiesV2 sets validator client to use the get Duties endpoint
+	EnableWeb                           bool // EnableWeb enables the webui on the validator client
+	EnableStateDiff                     bool // EnableStateDiff enables the experimental state diff feature for the beacon node.
+
 	// Logging related toggles.
 	DisableGRPCConnectionLogs bool // Disables logging when a new grpc client has connected.
 	EnableFullSSZDataLogging  bool // Enables logging for full ssz data on rejected gossip messages
@@ -60,7 +60,6 @@ type Flags struct {
 	// Bug fixes related flags.
 	AttestTimely bool // AttestTimely fixes #8185. It is gated behind a flag to ensure beacon node's fix can safely roll out first. We'll invert this in v1.1.0.
 
-	EnableSlasher                   bool // Enable slasher in the beacon node runtime.
 	EnableSlashingProtectionPruning bool // Enable slashing protection pruning for the validator client.
 	EnableMinimalSlashingProtection bool // Enable minimal slashing protection database for the validator client.
 
@@ -69,8 +68,11 @@ type Flags struct {
 
 	DisableResourceManager     bool // Disables running the node with libp2p's resource manager.
 	DisableStakinContractCheck bool // Disables check for deposit contract when proposing blocks
+	IgnoreUnviableAttestations bool // Ignore attestations whose target state is not viable (avoids lagging-node DoS).
 
+	EnableHashtree               bool // Enables usage of the hashtree library for hashing
 	EnableVerboseSigVerification bool // EnableVerboseSigVerification specifies whether to verify individual signature if batch verification fails
+	EnableProposerPreprocessing  bool // EnableProposerPreprocessing enables proposer pre-processing of blocks before proposing.
 
 	PrepareAllPayloads bool // PrepareAllPayloads informs the engine to prepare a block on every slot.
 	// BlobSaveFsync requires blob saving to block on fsync to ensure blobs are durably persisted before passing DA.
@@ -87,6 +89,10 @@ type Flags struct {
 
 	// AggregateIntervals specifies the time durations at which we aggregate attestations preparing for forkchoice.
 	AggregateIntervals [3]time.Duration
+
+	// Feature related flags (alignment forced in the end)
+	ForceHead        string                // ForceHead forces the head block to be a specific block root, the last head block, or the last finalized block.
+	BlacklistedRoots map[[32]byte]struct{} // BlacklistedRoots is a list of roots that are blacklisted from processing.
 }
 
 var featureConfig *Flags
@@ -142,13 +148,20 @@ func configureTestnet(ctx *cli.Context) error {
 		}
 		applyHoleskyFeatureFlags(ctx)
 		params.UseHoleskyNetworkConfig()
+	} else if ctx.Bool(HoodiTestnet.Name) {
+		log.Info("Running on the Hoodi Beacon Chain Testnet")
+		if err := params.SetActive(params.HoodiConfig().Copy()); err != nil {
+			return err
+		}
+		params.UseHoodiNetworkConfig()
 	} else {
 		if ctx.IsSet(cmd.ChainConfigFileFlag.Name) {
-			log.Warn("Running on custom Ethereum network specified in a chain configuration yaml file")
+			log.Warning("Running on custom Ethereum network specified in a chain configuration YAML file")
+			params.UseCustomNetworkConfig()
 		} else {
 			log.Info("Running on Ethereum Mainnet")
 		}
-		if err := params.SetActive(params.MainnetConfig().Copy()); err != nil {
+		if err := params.SetActive(params.MainnetConfig()); err != nil {
 			return err
 		}
 	}
@@ -156,16 +169,17 @@ func configureTestnet(ctx *cli.Context) error {
 }
 
 // Insert feature flags within the function to be enabled for Sepolia testnet.
-func applySepoliaFeatureFlags(ctx *cli.Context) {
+func applySepoliaFeatureFlags(_ *cli.Context) {
 }
 
 // Insert feature flags within the function to be enabled for Holesky testnet.
-func applyHoleskyFeatureFlags(ctx *cli.Context) {
+func applyHoleskyFeatureFlags(_ *cli.Context) {
 }
 
 // ConfigureBeaconChain sets the global config based
 // on what flags are enabled for the beacon-chain client.
 func ConfigureBeaconChain(ctx *cli.Context) error {
+	warnDeprecationUpcoming(ctx)
 	complainOnDeprecatedFlags(ctx)
 	cfg := &Flags{}
 	if ctx.Bool(devModeFlag.Name) {
@@ -173,12 +187,6 @@ func ConfigureBeaconChain(ctx *cli.Context) error {
 	}
 	if err := configureTestnet(ctx); err != nil {
 		return err
-	}
-
-	cfg.EnableExperimentalState = true
-	if ctx.Bool(disableExperimentalState.Name) {
-		logEnabled(disableExperimentalState)
-		cfg.EnableExperimentalState = false
 	}
 
 	if ctx.Bool(writeSSZStateTransitionsFlag.Name) {
@@ -210,10 +218,6 @@ func ConfigureBeaconChain(ctx *cli.Context) error {
 		logDisabled(disableBroadcastSlashingFlag)
 		cfg.DisableBroadcastSlashings = true
 	}
-	if ctx.Bool(enableSlasherFlag.Name) {
-		log.WithField(enableSlasherFlag.Name, enableSlasherFlag.Usage).Warn(enabledFeatureFlag)
-		cfg.EnableSlasher = true
-	}
 	if ctx.Bool(enableHistoricalSpaceRepresentation.Name) {
 		log.WithField(enableHistoricalSpaceRepresentation.Name, enableHistoricalSpaceRepresentation.Usage).Warn(enabledFeatureFlag)
 		cfg.EnableHistoricalSpaceRepresentation = true
@@ -234,10 +238,18 @@ func ConfigureBeaconChain(ctx *cli.Context) error {
 		logEnabled(enableFullSSZDataLogging)
 		cfg.EnableFullSSZDataLogging = true
 	}
+	if ctx.IsSet(enableHashtree.Name) {
+		logEnabled(enableHashtree)
+		cfg.EnableHashtree = true
+	}
 	cfg.EnableVerboseSigVerification = true
 	if ctx.IsSet(disableVerboseSigVerification.Name) {
 		logEnabled(disableVerboseSigVerification)
 		cfg.EnableVerboseSigVerification = false
+	}
+	cfg.EnableProposerPreprocessing = ctx.Bool(enableProposerPreprocessing.Name)
+	if cfg.EnableProposerPreprocessing {
+		logEnabled(enableProposerPreprocessing)
 	}
 	if ctx.IsSet(prepareAllPayloads.Name) {
 		logEnabled(prepareAllPayloads)
@@ -260,10 +272,6 @@ func ConfigureBeaconChain(ctx *cli.Context) error {
 		logDisabled(DisableQUIC)
 		cfg.EnableQUIC = false
 	}
-	if ctx.IsSet(DisableCommitteeAwarePacking.Name) {
-		logEnabled(DisableCommitteeAwarePacking)
-		cfg.DisableCommitteeAwarePacking = true
-	}
 	if ctx.IsSet(EnableDiscoveryReboot.Name) {
 		logEnabled(EnableDiscoveryReboot)
 		cfg.EnableDiscoveryReboot = true
@@ -272,10 +280,46 @@ func ConfigureBeaconChain(ctx *cli.Context) error {
 		logEnabled(enableExperimentalAttestationPool)
 		cfg.EnableExperimentalAttestationPool = true
 	}
+	if ctx.IsSet(forceHeadFlag.Name) {
+		logEnabled(forceHeadFlag)
+		cfg.ForceHead = ctx.String(forceHeadFlag.Name)
+	}
+	if ctx.IsSet(blacklistRoots.Name) {
+		logEnabled(blacklistRoots)
+		cfg.BlacklistedRoots = parseBlacklistedRoots(ctx.StringSlice(blacklistRoots.Name))
+	}
+
+	cfg.IgnoreUnviableAttestations = false
+	if ctx.IsSet(ignoreUnviableAttestations.Name) && ctx.Bool(ignoreUnviableAttestations.Name) {
+		logEnabled(ignoreUnviableAttestations)
+		cfg.IgnoreUnviableAttestations = true
+	}
+	if ctx.IsSet(EnableStateDiff.Name) {
+		logEnabled(EnableStateDiff)
+		cfg.EnableStateDiff = true
+
+		if ctx.IsSet(enableHistoricalSpaceRepresentation.Name) {
+			log.Warn("--enable-state-diff is enabled, ignoring --enable-historical-space-representation flag.")
+			cfg.EnableHistoricalSpaceRepresentation = false
+		}
+	}
 
 	cfg.AggregateIntervals = [3]time.Duration{aggregateFirstInterval.Value, aggregateSecondInterval.Value, aggregateThirdInterval.Value}
 	Init(cfg)
 	return nil
+}
+
+func parseBlacklistedRoots(blacklistedRoots []string) map[[32]byte]struct{} {
+	roots := make(map[[32]byte]struct{})
+	for _, root := range blacklistedRoots {
+		r, err := bytesutil.DecodeHexWithLength(root, 32)
+		if err != nil {
+			log.WithError(err).WithField("root", root).Warn("Failed to parse blacklisted root")
+			continue
+		}
+		roots[[32]byte(r)] = struct{}{}
+	}
+	return roots
 }
 
 // ConfigureValidator sets the global config based
@@ -290,9 +334,10 @@ func ConfigureValidator(ctx *cli.Context) error {
 		logEnabled(writeWalletPasswordOnWebOnboarding)
 		cfg.WriteWalletPasswordOnWebOnboarding = true
 	}
-	if ctx.Bool(attestTimely.Name) {
-		logEnabled(attestTimely)
-		cfg.AttestTimely = true
+	cfg.AttestTimely = true
+	if ctx.Bool(disableAttestTimely.Name) {
+		logEnabled(disableAttestTimely)
+		cfg.AttestTimely = false
 	}
 	if ctx.Bool(enableSlashingProtectionPruning.Name) {
 		logEnabled(enableSlashingProtectionPruning)
@@ -310,6 +355,15 @@ func ConfigureValidator(ctx *cli.Context) error {
 		logEnabled(EnableBeaconRESTApi)
 		cfg.EnableBeaconRESTApi = true
 	}
+	if ctx.Bool(DisableDutiesV2.Name) {
+		logEnabled(DisableDutiesV2)
+		cfg.DisableDutiesV2 = true
+	}
+	if ctx.Bool(EnableWebFlag.Name) {
+		logEnabled(EnableWebFlag)
+		cfg.EnableWeb = true
+	}
+
 	cfg.KeystoreImportDebounceInterval = ctx.Duration(dynamicKeyReloadDebounceInterval.Name)
 	Init(cfg)
 	return nil
@@ -332,6 +386,22 @@ func complainOnDeprecatedFlags(ctx *cli.Context) {
 	for _, f := range deprecatedFlags {
 		if ctx.IsSet(f.Names()[0]) {
 			log.Errorf("%s is deprecated and has no effect. Do not use this flag, it will be deleted soon.", f.Names()[0])
+		}
+	}
+}
+
+var upcomingDeprecationExtra = map[string]string{
+	enableHistoricalSpaceRepresentation.Name: "The node needs to be resynced after flag removal.",
+}
+
+func warnDeprecationUpcoming(ctx *cli.Context) {
+	for _, f := range upcomingDeprecation {
+		if ctx.IsSet(f.Names()[0]) {
+			extra := "Please remove this flag from your configuration."
+			if special, ok := upcomingDeprecationExtra[f.Names()[0]]; ok {
+				extra += " " + special
+			}
+			log.Warnf("--%s is pending deprecation and will be removed in the next release. %s", f.Names()[0], extra)
 		}
 	}
 }
@@ -372,4 +442,11 @@ func ValidateNetworkFlags(ctx *cli.Context) error {
 		}
 	}
 	return nil
+}
+
+// BlacklistedBlock returns weather the given block root belongs to the list of blacklisted roots.
+func BlacklistedBlock(r [32]byte) bool {
+	blacklisted := Get().BlacklistedRoots
+	_, ok := blacklisted[r]
+	return ok
 }

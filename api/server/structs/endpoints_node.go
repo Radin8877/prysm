@@ -27,14 +27,22 @@ type Identity struct {
 type Metadata struct {
 	SeqNumber string `json:"seq_number"`
 	Attnets   string `json:"attnets"`
+	Syncnets  string `json:"syncnets,omitempty"`
+	Cgc       string `json:"custody_group_count,omitempty"`
 }
 
 type GetPeerResponse struct {
 	Data *Peer `json:"data"`
 }
 
+// Added Meta to align with beacon-api: https://ethereum.github.io/beacon-APIs/#/Node/getPeers
+type Meta struct {
+	Count int `json:"count"`
+}
+
 type GetPeersResponse struct {
 	Data []*Peer `json:"data"`
+	Meta Meta    `json:"meta"`
 }
 
 type Peer struct {
@@ -54,6 +62,19 @@ type PeerCount struct {
 	Connecting    string `json:"connecting"`
 	Connected     string `json:"connected"`
 	Disconnecting string `json:"disconnecting"`
+}
+type GetVersionV2Response struct {
+	Data *VersionV2 `json:"data"`
+}
+type VersionV2 struct {
+	BeaconNode      *ClientVersionV1 `json:"beacon_node"`
+	ExecutionClient *ClientVersionV1 `json:"execution_client,omitempty"`
+}
+type ClientVersionV1 struct {
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
 }
 
 type GetVersionResponse struct {

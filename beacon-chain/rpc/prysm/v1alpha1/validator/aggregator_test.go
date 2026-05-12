@@ -6,30 +6,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/attestations"
-	mockp2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
-	attaggregation "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation/aggregation/attestations"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/go-bitfield"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/attestations"
+	mockp2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
+	attaggregation "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation/aggregation/attestations"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestSubmitAggregateAndProof_Syncing(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s, err := state_native.InitializeFromProtoUnsafePhase0(&ethpb.BeaconState{})
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestSubmitAggregateAndProof_Syncing(t *testing.T) {
 }
 
 func TestSubmitAggregateAndProof_CantFindValidatorIndex(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s, err := state_native.InitializeFromProtoPhase0(&ethpb.BeaconState{
 		RandaoMixes: make([][]byte, params.BeaconConfig().EpochsPerHistoricalVector),
@@ -69,7 +69,7 @@ func TestSubmitAggregateAndProof_CantFindValidatorIndex(t *testing.T) {
 }
 
 func TestSubmitAggregateAndProof_IsAggregatorAndNoAtts(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s, err := state_native.InitializeFromProtoPhase0(&ethpb.BeaconState{
 		RandaoMixes: make([][]byte, params.BeaconConfig().EpochsPerHistoricalVector),
@@ -105,7 +105,7 @@ func TestSubmitAggregateAndProof_UnaggregateOk(t *testing.T) {
 	c.TargetAggregatorsPerCommittee = 16
 	params.OverrideBeaconConfig(c)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	beaconState, privKeys := util.DeterministicGenesisState(t, 32)
 	att0, err := generateUnaggregatedAtt(beaconState, 0, privKeys)
@@ -140,7 +140,7 @@ func TestSubmitAggregateAndProof_AggregateOk(t *testing.T) {
 	c.TargetAggregatorsPerCommittee = 16
 	params.OverrideBeaconConfig(c)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	beaconState, privKeys := util.DeterministicGenesisState(t, 32)
 	att0, err := generateAtt(beaconState, 0, privKeys)
@@ -186,7 +186,7 @@ func TestSubmitAggregateAndProof_AggregateNotOk(t *testing.T) {
 	c.TargetAggregatorsPerCommittee = 16
 	params.OverrideBeaconConfig(c)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	beaconState, _ := util.DeterministicGenesisState(t, 32)
 	require.NoError(t, beaconState.SetSlot(beaconState.Slot()+params.BeaconConfig().MinAttestationInclusionDelay))
@@ -222,7 +222,7 @@ func generateAtt(state state.ReadOnlyBeaconState, index uint64, privKeys []bls.S
 		Data:            &ethpb.AttestationData{CommitteeIndex: 1},
 		AggregationBits: aggBits,
 	})
-	committee, err := helpers.BeaconCommitteeFromState(context.Background(), state, att.Data.Slot, att.Data.CommitteeIndex)
+	committee, err := helpers.BeaconCommitteeFromState(context.TODO(), state, att.Data.Slot, att.Data.CommitteeIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func generateUnaggregatedAtt(state state.ReadOnlyBeaconState, index uint64, priv
 		},
 		AggregationBits: aggBits,
 	})
-	committee, err := helpers.BeaconCommitteeFromState(context.Background(), state, att.Data.Slot, att.Data.CommitteeIndex)
+	committee, err := helpers.BeaconCommitteeFromState(context.TODO(), state, att.Data.Slot, att.Data.CommitteeIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func TestSubmitAggregateAndProof_PreferOwnAttestation(t *testing.T) {
 	c.TargetAggregatorsPerCommittee = 16
 	params.OverrideBeaconConfig(c)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// This test creates 3 attestations. 0 and 2 have the same attestation data and can be
 	// aggregated. 1 has the validator's signature making this request and that is the expected
@@ -354,7 +354,7 @@ func TestSubmitAggregateAndProof_SelectsMostBitsWhenOwnAttestationNotPresent(t *
 	c.TargetAggregatorsPerCommittee = 16
 	params.OverrideBeaconConfig(c)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// This test creates two distinct attestations, neither of which contain the validator's index,
 	// index 0. This test should choose the most bits attestation, att1.
@@ -400,7 +400,9 @@ func TestSubmitAggregateAndProof_SelectsMostBitsWhenOwnAttestationNotPresent(t *
 
 func TestSubmitSignedAggregateSelectionProof_ZeroHashesSignatures(t *testing.T) {
 	aggregatorServer := &Server{
-		TimeFetcher: &mock.ChainService{Genesis: time.Now()},
+		CoreService: &core.Service{
+			GenesisTimeFetcher: &mock.ChainService{Genesis: time.Now()},
+		},
 	}
 	req := &ethpb.SignedAggregateSubmitRequest{
 		SignedAggregateAndProof: &ethpb.SignedAggregateAttestationAndProof{
@@ -412,7 +414,7 @@ func TestSubmitSignedAggregateSelectionProof_ZeroHashesSignatures(t *testing.T) 
 			},
 		},
 	}
-	_, err := aggregatorServer.SubmitSignedAggregateSelectionProof(context.Background(), req)
+	_, err := aggregatorServer.SubmitSignedAggregateSelectionProof(t.Context(), req)
 	require.ErrorContains(t, "signed signatures can't be zero hashes", err)
 
 	req = &ethpb.SignedAggregateSubmitRequest{
@@ -426,7 +428,7 @@ func TestSubmitSignedAggregateSelectionProof_ZeroHashesSignatures(t *testing.T) 
 			},
 		},
 	}
-	_, err = aggregatorServer.SubmitSignedAggregateSelectionProof(context.Background(), req)
+	_, err = aggregatorServer.SubmitSignedAggregateSelectionProof(t.Context(), req)
 	require.ErrorContains(t, "signed signatures can't be zero hashes", err)
 }
 
@@ -448,13 +450,20 @@ func TestSubmitSignedAggregateSelectionProof_InvalidSlot(t *testing.T) {
 			},
 		},
 	}
-	_, err := aggregatorServer.SubmitSignedAggregateSelectionProof(context.Background(), req)
+	_, err := aggregatorServer.SubmitSignedAggregateSelectionProof(t.Context(), req)
 	require.ErrorContains(t, "attestation slot is no longer valid from current time", err)
 }
 
 func TestSubmitSignedAggregateSelectionProofElectra_ZeroHashesSignatures(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	config := params.BeaconConfig()
+	config.ElectraForkEpoch = 0
+	params.OverrideBeaconConfig(config)
+
 	aggregatorServer := &Server{
-		TimeFetcher: &mock.ChainService{Genesis: time.Now()},
+		CoreService: &core.Service{
+			GenesisTimeFetcher: &mock.ChainService{Genesis: time.Now()},
+		},
 	}
 	req := &ethpb.SignedAggregateSubmitElectraRequest{
 		SignedAggregateAndProof: &ethpb.SignedAggregateAttestationAndProofElectra{
@@ -466,7 +475,7 @@ func TestSubmitSignedAggregateSelectionProofElectra_ZeroHashesSignatures(t *test
 			},
 		},
 	}
-	_, err := aggregatorServer.SubmitSignedAggregateSelectionProofElectra(context.Background(), req)
+	_, err := aggregatorServer.SubmitSignedAggregateSelectionProofElectra(t.Context(), req)
 	require.ErrorContains(t, "signed signatures can't be zero hashes", err)
 
 	req = &ethpb.SignedAggregateSubmitElectraRequest{
@@ -480,11 +489,16 @@ func TestSubmitSignedAggregateSelectionProofElectra_ZeroHashesSignatures(t *test
 			},
 		},
 	}
-	_, err = aggregatorServer.SubmitSignedAggregateSelectionProofElectra(context.Background(), req)
+	_, err = aggregatorServer.SubmitSignedAggregateSelectionProofElectra(t.Context(), req)
 	require.ErrorContains(t, "signed signatures can't be zero hashes", err)
 }
 
 func TestSubmitSignedAggregateSelectionProofElectra_InvalidSlot(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	config := params.BeaconConfig()
+	config.ElectraForkEpoch = 0
+	params.OverrideBeaconConfig(config)
+
 	c := &mock.ChainService{Genesis: time.Now()}
 	aggregatorServer := &Server{
 		CoreService: &core.Service{
@@ -502,7 +516,7 @@ func TestSubmitSignedAggregateSelectionProofElectra_InvalidSlot(t *testing.T) {
 			},
 		},
 	}
-	_, err := aggregatorServer.SubmitSignedAggregateSelectionProofElectra(context.Background(), req)
+	_, err := aggregatorServer.SubmitSignedAggregateSelectionProofElectra(t.Context(), req)
 	require.ErrorContains(t, "attestation slot is no longer valid from current time", err)
 }
 

@@ -29,6 +29,68 @@ func (r Requirement) String() string {
 		return "RequireSidecarKzgProofVerified"
 	case RequireSidecarProposerExpected:
 		return "RequireSidecarProposerExpected"
+	case RequireValidFields:
+		return "RequireValidFields"
+	case RequireCorrectSubnet:
+		return "RequireCorrectSubnet"
+	case RequireBlockSeenGloas:
+		return "RequireBlockSeenGloas"
+	case RequireSlotMatchesBlockGloas:
+		return "RequireSlotMatchesBlockGloas"
+	case RequireValidFieldsGloas:
+		return "RequireValidFieldsGloas"
+	case RequireSidecarKzgProofVerifiedGloas:
+		return "RequireSidecarKzgProofVerifiedGloas"
+	case RequireNotSeenGloas:
+		return "RequireNotSeenGloas"
+	case RequireCurrentSlot:
+		return "RequireCurrentSlot"
+	case RequireMessageNotSeen:
+		return "RequireMessageNotSeen"
+	case RequireValidatorInPTC:
+		return "RequireValidatorInPTC"
+	case RequireBlockRootSeen:
+		return "RequireBlockRootSeen"
+	case RequireBlockRootValid:
+		return "RequireBlockRootValid"
+	case RequireSignatureValid:
+		return "RequireSignatureValid"
+	case RequireBuilderValid:
+		return "RequireBuilderValid"
+	case RequirePayloadHashValid:
+		return "RequirePayloadHashValid"
+	case RequireExecutionRequestsRootValid:
+		return "RequireExecutionRequestsRootValid"
+	case RequireEnvelopeSlotAboveFinalized:
+		return "RequireEnvelopeSlotAboveFinalized"
+	case RequireEnvelopeSlotMatchesBlock:
+		return "RequireEnvelopeSlotMatchesBlock"
+	case RequireBuilderSignatureValid:
+		return "RequireBuilderSignatureValid"
+	case RequireBidCurrentOrNextSlot:
+		return "RequireBidCurrentOrNextSlot"
+	case RequireBidBuilderActive:
+		return "RequireBidBuilderActive"
+	case RequireBidExecutionPaymentZero:
+		return "RequireBidExecutionPaymentZero"
+	case RequireBidFeeRecipientMatches:
+		return "RequireBidFeeRecipientMatches"
+	case RequireBidGasLimitMatches:
+		return "RequireBidGasLimitMatches"
+	case RequireBidParentBlockRootSeen:
+		return "RequireBidParentBlockRootSeen"
+	case RequireBidParentBlockHashValid:
+		return "RequireBidParentBlockHashValid"
+	case RequireBidBuilderCanCover:
+		return "RequireBidBuilderCanCover"
+	case RequireBidSignatureValid:
+		return "RequireBidSignatureValid"
+	case RequireProposerPreferencesCurrentOrNextEpoch:
+		return "RequireProposerPreferencesCurrentOrNextEpoch"
+	case RequireProposerPreferencesProposalSlotValid:
+		return "RequireProposerPreferencesProposalSlotValid"
+	case RequireProposerPreferencesSignatureValid:
+		return "RequireProposerPreferencesSignatureValid"
 	default:
 		return unknownRequirementName
 	}
@@ -88,6 +150,11 @@ func (r *results) executed(req Requirement) bool {
 
 func (r *results) result(req Requirement) error {
 	return r.done[req]
+}
+
+func (r *results) cached(req Requirement) (bool, error) {
+	result, ok := r.done[req]
+	return ok, result
 }
 
 func (r *results) errors(err error) error {

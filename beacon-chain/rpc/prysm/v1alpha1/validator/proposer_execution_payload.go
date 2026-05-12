@@ -5,26 +5,27 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/api/client/builder"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	coregloas "github.com/OffchainLabs/prysm/v7/beacon-chain/core/gloas"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	consensusblocks "github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	payloadattribute "github.com/OffchainLabs/prysm/v7/consensus-types/payload-attribute"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prysmaticlabs/prysm/v5/api/client/builder"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	consensusblocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	payloadattribute "github.com/prysmaticlabs/prysm/v5/consensus-types/payload-attribute"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -48,7 +49,7 @@ func setFeeRecipientIfBurnAddress(val *cache.TrackedValidator) {
 }
 
 // This returns the local execution payload of a given slot. The function has full awareness of pre and post merge.
-func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBeaconBlock, st state.BeaconState) (*consensusblocks.GetPayloadResponse, error) {
+func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBeaconBlock, st state.BeaconState, parentFull bool) (*consensusblocks.GetPayloadResponse, error) {
 	ctx, span := trace.StartSpan(ctx, "ProposerServer.getLocalPayload")
 	defer span.End()
 
@@ -60,7 +61,7 @@ func (vs *Server) getLocalPayload(ctx context.Context, blk interfaces.ReadOnlyBe
 	vIdx := blk.ProposerIndex()
 	headRoot := blk.ParentRoot()
 
-	return vs.getLocalPayloadFromEngine(ctx, st, headRoot, slot, vIdx)
+	return vs.getLocalPayloadFromEngine(ctx, st, headRoot, slot, vIdx, parentFull)
 }
 
 // This returns the local execution payload of a slot, proposer ID, and parent root assuming payload Is cached.
@@ -70,7 +71,9 @@ func (vs *Server) getLocalPayloadFromEngine(
 	st state.BeaconState,
 	parentRoot [32]byte,
 	slot primitives.Slot,
-	proposerId primitives.ValidatorIndex) (*consensusblocks.GetPayloadResponse, error) {
+	proposerId primitives.ValidatorIndex,
+	parentFull bool,
+) (*consensusblocks.GetPayloadResponse, error) {
 	logFields := logrus.Fields{
 		"validatorIndex": proposerId,
 		"slot":           slot,
@@ -80,7 +83,7 @@ func (vs *Server) getLocalPayloadFromEngine(
 
 	val, tracked := vs.TrackedValidatorsCache.Validator(proposerId)
 	if !tracked {
-		logrus.WithFields(logFields).Warn("could not find tracked proposer index")
+		logrus.WithFields(logFields).Warn("Could not find tracked proposer index")
 	}
 	setFeeRecipientIfBurnAddress(&val)
 
@@ -102,7 +105,7 @@ func (vs *Server) getLocalPayloadFromEngine(
 		}
 	}
 	log.WithFields(logFields).Debug("Payload ID cache miss")
-	parentHash, err := vs.getParentBlockHash(ctx, st, slot)
+	parentHash, err := vs.getParentBlockHash(ctx, st, slot, parentRoot, parentFull)
 	switch {
 	case errors.Is(err, errActivationNotReached) || errors.Is(err, errNoTerminalBlockHash):
 		return consensusblocks.NewGetPayloadResponse(emptyPayload())
@@ -130,13 +133,29 @@ func (vs *Server) getLocalPayloadFromEngine(
 		FinalizedBlockHash: finalizedBlockHash[:],
 	}
 
-	t, err := slots.ToTime(st.GenesisTime(), slot)
+	t, err := slots.StartTime(st.GenesisTime(), slot)
 	if err != nil {
 		return nil, err
 	}
 	var attr payloadattribute.Attributer
-	switch st.Version() {
-	case version.Deneb, version.Electra, version.Fulu:
+	switch {
+	case st.Version() >= version.Gloas:
+		withdrawals, err := vs.computePayloadWithdrawals(st, parentFull)
+		if err != nil {
+			return nil, err
+		}
+		attr, err = payloadattribute.New(&enginev1.PayloadAttributesV4{
+			Timestamp:             uint64(t.Unix()),
+			PrevRandao:            random,
+			SuggestedFeeRecipient: val.FeeRecipient[:],
+			Withdrawals:           withdrawals,
+			ParentBeaconBlockRoot: parentRoot[:],
+			SlotNumber:            uint64(slot),
+		})
+		if err != nil {
+			return nil, err
+		}
+	case st.Version() >= version.Deneb:
 		withdrawals, _, err := st.ExpectedWithdrawals()
 		if err != nil {
 			return nil, err
@@ -151,7 +170,7 @@ func (vs *Server) getLocalPayloadFromEngine(
 		if err != nil {
 			return nil, err
 		}
-	case version.Capella:
+	case st.Version() == version.Capella:
 		withdrawals, _, err := st.ExpectedWithdrawals()
 		if err != nil {
 			return nil, err
@@ -165,7 +184,7 @@ func (vs *Server) getLocalPayloadFromEngine(
 		if err != nil {
 			return nil, err
 		}
-	case version.Bellatrix:
+	case st.Version() == version.Bellatrix:
 		attr, err = payloadattribute.New(&enginev1.PayloadAttributes{
 			Timestamp:             uint64(t.Unix()),
 			PrevRandao:            random,
@@ -240,7 +259,8 @@ func (vs *Server) getTerminalBlockHashIfExists(ctx context.Context, transitionTi
 func (vs *Server) getBuilderPayloadAndBlobs(ctx context.Context,
 	slot primitives.Slot,
 	vIdx primitives.ValidatorIndex,
-	parentGasLimit uint64) (builder.Bid, error) {
+	parentGasLimit uint64,
+) (builder.Bid, error) {
 	ctx, span := trace.StartSpan(ctx, "ProposerServer.getBuilderPayloadAndBlobs")
 	defer span.End()
 
@@ -259,8 +279,41 @@ func (vs *Server) getBuilderPayloadAndBlobs(ctx context.Context,
 	return vs.getPayloadHeaderFromBuilder(ctx, slot, vIdx, parentGasLimit)
 }
 
-var errActivationNotReached = errors.New("activation epoch not reached")
-var errNoTerminalBlockHash = errors.New("no terminal block hash")
+var (
+	errActivationNotReached = errors.New("activation epoch not reached")
+	errNoTerminalBlockHash  = errors.New("no terminal block hash")
+)
+
+// computePayloadWithdrawals returns the withdrawals for the next payload.
+func (vs *Server) computePayloadWithdrawals(st state.BeaconState, parentFull bool) ([]*enginev1.Withdrawal, error) {
+	if !parentFull {
+		return st.PayloadExpectedWithdrawals()
+	}
+	result, err := st.ExpectedWithdrawalsGloas()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not compute expected withdrawals")
+	}
+	return result.Withdrawals, nil
+}
+
+func (vs *Server) applyParentExecutionPayloadToHead(ctx context.Context, head state.BeaconState, parentRoot [32]byte) error {
+	parentSlot, err := vs.ForkchoiceFetcher.RecentBlockSlot(parentRoot)
+	if err != nil {
+		return errors.Wrap(err, "could not get parent block slot")
+	}
+	if slots.ToEpoch(parentSlot) < params.BeaconConfig().GloasForkEpoch {
+		return nil
+	}
+	// TODO: replace DB lookup with a single-entry cache (blockroot → envelope).
+	envelope, err := vs.BeaconDB.ExecutionPayloadEnvelope(ctx, parentRoot)
+	if err != nil {
+		return errors.Wrap(err, "could not get parent execution payload envelope")
+	}
+	if err := coregloas.ApplyParentExecutionPayload(ctx, head, envelope.Message.ExecutionRequests); err != nil {
+		return errors.Wrap(err, "could not apply parent execution payload")
+	}
+	return nil
+}
 
 // getParentBlockHash retrieves the parent block hash of the block at the given slot.
 // The function's behavior varies depending on the state version and whether the merge has been completed.
@@ -272,7 +325,26 @@ var errNoTerminalBlockHash = errors.New("no terminal block hash")
 // If the activation epoch has not been reached, an errActivationNotReached error is returned.
 //
 // Otherwise, the terminal block hash is fetched based on the slot's time, and an error is returned if it doesn't exist.
-func (vs *Server) getParentBlockHash(ctx context.Context, st state.BeaconState, slot primitives.Slot) ([]byte, error) {
+func (vs *Server) getParentBlockHash(ctx context.Context, st state.BeaconState, slot primitives.Slot, headRoot [32]byte, parentFull bool) ([]byte, error) {
+	if st.Version() >= version.Gloas {
+		parentSlot, err := vs.ForkchoiceFetcher.RecentBlockSlot(headRoot)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get parent block slot")
+		}
+		if slots.ToEpoch(parentSlot) < params.BeaconConfig().GloasForkEpoch {
+			return getParentBlockHashPostCapella(st)
+		}
+		bid, err := st.LatestExecutionPayloadBid()
+		if err != nil {
+			return nil, errors.Wrap(err, "could not get latest execution payload bid")
+		}
+		if parentFull {
+			bh := bid.BlockHash()
+			return bh[:], nil
+		}
+		pbh := bid.ParentBlockHash()
+		return pbh[:], nil
+	}
 	if st.Version() >= version.Capella {
 		return getParentBlockHashPostCapella(st)
 	}
@@ -312,7 +384,7 @@ func getParentBlockHashPostMerge(st state.BeaconState) ([]byte, error) {
 
 // getParentBlockHashPreMerge retrieves the parent block hash before the merge has completed.
 func getParentBlockHashPreMerge(ctx context.Context, vs *Server, st state.BeaconState, slot primitives.Slot) ([]byte, error) {
-	t, err := slots.ToTime(st.GenesisTime(), slot)
+	t, err := slots.StartTime(st.GenesisTime(), slot)
 	if err != nil {
 		return nil, err
 	}

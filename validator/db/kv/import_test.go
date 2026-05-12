@@ -2,25 +2,24 @@ package kv
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/common"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
-	valtest "github.com/prysmaticlabs/prysm/v5/validator/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/common"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
+	valtest "github.com/OffchainLabs/prysm/v7/validator/testing"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestStore_ImportInterchangeData_BadJSON(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	validatorDB := setupDB(t, nil)
 
 	buf := bytes.NewBuffer([]byte("helloworld"))
@@ -30,7 +29,7 @@ func TestStore_ImportInterchangeData_BadJSON(t *testing.T) {
 
 func TestStore_ImportInterchangeData_NilData_FailsSilently(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	validatorDB := setupDB(t, nil)
 
 	interchangeJSON := &format.EIPSlashingProtectionFormat{}
@@ -44,7 +43,7 @@ func TestStore_ImportInterchangeData_NilData_FailsSilently(t *testing.T) {
 }
 
 func TestStore_ImportInterchangeData_BadFormat_PreventsDBWrites(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	numValidators := 10
 	publicKeys, err := valtest.CreateRandomPubKeys(numValidators)
 	require.NoError(t, err)
@@ -73,7 +72,7 @@ func TestStore_ImportInterchangeData_BadFormat_PreventsDBWrites(t *testing.T) {
 	// verify nothing was saved to the DB. If there is an error in the import process, we need to make
 	// sure writing is an atomic operation: either the import succeeds and saves the slashing protection
 	// data to our DB, or it does not.
-	for i := 0; i < len(publicKeys); i++ {
+	for i := range publicKeys {
 		for _, att := range attestingHistory[i] {
 			indexedAtt := &ethpb.IndexedAttestation{
 				Data: &ethpb.AttestationData{
@@ -104,7 +103,7 @@ func TestStore_ImportInterchangeData_BadFormat_PreventsDBWrites(t *testing.T) {
 }
 
 func TestStore_ImportInterchangeData_OK(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	numValidators := 10
 	publicKeys, err := valtest.CreateRandomPubKeys(numValidators)
 	require.NoError(t, err)
@@ -127,7 +126,7 @@ func TestStore_ImportInterchangeData_OK(t *testing.T) {
 
 	// Next, we attempt to retrieve the attesting and proposals histories from our database and
 	// verify those indeed match the originally generated mock histories.
-	for i := 0; i < len(publicKeys); i++ {
+	for i := range publicKeys {
 		for _, att := range attestingHistory[i] {
 			indexedAtt := &ethpb.IndexedAttestation{
 				Data: &ethpb.AttestationData{
@@ -775,14 +774,14 @@ func Test_filterSlashablePubKeysFromBlocks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			historyByPubKey := make(map[[fieldparams.BLSPubkeyLength]byte]common.ProposalHistoryForPubkey)
 			for pubKey, signedBlocks := range tt.given {
 				proposalHistory, err := transformSignedBlocks(ctx, signedBlocks)
 				require.NoError(t, err)
 				historyByPubKey[pubKey] = *proposalHistory
 			}
-			slashablePubKeys := filterSlashablePubKeysFromBlocks(context.Background(), historyByPubKey)
+			slashablePubKeys := filterSlashablePubKeysFromBlocks(t.Context(), historyByPubKey)
 			wantedPubKeys := make(map[[fieldparams.BLSPubkeyLength]byte]bool)
 			for _, pk := range tt.expected {
 				wantedPubKeys[pk] = true
@@ -798,7 +797,7 @@ func Test_filterSlashablePubKeysFromBlocks(t *testing.T) {
 
 func Test_filterSlashablePubKeysFromAttestations(t *testing.T) {
 	// filterSlashablePubKeysFromAttestations is used only for complete slashing protection.
-	ctx := context.Background()
+	ctx := t.Context()
 	tests := []struct {
 		name                 string
 		previousAttsByPubKey map[[fieldparams.BLSPubkeyLength]byte][]*format.SignedAttestation

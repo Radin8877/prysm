@@ -1,26 +1,25 @@
 package state_native_test
 
 import (
-	"context"
 	"reflect"
 	"strconv"
 	"testing"
 
-	statenative "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	statenative "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestBeaconState_ProtoBeaconStateCompatibility(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	genesis := setupGenesisState(t, 64)
 	customState, err := statenative.InitializeFromProtoPhase0(genesis)
 	require.NoError(t, err)
@@ -33,7 +32,7 @@ func TestBeaconState_ProtoBeaconStateCompatibility(t *testing.T) {
 	require.NoError(t, err)
 	beaconState, err := statenative.InitializeFromProtoPhase0(genesis)
 	require.NoError(t, err)
-	r2, err := beaconState.HashTreeRoot(context.Background())
+	r2, err := beaconState.HashTreeRoot(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, r1, r2, "Mismatched roots")
 
@@ -46,14 +45,14 @@ func TestBeaconState_ProtoBeaconStateCompatibility(t *testing.T) {
 	genesis.Balances = balances
 	beaconState, err = statenative.InitializeFromProtoPhase0(genesis)
 	require.NoError(t, err)
-	r2, err = beaconState.HashTreeRoot(context.Background())
+	r2, err = beaconState.HashTreeRoot(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, r1, r2, "Mismatched roots")
 }
 
-func setupGenesisState(tb testing.TB, count uint64) *ethpb.BeaconState {
-	genesisState, _, err := interop.GenerateGenesisState(context.Background(), 0, count)
-	require.NoError(tb, err, "Could not generate genesis beacon state")
+func setupGenesisState(t testing.TB, count uint64) *ethpb.BeaconState {
+	genesisState, _, err := interop.GenerateGenesisState(t.Context(), 0, count)
+	require.NoError(t, err, "Could not generate genesis beacon state")
 	for i := uint64(1); i < count; i++ {
 		var someRoot [32]byte
 		var someKey [fieldparams.BLSPubkeyLength]byte
@@ -75,11 +74,11 @@ func setupGenesisState(tb testing.TB, count uint64) *ethpb.BeaconState {
 }
 
 func BenchmarkCloneValidators_Proto(b *testing.B) {
-	b.StopTimer()
+
 	validators := make([]*ethpb.Validator, 16384)
 	somePubKey := [fieldparams.BLSPubkeyLength]byte{1, 2, 3}
 	someRoot := [32]byte{3, 4, 5}
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			PublicKey:                  somePubKey[:],
 			WithdrawalCredentials:      someRoot[:],
@@ -91,18 +90,18 @@ func BenchmarkCloneValidators_Proto(b *testing.B) {
 			WithdrawableEpoch:          5,
 		}
 	}
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		cloneValidatorsWithProto(validators)
 	}
 }
 
 func BenchmarkCloneValidators_Manual(b *testing.B) {
-	b.StopTimer()
+
 	validators := make([]*ethpb.Validator, 16384)
 	somePubKey := [fieldparams.BLSPubkeyLength]byte{1, 2, 3}
 	someRoot := [32]byte{3, 4, 5}
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			PublicKey:                  somePubKey[:],
 			WithdrawalCredentials:      someRoot[:],
@@ -114,33 +113,33 @@ func BenchmarkCloneValidators_Manual(b *testing.B) {
 			WithdrawableEpoch:          5,
 		}
 	}
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		cloneValidatorsManually(validators)
 	}
 }
 
 func BenchmarkStateClone_Proto(b *testing.B) {
-	b.StopTimer()
+
 	params.SetupTestConfigCleanup(b)
 	params.OverrideBeaconConfig(params.MinimalSpecConfig())
 	genesis := setupGenesisState(b, 64)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, ok := proto.Clone(genesis).(*ethpb.BeaconState)
 		assert.Equal(b, true, ok, "Entity is not of type *ethpb.BeaconState")
 	}
 }
 
 func BenchmarkStateClone_Manual(b *testing.B) {
-	b.StopTimer()
+
 	params.SetupTestConfigCleanup(b)
 	params.OverrideBeaconConfig(params.MinimalSpecConfig())
 	genesis := setupGenesisState(b, 64)
 	st, err := statenative.InitializeFromProtoPhase0(genesis)
 	require.NoError(b, err)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_ = st.ToProto()
 	}
 }
@@ -148,7 +147,7 @@ func BenchmarkStateClone_Manual(b *testing.B) {
 func cloneValidatorsWithProto(vals []*ethpb.Validator) []*ethpb.Validator {
 	var ok bool
 	res := make([]*ethpb.Validator, len(vals))
-	for i := 0; i < len(res); i++ {
+	for i := range res {
 		res[i], ok = proto.Clone(vals[i]).(*ethpb.Validator)
 		if !ok {
 			log.Debug("Entity is not of type *ethpb.Validator")
@@ -159,7 +158,7 @@ func cloneValidatorsWithProto(vals []*ethpb.Validator) []*ethpb.Validator {
 
 func cloneValidatorsManually(vals []*ethpb.Validator) []*ethpb.Validator {
 	res := make([]*ethpb.Validator, len(vals))
-	for i := 0; i < len(res); i++ {
+	for i := range res {
 		val := vals[i]
 		res[i] = &ethpb.Validator{
 			PublicKey:                  val.PublicKey,

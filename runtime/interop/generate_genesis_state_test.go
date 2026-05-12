@@ -1,16 +1,16 @@
 package interop_test
 
 import (
-	"context"
 	"testing"
+	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestGenerateGenesisState(t *testing.T) {
@@ -25,12 +25,12 @@ func TestGenerateGenesisState(t *testing.T) {
 	require.NoError(t, err)
 	root, err := tr.HashTreeRoot()
 	require.NoError(t, err)
-	genesisState, err := transition.GenesisBeaconState(context.Background(), deposits, 0, &eth.Eth1Data{
+	genesisState, err := transition.GenesisBeaconState(t.Context(), deposits, 0, &eth.Eth1Data{
 		DepositRoot:  root[:],
 		DepositCount: uint64(len(deposits)),
 	})
 	require.NoError(t, err)
 	want := int(numValidators)
 	assert.Equal(t, want, genesisState.NumValidators())
-	assert.Equal(t, uint64(0), genesisState.GenesisTime())
+	assert.Equal(t, time.Unix(0, 0), genesisState.GenesisTime())
 }

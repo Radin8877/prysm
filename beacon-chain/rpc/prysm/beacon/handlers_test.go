@@ -2,7 +2,6 @@ package beacon
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,30 +10,30 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	chainMock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	dbTest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	mockp2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	rpctesting "github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/prysm/testing"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	chainMock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	dbTest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	mockp2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	rpctesting "github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/prysm/testing"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 func individualVotesHelper(t *testing.T, request *structs.GetIndividualVotesRequest, s *Server) (string, *structs.GetIndividualVotesResponse) {
@@ -95,7 +94,7 @@ func addDefaultReplayerBuilder(s *Server, h stategen.HistoryAccessor) {
 
 func TestServer_GetIndividualVotes_ValidatorsDontExist(t *testing.T) {
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var slot primitives.Slot = 0
 	validators := uint64(64)
@@ -212,7 +211,7 @@ func TestServer_GetIndividualVotes_ValidatorsDontExist(t *testing.T) {
 func TestServer_GetIndividualVotes_Working(t *testing.T) {
 	helpers.ClearCache()
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	validators := uint64(32)
 	stateWithValidators, _ := util.DeterministicGenesisState(t, validators)
@@ -298,7 +297,7 @@ func TestServer_GetIndividualVotes_Working(t *testing.T) {
 func TestServer_GetIndividualVotes_WorkingAltair(t *testing.T) {
 	helpers.ClearCache()
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var slot primitives.Slot = 0
 	validators := uint64(32)
@@ -380,7 +379,7 @@ func TestServer_GetIndividualVotes_AltairEndOfEpoch(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	params.OverrideBeaconConfig(params.BeaconConfig())
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	validators := uint64(32)
 	beaconState, _ := util.DeterministicGenesisStateAltair(t, validators)
@@ -477,7 +476,7 @@ func TestServer_GetIndividualVotes_BellatrixEndOfEpoch(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	params.OverrideBeaconConfig(params.BeaconConfig())
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	validators := uint64(32)
 	beaconState, _ := util.DeterministicGenesisStateBellatrix(t, validators)
@@ -574,7 +573,7 @@ func TestServer_GetIndividualVotes_CapellaEndOfEpoch(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	params.OverrideBeaconConfig(params.BeaconConfig())
 	beaconDB := dbTest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	validators := uint64(32)
 	beaconState, _ := util.DeterministicGenesisStateCapella(t, validators)
@@ -676,7 +675,7 @@ func TestServer_GetChainHead_NoGenesis(t *testing.T) {
 
 	genBlock := util.NewBeaconBlock()
 	genBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'G'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, genBlock)
+	util.SaveBlock(t, t.Context(), db, genBlock)
 	gRoot, err := genBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 	cases := []struct {
@@ -744,10 +743,10 @@ func TestServer_GetChainHead_NoFinalizedBlock(t *testing.T) {
 
 	genBlock := util.NewBeaconBlock()
 	genBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'G'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, genBlock)
+	util.SaveBlock(t, t.Context(), db, genBlock)
 	gRoot, err := genBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
-	require.NoError(t, db.SaveGenesisBlockRoot(context.Background(), gRoot))
+	require.NoError(t, db.SaveGenesisBlockRoot(t.Context(), gRoot))
 
 	wsb, err := blocks.NewSignedBeaconBlock(genBlock)
 	require.NoError(t, err)
@@ -798,29 +797,29 @@ func TestServer_GetChainHead(t *testing.T) {
 	db := dbTest.SetupDB(t)
 	genBlock := util.NewBeaconBlock()
 	genBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'G'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, genBlock)
+	util.SaveBlock(t, t.Context(), db, genBlock)
 	gRoot, err := genBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
-	require.NoError(t, db.SaveGenesisBlockRoot(context.Background(), gRoot))
+	require.NoError(t, db.SaveGenesisBlockRoot(t.Context(), gRoot))
 
 	finalizedBlock := util.NewBeaconBlock()
 	finalizedBlock.Block.Slot = 1
 	finalizedBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'A'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, finalizedBlock)
+	util.SaveBlock(t, t.Context(), db, finalizedBlock)
 	fRoot, err := finalizedBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 
 	justifiedBlock := util.NewBeaconBlock()
 	justifiedBlock.Block.Slot = 2
 	justifiedBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'B'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, justifiedBlock)
+	util.SaveBlock(t, t.Context(), db, justifiedBlock)
 	jRoot, err := justifiedBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 
 	prevJustifiedBlock := util.NewBeaconBlock()
 	prevJustifiedBlock.Block.Slot = 3
 	prevJustifiedBlock.Block.ParentRoot = bytesutil.PadTo([]byte{'C'}, fieldparams.RootLength)
-	util.SaveBlock(t, context.Background(), db, prevJustifiedBlock)
+	util.SaveBlock(t, t.Context(), db, prevJustifiedBlock)
 	pjRoot, err := prevJustifiedBlock.Block.HashTreeRoot()
 	require.NoError(t, err)
 
@@ -1018,6 +1017,11 @@ func TestPublishBlobs_BadBlockRoot(t *testing.T) {
 }
 
 func TestPublishBlobs(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	cfg := params.BeaconConfig().Copy()
+	cfg.DenebForkEpoch = 0 // Set Deneb fork to epoch 0 so slot 0 is valid
+	params.OverrideBeaconConfig(cfg)
+
 	server := &Server{
 		BlobReceiver: &chainMock.ChainService{},
 		Broadcaster:  &mockp2p.MockBroadcaster{},
@@ -1032,4 +1036,95 @@ func TestPublishBlobs(t *testing.T) {
 
 	assert.Equal(t, len(server.BlobReceiver.(*chainMock.ChainService).Blobs), 1)
 	assert.Equal(t, server.Broadcaster.(*mockp2p.MockBroadcaster).BroadcastCalled.Load(), true)
+}
+
+func TestPublishBlobs_PreDeneb(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	cfg := params.BeaconConfig().Copy()
+	cfg.DenebForkEpoch = 10 // Set Deneb fork to epoch 10, so slot 0 is pre-Deneb
+	params.OverrideBeaconConfig(cfg)
+
+	server := &Server{
+		BlobReceiver: &chainMock.ChainService{},
+		Broadcaster:  &mockp2p.MockBroadcaster{},
+		SyncChecker:  &mockSync.Sync{IsSyncing: false},
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "http://foo.example", bytes.NewReader([]byte(rpctesting.PublishBlobsRequest)))
+	writer := httptest.NewRecorder()
+	writer.Body = &bytes.Buffer{}
+	server.PublishBlobs(writer, request)
+	assert.Equal(t, http.StatusBadRequest, writer.Code)
+	assert.StringContains(t, "Blob sidecars not supported for pre deneb", writer.Body.String())
+
+	assert.Equal(t, len(server.BlobReceiver.(*chainMock.ChainService).Blobs), 0)
+	assert.Equal(t, server.Broadcaster.(*mockp2p.MockBroadcaster).BroadcastCalled.Load(), false)
+}
+
+func TestPublishBlobs_PostFulu(t *testing.T) {
+	params.SetupTestConfigCleanup(t)
+	cfg := params.BeaconConfig().Copy()
+	cfg.DenebForkEpoch = 0
+	cfg.FuluForkEpoch = 0 // Set Fulu fork to epoch 0
+	params.OverrideBeaconConfig(cfg)
+
+	server := &Server{
+		BlobReceiver: &chainMock.ChainService{},
+		Broadcaster:  &mockp2p.MockBroadcaster{},
+		SyncChecker:  &mockSync.Sync{IsSyncing: false},
+	}
+
+	// Create a custom request with a slot in epoch 1 (which is > FuluForkEpoch of 0)
+	postFuluRequest := fmt.Sprintf(`{
+		"block_root" : "0x0000000000000000000000000000000000000000000000000000000000000000",
+		"blob_sidecars" : {
+		   "sidecars" : [
+			  {
+				 "blob" : "%s",
+				 "index" : "0",
+				 "kzg_commitment" : "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+				 "kzg_commitment_inclusion_proof" : [
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000",
+					"0x0000000000000000000000000000000000000000000000000000000000000000"
+				 ],
+				 "kzg_proof" : "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+				 "signed_block_header" : {
+					"message" : {
+					   "body_root" : "0x0000000000000000000000000000000000000000000000000000000000000000",
+					   "parent_root" : "0x0000000000000000000000000000000000000000000000000000000000000000",
+					   "proposer_index" : "0",
+					   "slot" : "33",
+					   "state_root" : "0x0000000000000000000000000000000000000000000000000000000000000000"
+					},
+					"signature" : "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+				 }
+			  }
+		   ]
+		}
+	 }`, rpctesting.Blob)
+
+	request := httptest.NewRequest(http.MethodPost, "http://foo.example", bytes.NewReader([]byte(postFuluRequest)))
+	writer := httptest.NewRecorder()
+	writer.Body = &bytes.Buffer{}
+	server.PublishBlobs(writer, request)
+	assert.Equal(t, http.StatusBadRequest, writer.Code)
+	assert.StringContains(t, "Blob sidecars not supported for post fulu blobs", writer.Body.String())
+
+	assert.Equal(t, len(server.BlobReceiver.(*chainMock.ChainService).Blobs), 0)
+	assert.Equal(t, server.Broadcaster.(*mockp2p.MockBroadcaster).BroadcastCalled.Load(), false)
 }

@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/io/logs/mock"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	validatormock "github.com/OffchainLabs/prysm/v7/testing/validator-mock"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/prysmaticlabs/prysm/v5/api"
-	"github.com/prysmaticlabs/prysm/v5/io/logs/mock"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	validatormock "github.com/prysmaticlabs/prysm/v5/testing/validator-mock"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 )
@@ -38,7 +38,7 @@ func (m *MockBeaconNodeHealthClient) Recv() (*pb.LogsResponse, error) {
 	return log, nil
 }
 
-func (m *MockBeaconNodeHealthClient) SendMsg(_ interface{}) error {
+func (m *MockBeaconNodeHealthClient) SendMsg(_ any) error {
 	return m.err
 }
 
@@ -72,7 +72,7 @@ func TestStreamBeaconLogs(t *testing.T) {
 
 	// Setting up the mock in the server struct
 	s := Server{
-		ctx:          context.Background(),
+		ctx:          t.Context(),
 		healthClient: mockClient,
 	}
 
@@ -107,7 +107,7 @@ func TestStreamBeaconLogs(t *testing.T) {
 }
 
 func TestStreamValidatorLogs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	mockLogs := [][]byte{
 		[]byte("[2023-10-31 10:00:00] INFO: Starting server..."),
 		[]byte("[2023-10-31 10:01:23] DEBUG: Database connection established."),
@@ -166,7 +166,7 @@ func TestStreamValidatorLogs(t *testing.T) {
 func TestServer_GetVersion(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-	ctx := context.Background()
+	ctx := t.Context()
 	mockNodeClient := validatormock.NewMockNodeClient(ctrl)
 	s := Server{
 		ctx:        ctx,

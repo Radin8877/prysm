@@ -2,17 +2,19 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
+	log "github.com/sirupsen/logrus"
 )
 
 // GetDepositContract retrieves deposit contract address and genesis fork version.
@@ -33,34 +35,26 @@ func GetForkSchedule(w http.ResponseWriter, r *http.Request) {
 	_, span := trace.StartSpan(r.Context(), "config.GetForkSchedule")
 	defer span.End()
 
-	schedule := params.BeaconConfig().ForkVersionSchedule
+	schedule := params.SortedForkSchedule()
+	data := make([]*structs.Fork, 0, len(schedule))
 	if len(schedule) == 0 {
 		httputil.WriteJson(w, &structs.GetForkScheduleResponse{
-			Data: make([]*structs.Fork, 0),
+			Data: data,
 		})
 		return
 	}
-
-	versions := forks.SortedForkVersions(schedule)
-	chainForks := make([]*structs.Fork, len(schedule))
-	var previous, current []byte
-	for i, v := range versions {
-		if i == 0 {
-			previous = params.BeaconConfig().GenesisForkVersion
-		} else {
-			previous = current
-		}
-		copyV := v
-		current = copyV[:]
-		chainForks[i] = &structs.Fork{
-			PreviousVersion: hexutil.Encode(previous),
-			CurrentVersion:  hexutil.Encode(current),
-			Epoch:           fmt.Sprintf("%d", schedule[v]),
-		}
+	previous := schedule[0]
+	for _, entry := range schedule {
+		data = append(data, &structs.Fork{
+			PreviousVersion: hexutil.Encode(previous.ForkVersion[:]),
+			CurrentVersion:  hexutil.Encode(entry.ForkVersion[:]),
+			Epoch:           fmt.Sprintf("%d", entry.Epoch),
+		})
+		previous = entry
 	}
 
 	httputil.WriteJson(w, &structs.GetForkScheduleResponse{
-		Data: chainForks,
+		Data: data,
 	})
 }
 
@@ -80,39 +74,137 @@ func GetSpec(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJson(w, &structs.GetSpecResponse{Data: data})
 }
 
-func prepareConfigSpec() (map[string]string, error) {
-	data := make(map[string]string)
+func convertValueForJSON(v reflect.Value, tag string) any {
+	// Unwrap pointers / interfaces
+	for v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	// ===== Single byte → 0xAB =====
+	case reflect.Uint8:
+		return hexutil.Encode([]byte{uint8(v.Uint())})
+
+	// ===== Other unsigned numbers → "123" =====
+	case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return strconv.FormatUint(v.Uint(), 10)
+
+	// ===== Signed numbers → "123" =====
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(v.Int(), 10)
+
+	// ===== Raw bytes – encode to hex =====
+	case reflect.Slice:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return hexutil.Encode(v.Bytes())
+		}
+		fallthrough
+	case reflect.Array:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			// Need a copy because v.Slice is illegal on arrays directly
+			tmp := make([]byte, v.Len())
+			reflect.Copy(reflect.ValueOf(tmp), v)
+			return hexutil.Encode(tmp)
+		}
+		// Generic slice/array handling
+		n := v.Len()
+		out := make([]any, n)
+		for i := range n {
+			out[i] = convertValueForJSON(v.Index(i), tag)
+		}
+		return out
+
+	// ===== Struct =====
+	case reflect.Struct:
+		t := v.Type()
+		m := make(map[string]any, v.NumField())
+		for i := 0; i < v.NumField(); i++ {
+			f := t.Field(i)
+			if !v.Field(i).CanInterface() {
+				continue // unexported
+			}
+			jsonTag := f.Tag.Get("json")
+			if jsonTag == "-" {
+				continue
+			}
+
+			// Parse JSON tag options (e.g., "fieldname,omitempty")
+			parts := strings.Split(jsonTag, ",")
+			key := parts[0]
+
+			if key == "" {
+				key = f.Name
+			}
+
+			fieldValue := convertValueForJSON(v.Field(i), tag)
+			m[key] = fieldValue
+		}
+		return m
+
+	// ===== String =====
+	case reflect.String:
+		return v.String()
+
+	// ===== Default =====
+	default:
+		log.WithFields(log.Fields{
+			"fn":   "prepareConfigSpec",
+			"tag":  tag,
+			"kind": v.Kind().String(),
+			"type": v.Type().String(),
+		}).Error("Unsupported config field kind; value forwarded verbatim")
+		return v.Interface()
+	}
+}
+
+func prepareConfigSpec() (map[string]any, error) {
+	data := make(map[string]any)
 	config := *params.BeaconConfig()
-	t := reflect.TypeOf(config)
+
+	t := reflect.TypeFor[params.BeaconChainConfig]()
 	v := reflect.ValueOf(config)
 
 	for i := 0; i < t.NumField(); i++ {
 		tField := t.Field(i)
-		_, isSpecField := tField.Tag.Lookup("spec")
-		if !isSpecField {
-			// Field should not be returned from API.
+		specTag, isSpec := tField.Tag.Lookup("spec")
+		if !isSpec || specTag != "true" {
+			continue
+		}
+		if shouldSkip(tField) {
 			continue
 		}
 
-		tagValue := strings.ToUpper(tField.Tag.Get("yaml"))
-		vField := v.Field(i)
-		switch vField.Kind() {
-		case reflect.Int:
-			data[tagValue] = strconv.FormatInt(vField.Int(), 10)
-		case reflect.Uint64:
-			data[tagValue] = strconv.FormatUint(vField.Uint(), 10)
-		case reflect.Slice:
-			data[tagValue] = hexutil.Encode(vField.Bytes())
-		case reflect.Array:
-			data[tagValue] = hexutil.Encode(reflect.ValueOf(&config).Elem().Field(i).Slice(0, vField.Len()).Bytes())
-		case reflect.String:
-			data[tagValue] = vField.String()
-		case reflect.Uint8:
-			data[tagValue] = hexutil.Encode([]byte{uint8(vField.Uint())})
-		default:
-			return nil, fmt.Errorf("unsupported config field type: %s", vField.Kind().String())
-		}
+		tag := strings.ToUpper(tField.Tag.Get("yaml"))
+		val := v.Field(i)
+		data[tag] = convertValueForJSON(val, tag)
 	}
 
+	// Add Fulu preset values. These are compile-time constants from fieldparams,
+	// not runtime configs, but are required by the /eth/v1/config/spec API.
+	data["NUMBER_OF_COLUMNS"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.NumberOfColumns)), "NUMBER_OF_COLUMNS")
+	data["CELLS_PER_EXT_BLOB"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.NumberOfColumns)), "CELLS_PER_EXT_BLOB")
+	data["FIELD_ELEMENTS_PER_CELL"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.CellsPerBlob)), "FIELD_ELEMENTS_PER_CELL")
+	data["FIELD_ELEMENTS_PER_EXT_BLOB"] = convertValueForJSON(reflect.ValueOf(config.FieldElementsPerBlob*2), "FIELD_ELEMENTS_PER_EXT_BLOB")
+	data["KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH"] = convertValueForJSON(reflect.ValueOf(uint64(4)), "KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH")
+	// UPDATE_TIMEOUT is derived from SLOTS_PER_EPOCH * EPOCHS_PER_SYNC_COMMITTEE_PERIOD
+	data["UPDATE_TIMEOUT"] = convertValueForJSON(reflect.ValueOf(uint64(config.SlotsPerEpoch)*uint64(config.EpochsPerSyncCommitteePeriod)), "UPDATE_TIMEOUT")
+	// Add Gloas config values from fieldparams required by the /eth/v1/config/spec API.
+	data["PTC_SIZE"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.PTCSize)), "PTC_SIZE")
+	data["MAX_PAYLOAD_ATTESTATIONS"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.MaxPayloadAttestations)), "MAX_PAYLOAD_ATTESTATIONS")
+	data["BUILDER_REGISTRY_LIMIT"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.BuilderRegistryLimit)), "BUILDER_REGISTRY_LIMIT")
+	data["BUILDER_PENDING_WITHDRAWALS_LIMIT"] = convertValueForJSON(reflect.ValueOf(uint64(fieldparams.BuilderPendingWithdrawalsLimit)), "BUILDER_PENDING_WITHDRAWALS_LIMIT")
+
 	return data, nil
+}
+
+func shouldSkip(tField reflect.StructField) bool {
+	// Dynamically skip blob schedule if Fulu is not yet scheduled.
+	if params.BeaconConfig().FuluForkEpoch == math.MaxUint64 &&
+		tField.Type == reflect.TypeOf(params.BeaconConfig().BlobSchedule) {
+		return true
+	}
+	return false
 }

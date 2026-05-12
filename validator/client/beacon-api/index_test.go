@@ -2,19 +2,19 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/url"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/apiutil"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -38,12 +38,12 @@ func TestIndex_Nominal(t *testing.T) {
 	defer ctrl.Finish()
 
 	pubKey, reqBuffer := getPubKeyAndReqBuffer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	stateValidatorsResponseJson := structs.GetValidatorsResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	jsonRestHandler.EXPECT().Post(
+	handler.EXPECT().Post(
 		gomock.Any(),
 		"/eth/v1/beacon/states/head/validators",
 		nil,
@@ -68,7 +68,7 @@ func TestIndex_Nominal(t *testing.T) {
 
 	validatorClient := beaconApiValidatorClient{
 		stateValidatorsProvider: beaconApiStateValidatorsProvider{
-			jsonRestHandler: jsonRestHandler,
+			handler: handler,
 		},
 	}
 
@@ -88,12 +88,12 @@ func TestIndex_UnexistingValidator(t *testing.T) {
 	defer ctrl.Finish()
 
 	pubKey, reqBuffer := getPubKeyAndReqBuffer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	stateValidatorsResponseJson := structs.GetValidatorsResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	jsonRestHandler.EXPECT().Post(
+	handler.EXPECT().Post(
 		gomock.Any(),
 		"/eth/v1/beacon/states/head/validators",
 		nil,
@@ -110,7 +110,7 @@ func TestIndex_UnexistingValidator(t *testing.T) {
 
 	validatorClient := beaconApiValidatorClient{
 		stateValidatorsProvider: beaconApiStateValidatorsProvider{
-			jsonRestHandler: jsonRestHandler,
+			handler: handler,
 		},
 	}
 
@@ -130,12 +130,12 @@ func TestIndex_BadIndexError(t *testing.T) {
 	defer ctrl.Finish()
 
 	pubKey, reqBuffer := getPubKeyAndReqBuffer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	stateValidatorsResponseJson := structs.GetValidatorsResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	jsonRestHandler.EXPECT().Post(
+	handler.EXPECT().Post(
 		gomock.Any(),
 		"/eth/v1/beacon/states/head/validators",
 		nil,
@@ -160,7 +160,7 @@ func TestIndex_BadIndexError(t *testing.T) {
 
 	validatorClient := beaconApiValidatorClient{
 		stateValidatorsProvider: beaconApiStateValidatorsProvider{
-			jsonRestHandler: jsonRestHandler,
+			handler: handler,
 		},
 	}
 
@@ -179,12 +179,12 @@ func TestIndex_JsonResponseError(t *testing.T) {
 	defer ctrl.Finish()
 
 	pubKey, reqBuffer := getPubKeyAndReqBuffer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	stateValidatorsResponseJson := structs.GetValidatorsResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+	handler := mock.NewMockJsonRestHandler(ctrl)
 
-	jsonRestHandler.EXPECT().Post(
+	handler.EXPECT().Post(
 		gomock.Any(),
 		"/eth/v1/beacon/states/head/validators",
 		nil,
@@ -207,9 +207,9 @@ func TestIndex_JsonResponseError(t *testing.T) {
 		queryParams.Add("status", st)
 	}
 
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
-		buildURL("/eth/v1/beacon/states/head/validators", queryParams),
+		apiutil.BuildURL("/eth/v1/beacon/states/head/validators", queryParams),
 		&stateValidatorsResponseJson,
 	).Return(
 		errors.New("some specific json error"),
@@ -217,7 +217,7 @@ func TestIndex_JsonResponseError(t *testing.T) {
 
 	validatorClient := beaconApiValidatorClient{
 		stateValidatorsProvider: beaconApiStateValidatorsProvider{
-			jsonRestHandler: jsonRestHandler,
+			handler: handler,
 		},
 	}
 

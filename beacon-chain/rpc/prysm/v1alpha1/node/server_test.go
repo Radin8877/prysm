@@ -1,27 +1,28 @@
 package node
 
 import (
-	"context"
 	"errors"
+	"maps"
 	"testing"
 	"time"
 
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbutil "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	mockP2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/testutil"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbutil "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	mockP2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/testutil"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -32,18 +33,18 @@ func TestNodeServer_GetSyncStatus(t *testing.T) {
 	ns := &Server{
 		SyncChecker: mSync,
 	}
-	res, err := ns.GetSyncStatus(context.Background(), &emptypb.Empty{})
+	res, err := ns.GetSyncStatus(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, false, res.Syncing)
 	ns.SyncChecker = &mockSync.Sync{IsSyncing: true}
-	res, err = ns.GetSyncStatus(context.Background(), &emptypb.Empty{})
+	res, err = ns.GetSyncStatus(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, true, res.Syncing)
 }
 
 func TestNodeServer_GetGenesis(t *testing.T) {
 	db := dbutil.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	addr := common.Address{1, 2, 3}
 	require.NoError(t, db.SaveDepositContractAddress(ctx, addr))
 	st, err := util.NewBeaconState()
@@ -57,7 +58,7 @@ func TestNodeServer_GetGenesis(t *testing.T) {
 			ValidatorsRoot: genValRoot,
 		},
 	}
-	res, err := ns.GetGenesis(context.Background(), &emptypb.Empty{})
+	res, err := ns.GetGenesis(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.DeepEqual(t, addr.Bytes(), res.DepositContractAddress)
 	pUnix := timestamppb.New(time.Unix(0, 0))
@@ -65,7 +66,7 @@ func TestNodeServer_GetGenesis(t *testing.T) {
 	assert.DeepEqual(t, genValRoot[:], res.GenesisValidatorsRoot)
 
 	ns.GenesisTimeFetcher = &mock.ChainService{Genesis: time.Unix(10, 0)}
-	res, err = ns.GetGenesis(context.Background(), &emptypb.Empty{})
+	res, err = ns.GetGenesis(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	pUnix = timestamppb.New(time.Unix(10, 0))
 	assert.Equal(t, res.GenesisTime.Seconds, pUnix.Seconds)
@@ -74,7 +75,7 @@ func TestNodeServer_GetGenesis(t *testing.T) {
 func TestNodeServer_GetVersion(t *testing.T) {
 	v := version.Version()
 	ns := &Server{}
-	res, err := ns.GetVersion(context.Background(), &emptypb.Empty{})
+	res, err := ns.GetVersion(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, v, res.Version)
 }
@@ -87,7 +88,7 @@ func TestNodeServer_GetImplementedServices(t *testing.T) {
 	ethpb.RegisterNodeServer(server, ns)
 	reflection.Register(server)
 
-	res, err := ns.ListImplementedServices(context.Background(), &emptypb.Empty{})
+	res, err := ns.ListImplementedServices(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	// Expecting node service and Server reflect. As of grpc, v1.65.0, there are two version of server reflection
 	// Services: [ethereum.eth.v1alpha1.Node grpc.reflection.v1.ServerReflection grpc.reflection.v1alpha.ServerReflection]
@@ -112,7 +113,7 @@ func TestNodeServer_GetHost(t *testing.T) {
 	}
 	ethpb.RegisterNodeServer(server, ns)
 	reflection.Register(server)
-	h, err := ns.GetHost(context.Background(), &emptypb.Empty{})
+	h, err := ns.GetHost(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, mP2P.PeerID().String(), h.PeerId)
 	assert.Equal(t, stringENR, h.Enr)
@@ -127,7 +128,7 @@ func TestNodeServer_GetPeer(t *testing.T) {
 	ethpb.RegisterNodeServer(server, ns)
 	reflection.Register(server)
 
-	res, err := ns.GetPeer(context.Background(), &ethpb.PeerRequest{PeerId: mockP2p.MockRawPeerId0})
+	res, err := ns.GetPeer(t.Context(), &ethpb.PeerRequest{PeerId: mockP2p.MockRawPeerId0})
 	require.NoError(t, err)
 	assert.Equal(t, "16Uiu2HAkyWZ4Ni1TpvDS8dPxsozmHY85KaiFjodQuV6Tz5tkHVeR" /* first peer's raw id */, res.PeerId, "Unexpected peer ID")
 	assert.Equal(t, int(ethpb.PeerDirection_INBOUND), int(res.Direction), "Expected 1st peer to be an inbound connection")
@@ -143,7 +144,7 @@ func TestNodeServer_ListPeers(t *testing.T) {
 	ethpb.RegisterNodeServer(server, ns)
 	reflection.Register(server)
 
-	res, err := ns.ListPeers(context.Background(), &emptypb.Empty{})
+	res, err := ns.ListPeers(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(res.Peers))
 
@@ -182,38 +183,77 @@ func TestNodeServer_GetETH1ConnectionStatus(t *testing.T) {
 	ethpb.RegisterNodeServer(server, ns)
 	reflection.Register(server)
 
-	res, err := ns.GetETH1ConnectionStatus(context.Background(), &emptypb.Empty{})
+	res, err := ns.GetETH1ConnectionStatus(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, ep, res.CurrentAddress)
 	assert.Equal(t, errStr, res.CurrentConnectionError)
 }
 
+// mockServerTransportStream implements grpc.ServerTransportStream for testing
+type mockServerTransportStream struct {
+	headers map[string][]string
+}
+
+func (m *mockServerTransportStream) Method() string { return "" }
+func (m *mockServerTransportStream) SetHeader(md metadata.MD) error {
+	maps.Copy(m.headers, md)
+	return nil
+}
+func (m *mockServerTransportStream) SendHeader(metadata.MD) error { return nil }
+func (m *mockServerTransportStream) SetTrailer(metadata.MD) error { return nil }
+
 func TestNodeServer_GetHealth(t *testing.T) {
 	tests := []struct {
 		name         string
 		input        *mockSync.Sync
-		customStatus uint64
+		isOptimistic bool
 		wantedErr    string
 	}{
 		{
-			name:  "happy path",
-			input: &mockSync.Sync{IsSyncing: false, IsSynced: true},
+			name:         "happy path - synced and not optimistic",
+			input:        &mockSync.Sync{IsSyncing: false, IsSynced: true},
+			isOptimistic: false,
 		},
 		{
-			name:      "syncing",
-			input:     &mockSync.Sync{IsSyncing: false},
-			wantedErr: "service unavailable",
+			name:         "returns error when not synced and not syncing",
+			input:        &mockSync.Sync{IsSyncing: false, IsSynced: false},
+			isOptimistic: false,
+			wantedErr:    "service unavailable",
+		},
+		{
+			name:         "returns error when syncing",
+			input:        &mockSync.Sync{IsSyncing: true, IsSynced: false},
+			isOptimistic: false,
+			wantedErr:    "node is syncing",
+		},
+		{
+			name:         "returns error when synced but optimistic",
+			input:        &mockSync.Sync{IsSyncing: false, IsSynced: true},
+			isOptimistic: true,
+			wantedErr:    "node is optimistic",
+		},
+		{
+			name:         "returns error when syncing and optimistic",
+			input:        &mockSync.Sync{IsSyncing: true, IsSynced: false},
+			isOptimistic: true,
+			wantedErr:    "node is syncing",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := grpc.NewServer()
 			ns := &Server{
-				SyncChecker: tt.input,
+				SyncChecker:           tt.input,
+				OptimisticModeFetcher: &mock.ChainService{Optimistic: tt.isOptimistic},
 			}
 			ethpb.RegisterNodeServer(server, ns)
 			reflection.Register(server)
-			_, err := ns.GetHealth(context.Background(), &ethpb.HealthRequest{SyncingStatus: tt.customStatus})
+
+			// Create context with mock transport stream so grpc.SetHeader works
+			stream := &mockServerTransportStream{headers: make(map[string][]string)}
+			ctx := grpc.NewContextWithServerTransportStream(t.Context(), stream)
+
+			_, err := ns.GetHealth(ctx, &ethpb.HealthRequest{})
 			if tt.wantedErr == "" {
 				require.NoError(t, err)
 				return

@@ -2,18 +2,17 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -43,10 +42,10 @@ func TestSubscribeCommitteeSubnets_Valid(t *testing.T) {
 	committeeSubscriptionsBytes, err := json.Marshal(jsonCommitteeSubscriptions)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Post(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Post(
 		gomock.Any(),
 		subscribeCommitteeSubnetsTestEndpoint,
 		nil,
@@ -67,7 +66,7 @@ func TestSubscribeCommitteeSubnets_Valid(t *testing.T) {
 	}
 
 	validatorClient := &beaconApiValidatorClient{
-		jsonRestHandler: jsonRestHandler,
+		handler: handler,
 	}
 	err = validatorClient.subscribeCommitteeSubnets(
 		ctx,
@@ -76,7 +75,7 @@ func TestSubscribeCommitteeSubnets_Valid(t *testing.T) {
 			CommitteeIds: committeeIndices,
 			IsAggregator: isAggregator,
 		},
-		[]*ethpb.DutiesResponse_Duty{
+		[]*ethpb.ValidatorDuty{
 			{
 				ValidatorIndex:   validatorIndices[0],
 				CommitteesAtSlot: committeesAtSlot[0],
@@ -100,7 +99,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 	testCases := []struct {
 		name                    string
 		subscribeRequest        *ethpb.CommitteeSubnetsSubscribeRequest
-		duties                  []*ethpb.DutiesResponse_Duty
+		duties                  []*ethpb.ValidatorDuty
 		expectSubscribeRestCall bool
 		expectedErrorMessage    string
 	}{
@@ -116,7 +115,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 				Slots:        []primitives.Slot{1, 2},
 				IsAggregator: []bool{false, true},
 			},
-			duties: []*ethpb.DutiesResponse_Duty{
+			duties: []*ethpb.ValidatorDuty{
 				{
 					ValidatorIndex:   1,
 					CommitteesAtSlot: 1,
@@ -135,7 +134,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 				Slots:        []primitives.Slot{1},
 				IsAggregator: []bool{false, true},
 			},
-			duties: []*ethpb.DutiesResponse_Duty{
+			duties: []*ethpb.ValidatorDuty{
 				{
 					ValidatorIndex:   1,
 					CommitteesAtSlot: 1,
@@ -154,7 +153,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 				Slots:        []primitives.Slot{1, 2},
 				IsAggregator: []bool{false},
 			},
-			duties: []*ethpb.DutiesResponse_Duty{
+			duties: []*ethpb.ValidatorDuty{
 				{
 					ValidatorIndex:   1,
 					CommitteesAtSlot: 1,
@@ -173,7 +172,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 				Slots:        []primitives.Slot{1, 2},
 				IsAggregator: []bool{false, true},
 			},
-			duties: []*ethpb.DutiesResponse_Duty{
+			duties: []*ethpb.ValidatorDuty{
 				{
 					ValidatorIndex:   1,
 					CommitteesAtSlot: 1,
@@ -188,7 +187,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 				CommitteeIds: []primitives.CommitteeIndex{2},
 				IsAggregator: []bool{false},
 			},
-			duties: []*ethpb.DutiesResponse_Duty{
+			duties: []*ethpb.ValidatorDuty{
 				{
 					ValidatorIndex:   1,
 					CommitteesAtSlot: 1,
@@ -204,11 +203,11 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			ctx := context.Background()
+			ctx := t.Context()
 
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+			handler := mock.NewMockJsonRestHandler(ctrl)
 			if testCase.expectSubscribeRestCall {
-				jsonRestHandler.EXPECT().Post(
+				handler.EXPECT().Post(
 					gomock.Any(),
 					subscribeCommitteeSubnetsTestEndpoint,
 					gomock.Any(),
@@ -220,7 +219,7 @@ func TestSubscribeCommitteeSubnets_Error(t *testing.T) {
 			}
 
 			validatorClient := &beaconApiValidatorClient{
-				jsonRestHandler: jsonRestHandler,
+				handler: handler,
 			}
 			err := validatorClient.subscribeCommitteeSubnets(ctx, testCase.subscribeRequest, testCase.duties)
 			assert.ErrorContains(t, testCase.expectedErrorMessage, err)

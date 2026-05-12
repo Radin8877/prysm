@@ -1,14 +1,16 @@
+// package mock
+// lint:nopanic -- This is test / mock code, allowed to panic.
 package mock
 
 import (
+	field_params "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
 	ssz "github.com/prysmaticlabs/fastssz"
-	field_params "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -271,6 +273,18 @@ func (b *BeaconBlockBody) BlobKzgCommitments() ([][]byte, error) {
 }
 
 func (b *BeaconBlockBody) ExecutionRequests() (*enginev1.ExecutionRequests, error) {
+	panic("implement me")
+}
+
+func (b *BeaconBlockBody) PayloadAttestations() ([]*eth.PayloadAttestation, error) {
+	panic("implement me")
+}
+
+func (b *BeaconBlockBody) SignedExecutionPayloadBid() (*eth.SignedExecutionPayloadBid, error) {
+	panic("implement me")
+}
+
+func (b *BeaconBlockBody) ParentExecutionRequests() (*enginev1.ExecutionRequests, error) {
 	panic("implement me")
 }
 

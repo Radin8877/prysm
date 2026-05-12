@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -9,16 +8,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/kv"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	remoteweb3signer "github.com/prysmaticlabs/prysm/v5/validator/keymanager/remote-web3signer"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	"github.com/OffchainLabs/prysm/v7/validator/db/kv"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	remoteweb3signer "github.com/OffchainLabs/prysm/v7/validator/keymanager/remote-web3signer"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/urfave/cli/v2"
 )
@@ -42,6 +41,8 @@ func TestNode_Builds(t *testing.T) {
 	set.String("wallet-password-file", passwordFile, "path to wallet password")
 	set.String("keymanager-kind", "imported", "keymanager kind")
 	set.String("verbosity", "debug", "log verbosity")
+	set.String("beacon-rpc-provider", "localhost:4000", "beacon node RPC endpoint")
+	set.String("beacon-rest-api-provider", "http://localhost:3500", "beacon node REST API endpoint")
 	require.NoError(t, set.Set(flags.WalletPasswordFileFlag.Name, passwordFile))
 	ctx := cli.NewContext(&app, set, nil)
 	opts := []accounts.Option{
@@ -201,7 +202,7 @@ func TestClearDB(t *testing.T) {
 		t.Run(fmt.Sprintf("isMinimalDatabase=%v", isMinimalDatabase), func(t *testing.T) {
 			hook := logtest.NewGlobal()
 			tmp := filepath.Join(t.TempDir(), "datadirtest")
-			require.NoError(t, clearDB(context.Background(), tmp, true, isMinimalDatabase))
+			require.NoError(t, clearDB(t.Context(), tmp, true, isMinimalDatabase))
 			require.LogsContain(t, hook, "Removing database")
 		})
 	}
@@ -308,4 +309,18 @@ func TestWeb3SignerConfig(t *testing.T) {
 			require.DeepEqual(t, tt.want, got)
 		})
 	}
+}
+
+func Test_parseBeaconApiHeaders(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		h := parseBeaconApiHeaders("key1=value1,key1=value2,key2=value3")
+		assert.Equal(t, 2, len(h))
+		assert.DeepEqual(t, []string{"value1", "value2"}, h["key1"])
+		assert.DeepEqual(t, []string{"value3"}, h["key2"])
+	})
+	t.Run("ignores malformed", func(t *testing.T) {
+		h := parseBeaconApiHeaders("key1=value1,key2value2,key3=,=key4")
+		assert.Equal(t, 1, len(h))
+		assert.DeepEqual(t, []string{"value1"}, h["key1"])
+	})
 }

@@ -1,25 +1,28 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/genesis"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/genesis"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestSaveOrigin(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
 	// Embedded Genesis works with Mainnet config
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
+	params.OverrideBeaconConfig(params.MainnetConfig())
 
-	ctx := context.Background()
+	ctx := t.Context()
 	db := setupDB(t)
 
-	st, err := genesis.State(params.MainnetName)
+	// Initialize genesis with mainnet config - this will load the embedded mainnet state
+	require.NoError(t, genesis.Initialize(ctx, t.TempDir()))
+
+	// Get the initialized genesis state
+	st, err := genesis.State()
 	require.NoError(t, err)
 
 	sb, err := st.MarshalSSZ()

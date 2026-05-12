@@ -1,17 +1,16 @@
 package simulator
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/slashings"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/slashings"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestGenerateAttestationsForSlot_Slashing(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	simParams := &Parameters{
 		SecondsPerSlot:         params.BeaconConfig().SecondsPerSlot,
 		SlotsPerEpoch:          params.BeaconConfig().SlotsPerEpoch,
@@ -37,7 +36,7 @@ func TestGenerateAttestationsForSlot_Slashing(t *testing.T) {
 }
 
 func TestGenerateAttestationsForSlot_CorrectIndices(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	simParams := &Parameters{
 		SecondsPerSlot:         params.BeaconConfig().SecondsPerSlot,
 		SlotsPerEpoch:          params.BeaconConfig().SlotsPerEpoch,

@@ -7,15 +7,18 @@ package kv
 // it easy to scan for keys that have a certain shard number as a prefix and return those
 // corresponding attestations.
 var (
-	blocksBucket          = []byte("blocks")
-	stateBucket           = []byte("state")
-	stateSummaryBucket    = []byte("state-summary")
-	chainMetadataBucket   = []byte("chain-metadata")
-	checkpointBucket      = []byte("check-point")
-	powchainBucket        = []byte("powchain")
-	stateValidatorsBucket = []byte("state-validators")
-	feeRecipientBucket    = []byte("fee-recipient")
-	registrationBucket    = []byte("registration")
+	blocksBucket                            = []byte("blocks")
+	stateBucket                             = []byte("state")
+	stateSummaryBucket                      = []byte("state-summary")
+	chainMetadataBucket                     = []byte("chain-metadata")
+	checkpointBucket                        = []byte("check-point")
+	powchainBucket                          = []byte("powchain")
+	stateValidatorsBucket                   = []byte("state-validators")
+	feeRecipientBucket                      = []byte("fee-recipient")
+	registrationBucket                      = []byte("registration")
+	stateDiffBucket                         = []byte("state-diff")
+	executionPayloadEnvelopesBucket         = []byte("execution-payload-envelopes")
+	executionPayloadEnvelopeBlockHashBucket = []byte("execution-payload-envelope-block-hash-index")
 
 	// Light Client Updates Bucket
 	lightClientUpdatesBucket       = []byte("light-client-updates")
@@ -42,9 +45,11 @@ var (
 	finalizedCheckpointKey     = []byte("finalized-checkpoint")
 	powchainDataKey            = []byte("powchain-data")
 	lastValidatedCheckpointKey = []byte("last-validated-checkpoint")
+	metadataSequenceNumberKey  = []byte("metadata-seq-number")
 
 	// Below keys are used to identify objects are to be fork compatible.
 	// Objects that are only compatible with specific forks should be prefixed with such keys.
+	phase0Key                  = []byte("phase0")
 	altairKey                  = []byte("altair")
 	bellatrixKey               = []byte("merge")
 	bellatrixBlindKey          = []byte("blind-bellatrix")
@@ -53,10 +58,12 @@ var (
 	saveBlindedBeaconBlocksKey = []byte("save-blinded-beacon-blocks")
 	denebKey                   = []byte("deneb")
 	denebBlindKey              = []byte("blind-deneb")
-	electraKey                 = []byte("electra")
+	ElectraKey                 = []byte("electra")
 	electraBlindKey            = []byte("blind-electra")
 	fuluKey                    = []byte("fulu")
 	fuluBlindKey               = []byte("blind-fulu")
+	gloasKey                   = []byte("gloas")
+	// No gloasBlindKey needed - Gloas blocks are never blinded (no execution payload in block body).
 
 	// block root included in the beacon state used by weak subjectivity initial sync
 	originCheckpointBlockRootKey = []byte("origin-checkpoint-block-root")
@@ -70,4 +77,10 @@ var (
 
 	// Migrations
 	migrationsBucket = []byte("migrations")
+
+	// Custody
+	custodyBucket              = []byte("custody")
+	groupCountKey              = []byte("group-count")
+	earliestAvailableSlotKey   = []byte("earliest-available-slot")
+	subscribeAllDataSubnetsKey = []byte("subscribe-all-data-subnets")
 )

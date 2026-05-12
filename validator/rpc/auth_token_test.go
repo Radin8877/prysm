@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/prysmaticlabs/prysm/v5/api"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -42,13 +42,13 @@ func TestServer_AuthenticateUsingExistingToken(t *testing.T) {
 	unaryInfo := &grpc.UnaryServerInfo{
 		FullMethod: "Proto.CreateWallet",
 	}
-	unaryHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	unaryHandler := func(ctx context.Context, req any) (any, error) {
 		return nil, nil
 	}
 	ctxMD := map[string][]string{
 		"authorization": {"Bearer " + srv.authToken},
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = metadata.NewIncomingContext(ctx, ctxMD)
 	_, err = srv.AuthTokenInterceptor()(ctx, "xyz", unaryInfo, unaryHandler)
 	require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestServer_RefreshAuthTokenOnFileChange(t *testing.T) {
 	require.NoError(t, err)
 	currentToken := srv.authToken
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	go srv.refreshAuthTokenFromFileChanges(ctx, srv.authTokenPath)
 

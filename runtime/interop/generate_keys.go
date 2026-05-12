@@ -5,11 +5,11 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/OffchainLabs/prysm/v7/async"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/hash"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/async"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/hash"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
 )
 
 const (
@@ -27,7 +27,7 @@ func DeterministicallyGenerateKeys(startIndex, numKeys uint64) ([]bls.SecretKey,
 		publics []bls.PublicKey
 	}
 	// lint:ignore uintcast -- this is safe because we can reasonably expect that the number of keys is less than max int64.
-	results, err := async.Scatter(int(numKeys), func(offset int, entries int, _ *sync.RWMutex) (interface{}, error) {
+	results, err := async.Scatter(int(numKeys), func(offset int, entries int, _ *sync.RWMutex) (any, error) {
 		secs, pubs, err := deterministicallyGenerateKeys(uint64(offset)+startIndex, uint64(entries))
 		return &keys{secrets: secs, publics: pubs}, err
 	})

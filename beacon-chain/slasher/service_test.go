@@ -1,21 +1,20 @@
 package slasher
 
 import (
-	"context"
 	"io"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/sirupsen/logrus"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
@@ -39,7 +38,7 @@ func TestService_StartStop_ChainInitialized(t *testing.T) {
 		Slot:  &currentSlot,
 	}
 	gs := startup.NewClockSynchronizer()
-	srv, err := New(context.Background(), &ServiceConfig{
+	srv, err := New(t.Context(), &ServiceConfig{
 		IndexedAttestationsFeed: new(event.Feed),
 		BeaconBlockHeadersFeed:  new(event.Feed),
 		StateNotifier:           &mock.MockStateNotifier{},

@@ -6,16 +6,16 @@ import (
 	"io"
 	"testing"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/common"
+	"github.com/OffchainLabs/prysm/v7/validator/db/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
 	"github.com/prometheus/client_golang/prometheus"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/common"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
 )
 
 type ValidatorDBMock struct {
@@ -215,7 +215,7 @@ func Test_validateMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := ValidateMetadata(context.Background(), NewValidatorDBMock(), tt.interchangeJSON); (err != nil) != tt.wantErr {
+			if err := ValidateMetadata(t.Context(), NewValidatorDBMock(), tt.interchangeJSON); (err != nil) != tt.wantErr {
 				t.Errorf("validateMetadata() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -267,7 +267,7 @@ func Test_validateMetadataGenesisValidatorsRoot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			validatorDB := NewValidatorDBMock()
 			require.NoError(t, validatorDB.SaveGenesisValidatorsRoot(ctx, tt.dbGenesisValidatorsRoot))
 			err := ValidateMetadata(ctx, validatorDB, tt.interchangeJSON)

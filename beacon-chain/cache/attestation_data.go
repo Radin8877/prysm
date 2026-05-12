@@ -4,15 +4,16 @@ import (
 	"errors"
 	"sync"
 
-	forkchoicetypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/types"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 )
 
 type AttestationConsensusData struct {
-	Slot     primitives.Slot
-	HeadRoot []byte
-	Target   forkchoicetypes.Checkpoint
-	Source   forkchoicetypes.Checkpoint
+	Slot          primitives.Slot
+	HeadRoot      []byte
+	Target        forkchoicetypes.Checkpoint
+	Source        forkchoicetypes.Checkpoint
+	IsPayloadFull bool
 }
 
 // AttestationDataCache stores cached results of AttestationData requests.

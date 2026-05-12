@@ -9,18 +9,18 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/execution/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // Chain defines a properly functioning mock for the powchain service.
@@ -147,7 +147,7 @@ type RPCClient struct {
 
 func (*RPCClient) Close() {}
 
-func (r *RPCClient) CallContext(ctx context.Context, obj interface{}, methodName string, args ...interface{}) error {
+func (r *RPCClient) CallContext(ctx context.Context, obj any, methodName string, args ...any) error {
 	if r.BlockNumMap != nil && methodName == "eth_getBlockByNumber" {
 		val, ok := args[0].(string)
 		if !ok {

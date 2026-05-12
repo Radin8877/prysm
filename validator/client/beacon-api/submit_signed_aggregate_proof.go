@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 func (c *beaconApiValidatorClient) submitSignedAggregateSelectionProof(ctx context.Context, in *ethpb.SignedAggregateSubmitRequest) (*ethpb.SignedAggregateSubmitResponse, error) {
@@ -19,26 +18,9 @@ func (c *beaconApiValidatorClient) submitSignedAggregateSelectionProof(ctx conte
 		return nil, errors.Wrap(err, "failed to marshal SignedAggregateAttestationAndProof")
 	}
 	headers := map[string]string{"Eth-Consensus-Version": version.String(in.SignedAggregateAndProof.Version())}
-	err = c.jsonRestHandler.Post(ctx, "/eth/v2/validator/aggregate_and_proofs", headers, bytes.NewBuffer(body), nil)
-	errJson := &httputil.DefaultJsonError{}
+	err = c.handler.Post(ctx, "/eth/v2/validator/aggregate_and_proofs", headers, bytes.NewBuffer(body), nil)
 	if err != nil {
-		// TODO: remove this when v2 becomes default
-		if !errors.As(err, &errJson) {
-			return nil, err
-		}
-		if errJson.Code != http.StatusNotFound {
-			return nil, errJson
-		}
-		log.Debug("Endpoint /eth/v2/validator/aggregate_and_proofs is not supported, falling back to older endpoints for publish aggregate and proofs.")
-		if err = c.jsonRestHandler.Post(
-			ctx,
-			"/eth/v1/validator/aggregate_and_proofs",
-			nil,
-			bytes.NewBuffer(body),
-			nil,
-		); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	attestationDataRoot, err := in.SignedAggregateAndProof.Message.Aggregate.Data.HashTreeRoot()
@@ -54,8 +36,10 @@ func (c *beaconApiValidatorClient) submitSignedAggregateSelectionProofElectra(ct
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal SignedAggregateAttestationAndProofElectra")
 	}
-	headers := map[string]string{"Eth-Consensus-Version": version.String(in.SignedAggregateAndProof.Version())}
-	if err = c.jsonRestHandler.Post(ctx, "/eth/v2/validator/aggregate_and_proofs", headers, bytes.NewBuffer(body), nil); err != nil {
+	dataSlot := in.SignedAggregateAndProof.Message.Aggregate.Data.Slot
+	consensusVersion := version.String(slots.ToForkVersion(dataSlot))
+	headers := map[string]string{"Eth-Consensus-Version": consensusVersion}
+	if err = c.handler.Post(ctx, "/eth/v2/validator/aggregate_and_proofs", headers, bytes.NewBuffer(body), nil); err != nil {
 		return nil, err
 	}
 

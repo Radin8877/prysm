@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
-	neturl "net/url"
-	"regexp"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 var beaconAPITogRPCValidatorStatus = map[string]ethpb.ValidatorStatus{
@@ -27,32 +24,12 @@ var beaconAPITogRPCValidatorStatus = map[string]ethpb.ValidatorStatus{
 	"withdrawal_done":     ethpb.ValidatorStatus_EXITED,
 }
 
-func validRoot(root string) bool {
-	matchesRegex, err := regexp.MatchString("^0x[a-fA-F0-9]{64}$", root)
-	if err != nil {
-		return false
-	}
-	return matchesRegex
-}
-
-func uint64ToString[T uint64 | primitives.Slot | primitives.ValidatorIndex | primitives.CommitteeIndex | primitives.Epoch](val T) string {
-	return strconv.FormatUint(uint64(val), 10)
-}
-
-func buildURL(path string, queryParams ...neturl.Values) string {
-	if len(queryParams) == 0 {
-		return path
-	}
-
-	return fmt.Sprintf("%s?%s", path, queryParams[0].Encode())
-}
-
 func (c *beaconApiValidatorClient) fork(ctx context.Context) (*structs.GetStateForkResponse, error) {
 	const endpoint = "/eth/v1/beacon/states/head/fork"
 
 	stateForkResponseJson := &structs.GetStateForkResponse{}
 
-	if err := c.jsonRestHandler.Get(ctx, endpoint, stateForkResponseJson); err != nil {
+	if err := c.handler.Get(ctx, endpoint, stateForkResponseJson); err != nil {
 		return nil, err
 	}
 
@@ -64,7 +41,7 @@ func (c *beaconApiValidatorClient) headers(ctx context.Context) (*structs.GetBlo
 
 	blockHeadersResponseJson := &structs.GetBlockHeadersResponse{}
 
-	if err := c.jsonRestHandler.Get(ctx, endpoint, blockHeadersResponseJson); err != nil {
+	if err := c.handler.Get(ctx, endpoint, blockHeadersResponseJson); err != nil {
 		return nil, err
 	}
 
@@ -82,7 +59,7 @@ func (c *beaconApiValidatorClient) liveness(ctx context.Context, epoch primitive
 		return nil, errors.Wrapf(err, "failed to marshal validator indexes")
 	}
 
-	if err = c.jsonRestHandler.Post(ctx, url, nil, bytes.NewBuffer(marshalledJsonValidatorIndexes), livenessResponseJson); err != nil {
+	if err = c.handler.Post(ctx, url, nil, bytes.NewBuffer(marshalledJsonValidatorIndexes), livenessResponseJson); err != nil {
 		return nil, err
 	}
 
@@ -94,7 +71,7 @@ func (c *beaconApiValidatorClient) syncing(ctx context.Context) (*structs.SyncSt
 
 	syncingResponseJson := &structs.SyncStatusResponse{}
 
-	if err := c.jsonRestHandler.Get(ctx, endpoint, syncingResponseJson); err != nil {
+	if err := c.handler.Get(ctx, endpoint, syncingResponseJson); err != nil {
 		return nil, err
 	}
 

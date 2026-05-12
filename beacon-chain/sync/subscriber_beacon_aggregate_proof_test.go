@@ -1,18 +1,17 @@
 package sync
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/attestations"
-	lruwrpr "github.com/prysmaticlabs/prysm/v5/cache/lru"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/go-bitfield"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/attestations"
+	lruwrpr "github.com/OffchainLabs/prysm/v7/cache/lru"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestBeaconAggregateProofSubscriber_CanSaveAggregatedAttestation(t *testing.T) {
@@ -33,7 +32,7 @@ func TestBeaconAggregateProofSubscriber_CanSaveAggregatedAttestation(t *testing.
 		},
 		Signature: make([]byte, fieldparams.BLSSignatureLength),
 	}
-	require.NoError(t, r.beaconAggregateProofSubscriber(context.Background(), a))
+	require.NoError(t, r.beaconAggregateProofSubscriber(t.Context(), a))
 	assert.DeepSSZEqual(t, []ethpb.Att{a.Message.Aggregate}, r.cfg.attPool.AggregatedAttestations(), "Did not save aggregated attestation")
 }
 
@@ -55,9 +54,8 @@ func TestBeaconAggregateProofSubscriber_CanSaveUnaggregatedAttestation(t *testin
 			AggregatorIndex: 100,
 		},
 	}
-	require.NoError(t, r.beaconAggregateProofSubscriber(context.Background(), a))
+	require.NoError(t, r.beaconAggregateProofSubscriber(t.Context(), a))
 
-	atts, err := r.cfg.attPool.UnaggregatedAttestations()
-	require.NoError(t, err)
+	atts := r.cfg.attPool.UnaggregatedAttestations()
 	assert.DeepEqual(t, []ethpb.Att{a.Message.Aggregate}, atts, "Did not save unaggregated attestation")
 }

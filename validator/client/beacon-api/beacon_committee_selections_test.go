@@ -2,15 +2,14 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
+	testhelpers "github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/test-helpers"
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
-	testhelpers "github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/test-helpers"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/iface"
 	"go.uber.org/mock/gomock"
 )
 
@@ -90,13 +89,13 @@ func TestGetAggregatedSelections(t *testing.T) {
 	for _, test := range testcases {
 		t.Run(test.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+			handler := mock.NewMockJsonRestHandler(ctrl)
 
 			reqBody, err := json.Marshal(test.req)
 			require.NoError(t, err)
 
-			ctx := context.Background()
-			jsonRestHandler.EXPECT().Post(
+			ctx := t.Context()
+			handler.EXPECT().Post(
 				gomock.Any(),
 				"/eth/v1/validator/beacon_committee_selections",
 				nil,
@@ -109,7 +108,7 @@ func TestGetAggregatedSelections(t *testing.T) {
 				test.endpointError,
 			).Times(1)
 
-			validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+			validatorClient := &beaconApiValidatorClient{handler: handler}
 			res, err := validatorClient.AggregatedSelections(ctx, test.req)
 			if test.expectedErrorMessage != "" {
 				require.ErrorContains(t, test.expectedErrorMessage, err)

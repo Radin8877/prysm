@@ -1,31 +1,30 @@
 package validator
 
 import (
-	"context"
 	"encoding/binary"
 	"testing"
 	"time"
 
-	mockChain "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mockChain "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache/depositsnapshot"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestValidatorStatus_Active(t *testing.T) {
 	// This test breaks if it doesn't use mainnet config
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
-	ctx := context.Background()
+	params.OverrideBeaconConfig(params.MainnetConfig())
+	ctx := t.Context()
 
 	pubkey := generatePubkey(1)
 
@@ -82,7 +81,7 @@ func TestValidatorStatus_Active(t *testing.T) {
 	req := &ethpb.ValidatorStatusRequest{
 		PublicKey: pubkey,
 	}
-	resp, err := vs.ValidatorStatus(context.Background(), req)
+	resp, err := vs.ValidatorStatus(t.Context(), req)
 	require.NoError(t, err, "Could not get validator status")
 
 	expected := &ethpb.ValidatorStatusResponse{

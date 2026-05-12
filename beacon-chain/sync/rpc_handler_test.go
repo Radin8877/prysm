@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 type rpcHandlerTest struct {
@@ -20,7 +20,7 @@ type rpcHandlerTest struct {
 	s       *Service
 }
 
-func (rt *rpcHandlerTest) testHandler(nh network.StreamHandler, rh rpcHandler, rhi interface{}) {
+func (rt *rpcHandlerTest) testHandler(streamHandler network.StreamHandler, rpcHandler rpcHandler, message any) {
 	ctx, cancel := context.WithTimeout(context.Background(), rt.timeout)
 	defer func() {
 		cancel()
@@ -36,16 +36,18 @@ func (rt *rpcHandlerTest) testHandler(nh network.StreamHandler, rh rpcHandler, r
 	defer func() {
 		require.NoError(rt.t, client.Disconnect(server.PeerID()))
 	}()
+
 	require.Equal(rt.t, 1, len(client.BHost.Network().Peers()), "Expected peers to be connected")
-	h := func(stream network.Stream) {
+	handler := func(stream network.Stream) {
 		defer w.Done()
-		nh(stream)
+		streamHandler(stream)
 	}
-	server.BHost.SetStreamHandler(rt.topic, h)
+
+	server.BHost.SetStreamHandler(rt.topic, handler)
 	stream, err := client.BHost.NewStream(ctx, server.BHost.ID(), rt.topic)
 	require.NoError(rt.t, err)
 
-	err = rh(ctx, rhi, stream)
+	err = rpcHandler(ctx, message, stream)
 	if rt.err == nil {
 		require.NoError(rt.t, err)
 	} else {

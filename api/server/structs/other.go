@@ -244,26 +244,6 @@ type Withdrawal struct {
 	Amount           string `json:"amount"`
 }
 
-type DepositRequest struct {
-	Pubkey                string `json:"pubkey"`
-	WithdrawalCredentials string `json:"withdrawal_credentials"`
-	Amount                string `json:"amount"`
-	Signature             string `json:"signature"`
-	Index                 string `json:"index"`
-}
-
-type WithdrawalRequest struct {
-	SourceAddress   string `json:"source_address"`
-	ValidatorPubkey string `json:"validator_pubkey"`
-	Amount          string `json:"amount"`
-}
-
-type ConsolidationRequest struct {
-	SourceAddress string `json:"source_address"`
-	SourcePubkey  string `json:"source_pubkey"`
-	TargetPubkey  string `json:"target_pubkey"`
-}
-
 type PendingDeposit struct {
 	Pubkey                string `json:"pubkey"`
 	WithdrawalCredentials string `json:"withdrawal_credentials"`
@@ -273,7 +253,7 @@ type PendingDeposit struct {
 }
 
 type PendingPartialWithdrawal struct {
-	Index             string `json:"index"`
+	Index             string `json:"validator_index"`
 	Amount            string `json:"amount"`
 	WithdrawableEpoch string `json:"withdrawable_epoch"`
 }
@@ -281,4 +261,28 @@ type PendingPartialWithdrawal struct {
 type PendingConsolidation struct {
 	SourceIndex string `json:"source_index"`
 	TargetIndex string `json:"target_index"`
+}
+
+type Builder struct {
+	Pubkey            string `json:"pubkey"`
+	Version           string `json:"version"`
+	ExecutionAddress  string `json:"execution_address"`
+	Balance           string `json:"balance"`
+	DepositEpoch      string `json:"deposit_epoch"`
+	WithdrawableEpoch string `json:"withdrawable_epoch"`
+}
+
+type BuilderPendingPayment struct {
+	Weight     string                    `json:"weight"`
+	Withdrawal *BuilderPendingWithdrawal `json:"withdrawal"`
+}
+
+type BuilderPendingWithdrawal struct {
+	FeeRecipient string `json:"fee_recipient"`
+	Amount       string `json:"amount"`
+	BuilderIndex string `json:"builder_index"`
+}
+
+type PTCs struct {
+	ValidatorIndices []string `json:"validator_indices"`
 }

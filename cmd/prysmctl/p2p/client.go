@@ -7,6 +7,20 @@ import (
 	"net"
 	"time"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/encoder"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/wrapper"
+	ecdsaprysm "github.com/OffchainLabs/prysm/v7/crypto/ecdsa"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/metadata"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -18,20 +32,6 @@ import (
 	libp2ptcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	"github.com/pkg/errors"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/encoder"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/wrapper"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v5/crypto/ecdsa"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/metadata"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -90,7 +90,7 @@ func newClient(beaconEndpoints []string, tcpPort, quicPort uint) (*client, error
 
 func (c *client) Close() {
 	if err := c.host.Close(); err != nil {
-		panic(err)
+		panic(err) // lint:nopanic -- The client is closing anyway...
 	}
 }
 
@@ -107,7 +107,7 @@ func (c *client) MetadataSeq() uint64 {
 // When done, the caller must Close() or Reset() on the stream.
 func (c *client) Send(
 	ctx context.Context,
-	message interface{},
+	message any,
 	baseTopic string,
 	pid peer.ID,
 ) (corenet.Stream, error) {
@@ -126,7 +126,7 @@ func (c *client) Send(
 		return nil, errors.Wrap(err, "could not open new stream")
 	}
 	// do not encode anything if we are sending a metadata request
-	if baseTopic != p2p.RPCMetaDataTopicV1 && baseTopic != p2p.RPCMetaDataTopicV2 {
+	if baseTopic != p2p.RPCMetaDataTopicV1 && baseTopic != p2p.RPCMetaDataTopicV2 && baseTopic != p2p.RPCMetaDataTopicV3 {
 		castedMsg, ok := message.(ssz.Marshaler)
 		if !ok {
 			return nil, errors.Errorf("%T does not support the ssz marshaller interface", message)
@@ -154,7 +154,7 @@ func (c *client) retrievePeerAddressesViaRPC(ctx context.Context, beaconEndpoint
 		return nil, errors.New("no beacon RPC endpoints specified")
 	}
 	peers := make([]string, 0)
-	for i := 0; i < len(beaconEndpoints); i++ {
+	for i := range beaconEndpoints {
 		conn, err := grpc.Dial(beaconEndpoints[i], grpc.WithInsecure())
 		if err != nil {
 			return nil, err
@@ -177,8 +177,8 @@ func (c *client) initializeMockChainService(ctx context.Context) (*mockChain, er
 	if err != nil {
 		return nil, err
 	}
-	currEpoch := slots.ToEpoch(slots.SinceGenesis(genesisResp.GenesisTime.AsTime()))
-	currFork, err := forks.Fork(currEpoch)
+	currEpoch := slots.ToEpoch(slots.CurrentSlot(genesisResp.GenesisTime.AsTime()))
+	currFork, err := params.Fork(currEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +193,7 @@ func (c *client) initializeMockChainService(ctx context.Context) (*mockChain, er
 func ipAddr() net.IP {
 	ip, err := network.ExternalIP()
 	if err != nil {
-		panic(err)
+		panic(err) // lint:nopanic -- Only returns an error when network interfaces are not available. This is a requirement for the application anyway.
 	}
 	return net.ParseIP(ip)
 }

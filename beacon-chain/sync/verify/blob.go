@@ -1,11 +1,11 @@
 package verify
 
 import (
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 var (
@@ -17,9 +17,12 @@ var (
 
 // BlobAlignsWithBlock verifies if the blob aligns with the block.
 func BlobAlignsWithBlock(blob blocks.ROBlob, block blocks.ROBlock) error {
-	if block.Version() < version.Deneb {
+	blockVersion := block.Version()
+
+	if blockVersion < version.Deneb || blockVersion >= version.Fulu {
 		return nil
 	}
+
 	maxBlobsPerBlock := params.BeaconConfig().MaxBlobsPerBlock(blob.Slot())
 	if blob.Index >= uint64(maxBlobsPerBlock) {
 		return errors.Wrapf(ErrIncorrectBlobIndex, "index %d exceeds MAX_BLOBS_PER_BLOCK %d", blob.Index, maxBlobsPerBlock)
@@ -34,6 +37,9 @@ func BlobAlignsWithBlock(blob blocks.ROBlob, block blocks.ROBlock) error {
 	commits, err := block.Block().Body().BlobKzgCommitments()
 	if err != nil {
 		return err
+	}
+	if blob.Index >= uint64(len(commits)) {
+		return errors.Wrapf(ErrIncorrectBlobIndex, "index %d out of range for %d commitments", blob.Index, len(commits))
 	}
 	blockCommitment := bytesutil.ToBytes48(commits[blob.Index])
 	blobCommitment := bytesutil.ToBytes48(blob.KzgCommitment)

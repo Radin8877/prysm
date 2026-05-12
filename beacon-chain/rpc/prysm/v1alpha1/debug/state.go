@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	pbrpc "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	pbrpc "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // GetBeaconState retrieves an ssz-encoded beacon state
 // from the beacon node by either a slot or block root.
 func (ds *Server) GetBeaconState(
@@ -42,7 +44,7 @@ func (ds *Server) GetBeaconState(
 			Encoded: encoded,
 		}, nil
 	case *pbrpc.BeaconStateRequest_BlockRoot:
-		st, err := ds.StateGen.StateByRoot(ctx, bytesutil.ToBytes32(q.BlockRoot))
+		st, err := ds.StateGen.StateByRootNoCopy(ctx, bytesutil.ToBytes32(q.BlockRoot))
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Could not compute state by block root: %v", err)
 		}

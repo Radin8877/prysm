@@ -3,8 +3,8 @@ package customtypes
 import (
 	"fmt"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
 	fssz "github.com/prysmaticlabs/fastssz"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
 )
 
 var _ fssz.HashRoot = (BlockRoots)([][32]byte{})
@@ -56,9 +56,7 @@ func (r BlockRoots) MarshalSSZTo(dst []byte) ([]byte, error) {
 func (r BlockRoots) MarshalSSZ() ([]byte, error) {
 	marshalled := make([]byte, fieldparams.BlockRootsLength*32)
 	for i, r32 := range r {
-		for j, rr := range r32 {
-			marshalled[i*32+j] = rr
-		}
+		copy(marshalled[i*32:(i+1)*32], r32[:])
 	}
 	return marshalled, nil
 }

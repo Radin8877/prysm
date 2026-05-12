@@ -2,40 +2,40 @@ package rewards
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	dbutil "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/testutil"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	mockstategen "github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen/mock"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls/blst"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	dbutil "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/testutil"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	mockstategen "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen/mock"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls/blst"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func BlockRewardTestSetup(t *testing.T, ver int) (state.BeaconState, interfaces.SignedBeaconBlock, error) {
@@ -85,7 +85,7 @@ func BlockRewardTestSetup(t *testing.T, ver int) (state.BeaconState, interfaces.
 	validators := make([]*eth.Validator, 0, valCount)
 	balances := make([]uint64, 0, valCount)
 	secretKeys := make([]bls.SecretKey, 0, valCount)
-	for i := 0; i < valCount; i++ {
+	for range valCount {
 		blsKey, err := bls.RandKey()
 		require.NoError(t, err)
 		secretKeys = append(secretKeys, blsKey)
@@ -100,7 +100,7 @@ func BlockRewardTestSetup(t *testing.T, ver int) (state.BeaconState, interfaces.
 	require.NoError(t, st.SetValidators(validators))
 	require.NoError(t, st.SetBalances(balances))
 	require.NoError(t, st.SetCurrentParticipationBits(make([]byte, valCount)))
-	syncCommittee, err := altair.NextSyncCommittee(context.Background(), st)
+	syncCommittee, err := altair.NextSyncCommittee(t.Context(), st)
 	require.NoError(t, err)
 	require.NoError(t, st.SetCurrentSyncCommittee(syncCommittee))
 	slot0bRoot := bytesutil.PadTo([]byte("slot0root"), 32)
@@ -268,6 +268,7 @@ func TestBlockRewards(t *testing.T) {
 		}
 		url := "http://only.the.slot.number.at.the.end.is.important/0"
 		request := httptest.NewRequest("GET", url, nil)
+		request.SetPathValue("block_id", "0")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -298,6 +299,7 @@ func TestBlockRewards(t *testing.T) {
 
 		url := "http://only.the.slot.number.at.the.end.is.important/2"
 		request := httptest.NewRequest("GET", url, nil)
+		request.SetPathValue("block_id", "2")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -334,6 +336,7 @@ func TestBlockRewards(t *testing.T) {
 
 		url := "http://only.the.slot.number.at.the.end.is.important/2"
 		request := httptest.NewRequest("GET", url, nil)
+		request.SetPathValue("block_id", "2")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -370,6 +373,7 @@ func TestBlockRewards(t *testing.T) {
 
 		url := "http://only.the.slot.number.at.the.end.is.important/2"
 		request := httptest.NewRequest("GET", url, nil)
+		request.SetPathValue("block_id", "2")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -406,6 +410,7 @@ func TestBlockRewards(t *testing.T) {
 
 		url := "http://only.the.slot.number.at.the.end.is.important/2"
 		request := httptest.NewRequest("GET", url, nil)
+		request.SetPathValue("block_id", "2")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -442,6 +447,7 @@ func TestBlockRewards(t *testing.T) {
 
 		url := "http://only.the.slot.number.at.the.end.is.important/2"
 		request := httptest.NewRequest("GET", url, nil)
+		request.SetPathValue("block_id", "2")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -475,7 +481,7 @@ func TestAttestationRewards(t *testing.T) {
 	validators := make([]*eth.Validator, 0, valCount)
 	balances := make([]uint64, 0, valCount)
 	secretKeys := make([]bls.SecretKey, 0, valCount)
-	for i := 0; i < valCount; i++ {
+	for i := range valCount {
 		blsKey, err := bls.RandKey()
 		require.NoError(t, err)
 		secretKeys = append(secretKeys, blsKey)
@@ -511,6 +517,7 @@ func TestAttestationRewards(t *testing.T) {
 	t.Run("ideal rewards", func(t *testing.T) {
 		url := "http://only.the.epoch.number.at.the.end.is.important/1"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -540,6 +547,7 @@ func TestAttestationRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -563,6 +571,7 @@ func TestAttestationRewards(t *testing.T) {
 	t.Run("all vals", func(t *testing.T) {
 		url := "http://only.the.epoch.number.at.the.end.is.important/1"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -605,6 +614,7 @@ func TestAttestationRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -643,6 +653,7 @@ func TestAttestationRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -660,6 +671,7 @@ func TestAttestationRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -681,6 +693,7 @@ func TestAttestationRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -699,6 +712,7 @@ func TestAttestationRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("epoch", "1")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -712,6 +726,7 @@ func TestAttestationRewards(t *testing.T) {
 	t.Run("phase 0", func(t *testing.T) {
 		url := "http://only.the.epoch.number.at.the.end.is.important/0"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("epoch", "0")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -725,6 +740,7 @@ func TestAttestationRewards(t *testing.T) {
 	t.Run("invalid epoch", func(t *testing.T) {
 		url := "http://only.the.epoch.number.at.the.end.is.important/foo"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("epoch", "foo")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -738,6 +754,7 @@ func TestAttestationRewards(t *testing.T) {
 	t.Run("previous epoch", func(t *testing.T) {
 		url := "http://only.the.epoch.number.at.the.end.is.important/2"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("epoch", "2")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -747,6 +764,19 @@ func TestAttestationRewards(t *testing.T) {
 		require.NoError(t, json.Unmarshal(writer.Body.Bytes(), e))
 		assert.Equal(t, http.StatusNotFound, e.Code)
 		assert.Equal(t, "Attestation rewards are available after two epoch transitions to ensure all attestations have a chance of inclusion", e.Message)
+	})
+	t.Run("epoch overflow", func(t *testing.T) {
+		url := "http://only.the.epoch.number.at.the.end.is.important/" + strconv.FormatUint(math.MaxUint64, 10)
+		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("epoch", strconv.FormatUint(math.MaxUint64, 10))
+		writer := httptest.NewRecorder()
+		writer.Body = &bytes.Buffer{}
+
+		s.AttestationRewards(writer, request)
+		assert.Equal(t, http.StatusNotFound, writer.Code)
+		e := &httputil.DefaultJsonError{}
+		require.NoError(t, json.Unmarshal(writer.Body.Bytes(), e))
+		assert.Equal(t, http.StatusNotFound, e.Code)
 	})
 }
 
@@ -766,7 +796,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	require.NoError(t, st.SetSlot(params.BeaconConfig().SlotsPerEpoch-1))
 	validators := make([]*eth.Validator, 0, valCount)
 	secretKeys := make([]bls.SecretKey, 0, valCount)
-	for i := 0; i < valCount; i++ {
+	for range valCount {
 		blsKey, err := bls.RandKey()
 		require.NoError(t, err)
 		secretKeys = append(secretKeys, blsKey)
@@ -780,7 +810,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	require.NoError(t, st.SetValidators(validators))
 	require.NoError(t, st.SetInactivityScores(make([]uint64, len(validators))))
 	syncCommitteePubkeys := make([][]byte, fieldparams.SyncCommitteeLength)
-	for i := 0; i < fieldparams.SyncCommitteeLength; i++ {
+	for i := range fieldparams.SyncCommitteeLength {
 		syncCommitteePubkeys[i] = secretKeys[i].PublicKey().Marshal()
 	}
 	aggPubkey, err := bls.AggregatePublicKeys(syncCommitteePubkeys)
@@ -795,7 +825,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	b.Block.ProposerIndex = proposerIndex
 	scBits := bitfield.NewBitvector512()
 	// last 10 sync committee members didn't perform their duty
-	for i := uint64(0); i < fieldparams.SyncCommitteeLength-10; i++ {
+	for i := range uint64(fieldparams.SyncCommitteeLength - 10) {
 		scBits.SetBitAt(i, true)
 	}
 	domain, err := signing.Domain(st.Fork(), 0, params.BeaconConfig().DomainSyncCommittee, st.GenesisValidatorsRoot())
@@ -833,7 +863,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 
 	t.Run("ok - filtered vals", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
@@ -846,6 +876,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -866,13 +897,14 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("ok - all vals", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
 
 		url := "http://only.the.slot.number.at.the.end.is.important/32"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -891,7 +923,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("ok - validator outside sync committee is ignored", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
@@ -904,6 +936,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -922,7 +955,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("ok - proposer reward is deducted", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
@@ -935,6 +968,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -953,7 +987,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("invalid validator index/pubkey", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
@@ -965,6 +999,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -977,7 +1012,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("unknown validator pubkey", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
@@ -992,6 +1027,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -1004,7 +1040,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("validator index too large", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
@@ -1016,6 +1052,7 @@ func TestSyncCommiteeRewards(t *testing.T) {
 		_, err = body.Write(valIds)
 		require.NoError(t, err)
 		request := httptest.NewRequest("POST", url, &body)
+		request.SetPathValue("block_id", "32")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 
@@ -1028,13 +1065,14 @@ func TestSyncCommiteeRewards(t *testing.T) {
 	})
 	t.Run("phase 0", func(t *testing.T) {
 		balances := make([]uint64, 0, valCount)
-		for i := 0; i < valCount; i++ {
+		for range valCount {
 			balances = append(balances, params.BeaconConfig().MaxEffectiveBalance)
 		}
 		require.NoError(t, st.SetBalances(balances))
 
 		url := "http://only.the.slot.number.at.the.end.is.important/0"
 		request := httptest.NewRequest("POST", url, nil)
+		request.SetPathValue("block_id", "0")
 		writer := httptest.NewRecorder()
 		writer.Body = &bytes.Buffer{}
 

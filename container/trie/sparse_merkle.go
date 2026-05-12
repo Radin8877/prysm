@@ -6,10 +6,10 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/crypto/hash"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	protodb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/crypto/hash"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	protodb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // SparseMerkleTrie implements a sparse, general purpose Merkle trie to be used
@@ -82,7 +82,7 @@ func GenerateTrieFromItems(items [][]byte, depth uint64) (*SparseMerkleTrie, err
 		transformedLeaves[i] = arr[:]
 	}
 	layers[0] = transformedLeaves
-	for i := uint64(0); i < depth; i++ {
+	for i := range depth {
 		if len(layers[i])%2 == 1 {
 			layers[i] = append(layers[i], ZeroHashes[i][:])
 		}

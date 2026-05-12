@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestSynchronizerErrOnSecondSet(t *testing.T) {
@@ -16,7 +16,7 @@ func TestSynchronizerErrOnSecondSet(t *testing.T) {
 }
 
 func TestWaitForClockCanceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	s := NewClockSynchronizer()
 	c, err := s.WaitForClock(ctx)
@@ -25,7 +25,7 @@ func TestWaitForClockCanceled(t *testing.T) {
 }
 
 func TestWaitForClock(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	s := NewClockSynchronizer()
 	var vr [32]byte

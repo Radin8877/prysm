@@ -1,11 +1,10 @@
 package httprest
 
 import (
+	"net/http"
 	"time"
 
-	"net/http"
-
-	"github.com/prysmaticlabs/prysm/v5/api/server/middleware"
+	"github.com/OffchainLabs/prysm/v7/api/server/middleware"
 )
 
 // Option is a http rest server functional parameter type.

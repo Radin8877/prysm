@@ -2,10 +2,11 @@ package kv
 
 import (
 	"context"
+	"slices"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -33,9 +34,12 @@ func (s *Store) LastArchivedRoot(ctx context.Context) [32]byte {
 	if err := s.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket(stateSlotIndicesBucket)
 		_, blockRoot = bkt.Cursor().Last()
+		if len(blockRoot) > 0 {
+			blockRoot = slices.Clone(blockRoot)
+		}
 		return nil
 	}); err != nil { // This view never returns an error, but we'll handle anyway for sanity.
-		panic(err)
+		panic(err) // lint:nopanic -- View never returns an error.
 	}
 
 	return bytesutil.ToBytes32(blockRoot)
@@ -51,9 +55,12 @@ func (s *Store) ArchivedPointRoot(ctx context.Context, slot primitives.Slot) [32
 	if err := s.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(stateSlotIndicesBucket)
 		blockRoot = bucket.Get(bytesutil.SlotToBytesBigEndian(slot))
+		if len(blockRoot) > 0 {
+			blockRoot = slices.Clone(blockRoot)
+		}
 		return nil
 	}); err != nil { // This view never returns an error, but we'll handle anyway for sanity.
-		panic(err)
+		panic(err) // lint:nopanic -- View never returns an error.
 	}
 
 	return bytesutil.ToBytes32(blockRoot)
@@ -69,7 +76,7 @@ func (s *Store) HasArchivedPoint(ctx context.Context, slot primitives.Slot) bool
 		exists = iBucket.Get(bytesutil.SlotToBytesBigEndian(slot)) != nil
 		return nil
 	}); err != nil { // This view never returns an error, but we'll handle anyway for sanity.
-		panic(err)
+		panic(err) // lint:nopanic -- View never returns an error.
 	}
 	return exists
 }

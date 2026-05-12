@@ -5,24 +5,22 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpbv1 "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/math"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpbv1 "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,7 +41,8 @@ func (s *Service) UpdateAndSaveHeadWithBalances(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "could not retrieve head state in DB")
 	}
-	return s.saveHead(ctx, headRoot, headBlock, headState)
+	full := s.cfg.ForkChoiceStore.FullBeatsEmpty(headRoot)
+	return s.saveHead(ctx, headRoot, headBlock, headState, full)
 }
 
 // This defines the current chain service's view of head.
@@ -52,18 +51,18 @@ type head struct {
 	block      interfaces.ReadOnlySignedBeaconBlock // current head block.
 	state      state.BeaconState                    // current head state.
 	slot       primitives.Slot                      // the head block slot number
+	full       bool                                 // whether the head's execution payload has been delivered (post-Gloas)
 	optimistic bool                                 // optimistic status when saved head
 }
 
 // This saves head info to the local service cache, it also saves the
 // new head root to the DB.
 // Caller of the method MUST acquire a lock on forkchoice.
-func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock interfaces.ReadOnlySignedBeaconBlock, headState state.BeaconState) error {
+func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock interfaces.ReadOnlySignedBeaconBlock, headState state.BeaconState, full bool) error {
 	ctx, span := trace.StartSpan(ctx, "blockChain.saveHead")
 	defer span.End()
 
-	// Do nothing if head hasn't changed.
-	if !s.isNewHead(newHeadRoot) {
+	if !s.isNewHead(newHeadRoot, full) {
 		return nil
 	}
 
@@ -99,7 +98,7 @@ func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock 
 	oldHeadRoot := bytesutil.ToBytes32(r)
 	isOptimistic, err := s.cfg.ForkChoiceStore.IsOptimistic(newHeadRoot)
 	if err != nil {
-		log.WithError(err).Error("could not check if node is optimistically synced")
+		log.WithError(err).Error("Could not check if node is optimistically synced")
 	}
 	if headBlock.Block().ParentRoot() != oldHeadRoot {
 		// A chain re-org occurred, so we fire an event notifying the rest of the services.
@@ -109,14 +108,14 @@ func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock 
 			commonRoot = params.BeaconConfig().ZeroHash
 		}
 		dis := headSlot + newHeadSlot - 2*forkSlot
-		dep := math.Max(uint64(headSlot-forkSlot), uint64(newHeadSlot-forkSlot))
+		dep := max(uint64(headSlot-forkSlot), uint64(newHeadSlot-forkSlot))
 		oldWeight, err := s.cfg.ForkChoiceStore.Weight(oldHeadRoot)
 		if err != nil {
-			log.WithField("root", fmt.Sprintf("%#x", oldHeadRoot)).Warn("could not determine node weight")
+			log.WithField("root", fmt.Sprintf("%#x", oldHeadRoot)).Warn("Could not determine node weight")
 		}
 		newWeight, err := s.cfg.ForkChoiceStore.Weight(newHeadRoot)
 		if err != nil {
-			log.WithField("root", fmt.Sprintf("%#x", newHeadRoot)).Warn("could not determine node weight")
+			log.WithField("root", fmt.Sprintf("%#x", newHeadRoot)).Warn("Could not determine node weight")
 		}
 		log.WithFields(logrus.Fields{
 			"newSlot":            fmt.Sprintf("%d", newHeadSlot),
@@ -136,7 +135,7 @@ func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock 
 			Type: statefeed.Reorg,
 			Data: &ethpbv1.EventChainReorg{
 				Slot:                newHeadSlot,
-				Depth:               math.Max(uint64(headSlot-forkSlot), uint64(newHeadSlot-forkSlot)),
+				Depth:               max(uint64(headSlot-forkSlot), uint64(newHeadSlot-forkSlot)),
 				OldHeadBlock:        oldHeadRoot[:],
 				NewHeadBlock:        newHeadRoot[:],
 				OldHeadState:        oldStateRoot[:],
@@ -159,6 +158,7 @@ func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock 
 		state:      headState,
 		optimistic: isOptimistic,
 		slot:       headBlock.Block().Slot(),
+		full:       full,
 	}
 	if err := s.setHead(newHead); err != nil {
 		return errors.Wrap(err, "could not set head")
@@ -172,7 +172,7 @@ func (s *Service) saveHead(ctx context.Context, newHeadRoot [32]byte, headBlock 
 	// Forward an event capturing a new chain head over a common event feed
 	// done in a goroutine to avoid blocking the critical runtime main routine.
 	go func() {
-		if err := s.notifyNewHeadEvent(ctx, newHeadSlot, headState, newStateRoot[:], newHeadRoot[:]); err != nil {
+		if err := s.notifyNewHeadEvent(ctx, newHeadSlot, newStateRoot[:], newHeadRoot[:]); err != nil {
 			log.WithError(err).Error("Could not notify event feed of new chain head")
 		}
 	}()
@@ -221,6 +221,7 @@ func (s *Service) setHead(newHead *head) error {
 		state:      newHead.state.Copy(),
 		optimistic: newHead.optimistic,
 		slot:       newHead.slot,
+		full:       newHead.full,
 	}
 	return nil
 }
@@ -324,51 +325,52 @@ func (s *Service) hasHeadState() bool {
 func (s *Service) notifyNewHeadEvent(
 	ctx context.Context,
 	newHeadSlot primitives.Slot,
-	newHeadState state.BeaconState,
 	newHeadStateRoot,
 	newHeadRoot []byte,
 ) error {
-	previousDutyDependentRoot := s.originBlockRoot[:]
-	currentDutyDependentRoot := s.originBlockRoot[:]
+	currEpoch := slots.ToEpoch(newHeadSlot)
+	currentDutyDependentRoot, err := s.DependentRoot(currEpoch)
+	if err != nil {
+		return errors.Wrap(err, "could not get duty dependent root")
+	}
+	if currentDutyDependentRoot == [32]byte{} {
+		currentDutyDependentRoot = s.originBlockRoot
+	}
+	var previousDutyDependentRoot [32]byte
+	if currEpoch > 0 {
+		previousDutyDependentRoot, err = s.DependentRoot(currEpoch.Sub(1))
+		if err != nil {
+			return errors.Wrap(err, "could not get duty dependent root")
+		}
+	}
+	if previousDutyDependentRoot == [32]byte{} {
+		previousDutyDependentRoot = s.originBlockRoot
+	}
 
-	var previousDutyEpoch primitives.Epoch
-	currentDutyEpoch := slots.ToEpoch(newHeadSlot)
-	if currentDutyEpoch > 0 {
-		previousDutyEpoch = currentDutyEpoch.Sub(1)
-	}
-	currentDutySlot, err := slots.EpochStart(currentDutyEpoch)
-	if err != nil {
-		return errors.Wrap(err, "could not get duty slot")
-	}
-	previousDutySlot, err := slots.EpochStart(previousDutyEpoch)
-	if err != nil {
-		return errors.Wrap(err, "could not get duty slot")
-	}
-	if currentDutySlot > 0 {
-		currentDutyDependentRoot, err = helpers.BlockRootAtSlot(newHeadState, currentDutySlot-1)
-		if err != nil {
-			return errors.Wrap(err, "could not get duty dependent root")
-		}
-	}
-	if previousDutySlot > 0 {
-		previousDutyDependentRoot, err = helpers.BlockRootAtSlot(newHeadState, previousDutySlot-1)
-		if err != nil {
-			return errors.Wrap(err, "could not get duty dependent root")
-		}
-	}
 	isOptimistic, err := s.IsOptimistic(ctx)
 	if err != nil {
 		return errors.Wrap(err, "could not check if node is optimistically synced")
 	}
+
+	parentRoot, err := s.ParentRoot([32]byte(newHeadRoot))
+	if err != nil {
+		return errors.Wrap(err, "could not obtain parent root in forkchoice")
+	}
+	parentSlot, err := s.RecentBlockSlot(parentRoot)
+	if err != nil {
+		return errors.Wrap(err, "could not obtain parent slot in forkchoice")
+	}
+	epochTransition := slots.ToEpoch(newHeadSlot) > slots.ToEpoch(parentSlot)
+
 	s.cfg.StateNotifier.StateFeed().Send(&feed.Event{
 		Type: statefeed.NewHead,
 		Data: &ethpbv1.EventHead{
 			Slot:                      newHeadSlot,
 			Block:                     newHeadRoot,
 			State:                     newHeadStateRoot,
-			EpochTransition:           slots.IsEpochStart(newHeadSlot),
-			PreviousDutyDependentRoot: previousDutyDependentRoot,
-			CurrentDutyDependentRoot:  currentDutyDependentRoot,
+			EpochTransition:           epochTransition,
+			PreviousDutyDependentRoot: previousDutyDependentRoot[:],
+			CurrentDutyDependentRoot:  currentDutyDependentRoot[:],
 			ExecutionOptimistic:       isOptimistic,
 		},
 	})
@@ -410,7 +412,11 @@ func (s *Service) saveOrphanedOperations(ctx context.Context, orphanedRoot [32]b
 					return err
 				}
 			} else {
-				if a.IsAggregated() {
+				if orphanedBlk.Version() >= version.Electra {
+					if err = s.cfg.AttPool.SaveBlockAttestation(a); err != nil {
+						return err
+					}
+				} else if a.IsAggregated() {
 					if err = s.cfg.AttPool.SaveAggregatedAttestation(a); err != nil {
 						return err
 					}

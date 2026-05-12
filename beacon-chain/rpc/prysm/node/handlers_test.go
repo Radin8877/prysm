@@ -8,19 +8,19 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers"
+	mockp2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	corenet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	libp2ptest "github.com/libp2p/go-libp2p/p2p/host/peerstore/test"
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers"
-	mockp2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 type testIdentity enode.ID
@@ -91,7 +91,7 @@ func TestListTrustedPeer(t *testing.T) {
 		// assert number of trusted peer is right
 		assert.Equal(t, 9, len(peers))
 
-		for i := 0; i < 9; i++ {
+		for i := range 9 {
 			pid, err := peer.Decode(peers[i].PeerId)
 			require.NoError(t, err)
 			if pid == ids[8] {
@@ -227,6 +227,7 @@ func TestRemoveTrustedPeer(t *testing.T) {
 
 	url := "http://anything.is.fine.but.last.is.important/16Uiu2HAm1n583t4huDMMqEUUBuQs6bLts21mxCfX3tiqu9JfHvRJ"
 	request := httptest.NewRequest("DELETE", url, nil)
+	request.SetPathValue("peer_id", "16Uiu2HAm1n583t4huDMMqEUUBuQs6bLts21mxCfX3tiqu9JfHvRJ")
 	writer := httptest.NewRecorder()
 	writer.Body = &bytes.Buffer{}
 	s.RemoveTrustedPeer(writer, request)

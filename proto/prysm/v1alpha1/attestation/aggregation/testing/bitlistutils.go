@@ -4,17 +4,17 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time"
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time"
 )
 
 // BitlistWithAllBitsSet creates list of bitlists with all bits set.
 func BitlistWithAllBitsSet(length uint64) bitfield.Bitlist {
 	b := bitfield.NewBitlist(length)
-	for i := uint64(0); i < length; i++ {
+	for i := range length {
 		b.SetBitAt(i, true)
 	}
 	return b
@@ -23,7 +23,7 @@ func BitlistWithAllBitsSet(length uint64) bitfield.Bitlist {
 // BitlistsWithSingleBitSet creates list of bitlists with a single bit set in each.
 func BitlistsWithSingleBitSet(n, length uint64) []bitfield.Bitlist {
 	lists := make([]bitfield.Bitlist, n)
-	for i := uint64(0); i < n; i++ {
+	for i := range n {
 		b := bitfield.NewBitlist(length)
 		b.SetBitAt(i%length, true)
 		lists[i] = b
@@ -34,7 +34,7 @@ func BitlistsWithSingleBitSet(n, length uint64) []bitfield.Bitlist {
 // Bitlists64WithSingleBitSet creates list of bitlists with a single bit set in each.
 func Bitlists64WithSingleBitSet(n, length uint64) []*bitfield.Bitlist64 {
 	lists := make([]*bitfield.Bitlist64, n)
-	for i := uint64(0); i < n; i++ {
+	for i := range n {
 		b := bitfield.NewBitlist64(length)
 		b.SetBitAt(i%length, true)
 		lists[i] = b
@@ -46,11 +46,11 @@ func Bitlists64WithSingleBitSet(n, length uint64) []*bitfield.Bitlist64 {
 func BitlistsWithMultipleBitSet(t testing.TB, n, length, count uint64) []bitfield.Bitlist {
 	seed := time.Now().UnixNano()
 	t.Logf("bitlistsWithMultipleBitSet random seed: %v", seed)
-	rand.Seed(seed)
+	r := rand.New(rand.NewSource(seed)) // #nosec G404
 	lists := make([]bitfield.Bitlist, n)
-	for i := uint64(0); i < n; i++ {
+	for i := range n {
 		b := bitfield.NewBitlist(length)
-		keys := rand.Perm(int(length)) // lint:ignore uintcast -- This is safe in test code.
+		keys := r.Perm(int(length)) // lint:ignore uintcast -- This is safe in test code.
 		for _, key := range keys[:count] {
 			b.SetBitAt(uint64(key), true)
 		}
@@ -63,11 +63,11 @@ func BitlistsWithMultipleBitSet(t testing.TB, n, length, count uint64) []bitfiel
 func Bitlists64WithMultipleBitSet(t testing.TB, n, length, count uint64) []*bitfield.Bitlist64 {
 	seed := time.Now().UnixNano()
 	t.Logf("Bitlists64WithMultipleBitSet random seed: %v", seed)
-	rand.Seed(seed)
+	r := rand.New(rand.NewSource(seed)) // #nosec G404
 	lists := make([]*bitfield.Bitlist64, n)
-	for i := uint64(0); i < n; i++ {
+	for i := range n {
 		b := bitfield.NewBitlist64(length)
-		keys := rand.Perm(int(length)) // lint:ignore uintcast -- This is safe in test code.
+		keys := r.Perm(int(length)) // lint:ignore uintcast -- This is safe in test code.
 		for _, key := range keys[:count] {
 			b.SetBitAt(uint64(key), true)
 		}

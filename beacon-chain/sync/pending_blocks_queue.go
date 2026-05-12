@@ -2,27 +2,28 @@ package sync
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/async"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	p2ptypes "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz/equality"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing"
+	prysmTrace "github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/libp2p/go-libp2p/core"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/async"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	p2ptypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz/equality"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing"
-	prysmTrace "github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 	"github.com/trailofbits/go-mutexasserts"
 	"go.opentelemetry.io/otel/trace"
@@ -43,11 +44,13 @@ func (s *Service) processPendingBlocksQueue() {
 		if !s.chainIsStarted() {
 			return
 		}
+
 		locker.Lock()
+		defer locker.Unlock()
+
 		if err := s.processPendingBlocks(s.ctx); err != nil {
 			log.WithError(err).Debug("Could not process pending blocks")
 		}
-		locker.Unlock()
 	})
 }
 
@@ -58,6 +61,7 @@ func (s *Service) processPendingBlocks(ctx context.Context) error {
 
 	// Remove old blocks from our expiration cache.
 	s.deleteExpiredBlocksFromCache()
+	s.prunePendingPayloadEnvelopes()
 
 	// Validate pending slots before processing.
 	if err := s.validatePendingSlots(); err != nil {
@@ -72,8 +76,10 @@ func (s *Service) processPendingBlocks(ctx context.Context) error {
 	randGen := rand.NewGenerator()
 	var parentRoots [][32]byte
 
+	blkRoots := make([][32]byte, 0, len(sortedSlots)*maxBlocksPerSlot)
+
 	// Iterate through sorted slots.
-	for _, slot := range sortedSlots {
+	for i, slot := range sortedSlots {
 		// Skip processing if slot is in the future.
 		if slot > s.cfg.clock.CurrentSlot() {
 			continue
@@ -90,6 +96,9 @@ func (s *Service) processPendingBlocks(ctx context.Context) error {
 
 		// Process each block in the queue.
 		for _, b := range blocksInCache {
+			start := time.Now()
+			totalDuration := time.Duration(0)
+
 			if err := blocks.BeaconBlockIsNil(b); err != nil {
 				continue
 			}
@@ -133,6 +142,9 @@ func (s *Service) processPendingBlocks(ctx context.Context) error {
 			if !isParentBlockInDB {
 				continue
 			}
+			if !s.cfg.chain.ParentPayloadReady(b.Block()) {
+				continue
+			}
 
 			// Calculate the deadline time by adding three slots duration to the current time
 			secondsPerSlot := params.BeaconConfig().SecondsPerSlot
@@ -146,14 +158,37 @@ func (s *Service) processPendingBlocks(ctx context.Context) error {
 			}
 			cancelFunction()
 
+			// Process synchronously because it's likely that the next pending block depends on it.
+			s.processPendingPayloadEnvelope(ctx, blkRoot)
+			s.processPendingGloasColumns(blkRoot, b)
+			blkRoots = append(blkRoots, blkRoot)
+
 			// Remove the processed block from the queue.
 			if err := s.removeBlockFromQueue(b, blkRoot); err != nil {
 				return err
 			}
-			log.WithFields(logrus.Fields{"slot": slot, "blockRoot": hex.EncodeToString(bytesutil.Trunc(blkRoot[:]))}).Debug("Processed pending block and cleared it in cache")
+
+			duration := time.Since(start)
+			totalDuration += duration
+			log.WithFields(logrus.Fields{
+				"slotIndex":     fmt.Sprintf("%d/%d", i+1, len(sortedSlots)),
+				"slot":          slot,
+				"root":          fmt.Sprintf("%#x", blkRoot),
+				"duration":      duration,
+				"totalDuration": totalDuration,
+			}).Debug("Processed pending block and cleared it in cache")
 		}
+
 		span.End()
 	}
+
+	for _, blkRoot := range blkRoots {
+		// Process pending attestations for this block.
+		if err := s.processPendingAttsForBlock(ctx, blkRoot); err != nil {
+			log.WithError(err).Debug("Failed to process pending attestations for block")
+		}
+	}
+
 	return s.sendBatchRootRequest(ctx, parentRoots, randGen)
 }
 
@@ -175,8 +210,9 @@ func (s *Service) getBlocksInQueue(slot primitives.Slot) []interfaces.ReadOnlySi
 func (s *Service) removeBlockFromQueue(b interfaces.ReadOnlySignedBeaconBlock, blkRoot [32]byte) error {
 	s.pendingQueueLock.Lock()
 	defer s.pendingQueueLock.Unlock()
+
 	if err := s.deleteBlockFromPendingQueue(b.Block().Slot(), b, blkRoot); err != nil {
-		return err
+		return errors.Wrap(err, "delete block from pending queue")
 	}
 	return nil
 }
@@ -196,41 +232,82 @@ func (s *Service) hasPeer() bool {
 var errNoPeersForPending = errors.New("no suitable peers to process pending block queue, delaying")
 
 // processAndBroadcastBlock validates, processes, and broadcasts a block.
-// part of the function is to request missing blobs from peers if the block contains kzg commitments.
-func (s *Service) processAndBroadcastBlock(ctx context.Context, b interfaces.ReadOnlySignedBeaconBlock, blkRoot [32]byte) error {
+// Part of the function is to request missing sidecars from peers if the block contains kzg commitments.
+func (s *Service) processAndBroadcastBlock(ctx context.Context, b interfaces.ReadOnlySignedBeaconBlock, blkRoot [fieldparams.RootLength]byte) error {
+	if err := s.processBlock(ctx, b, blkRoot); err != nil {
+		return errors.Wrap(err, "process block")
+	}
+
+	if err := s.receiveAndBroadCastBlock(ctx, b, blkRoot, b.Block().Slot()); err != nil {
+		return errors.Wrap(err, "receive and broadcast block")
+	}
+
+	return nil
+}
+
+func (s *Service) processBlock(ctx context.Context, b interfaces.ReadOnlySignedBeaconBlock, blkRoot [fieldparams.RootLength]byte) error {
+	blockSlot := b.Block().Slot()
+
 	if err := s.validateBeaconBlock(ctx, b, blkRoot); err != nil {
 		if !errors.Is(ErrOptimisticParent, err) {
-			log.WithError(err).WithField("slot", b.Block().Slot()).Debug("Could not validate block")
+			log.WithError(err).WithField("slot", blockSlot).Debug("Could not validate block")
 			return err
 		}
 	}
 
-	request, err := s.pendingBlobsRequestForBlock(blkRoot, b)
+	blockEpoch, denebForkEpoch, fuluForkEpoch := slots.ToEpoch(blockSlot), params.BeaconConfig().DenebForkEpoch, params.BeaconConfig().FuluForkEpoch
+
+	roBlock, err := blocks.NewROBlockWithRoot(b, blkRoot)
 	if err != nil {
-		return err
-	}
-	if len(request) > 0 {
-		peers := s.getBestPeers()
-		peerCount := len(peers)
-		if peerCount == 0 {
-			return errors.Wrapf(errNoPeersForPending, "block root=%#x", blkRoot)
-		}
-		if err := s.sendAndSaveBlobSidecars(ctx, request, peers[rand.NewGenerator().Int()%peerCount], b); err != nil {
-			return err
-		}
+		return errors.Wrap(err, "new ro block with root")
 	}
 
+	if blockEpoch >= fuluForkEpoch {
+		if err := s.requestAndSaveMissingDataColumnSidecars([]blocks.ROBlock{roBlock}); err != nil {
+			return errors.Wrap(err, "request and save missing data column sidecars")
+		}
+
+		return nil
+	}
+
+	if blockEpoch >= denebForkEpoch {
+		request, err := s.pendingBlobsRequestForBlock(blkRoot, b)
+		if err != nil {
+			return errors.Wrap(err, "pending blobs request for block")
+		}
+
+		if len(request) > 0 {
+			peers := s.getBestPeers()
+			peerCount := len(peers)
+
+			if peerCount == 0 {
+				return errors.Wrapf(errNoPeersForPending, "block root=%#x", blkRoot)
+			}
+
+			if err := s.sendAndSaveBlobSidecars(ctx, request, peers[rand.NewGenerator().Int()%peerCount], b); err != nil {
+				return errors.Wrap(err, "send and save blob sidecars")
+			}
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func (s *Service) receiveAndBroadCastBlock(ctx context.Context, b interfaces.ReadOnlySignedBeaconBlock, blkRoot [fieldparams.RootLength]byte, blockSlot primitives.Slot) error {
 	if err := s.cfg.chain.ReceiveBlock(ctx, b, blkRoot, nil); err != nil {
-		return err
+		return errors.Wrap(err, "receive block")
 	}
 
-	s.setSeenBlockIndexSlot(b.Block().Slot(), b.Block().ProposerIndex())
+	s.setSeenBlockIndexSlot(blockSlot, b.Block().ProposerIndex())
 
 	pb, err := b.Proto()
 	if err != nil {
 		log.WithError(err).Debug("Could not get protobuf block")
 		return err
 	}
+
 	if err := s.cfg.p2p.Broadcast(ctx, pb); err != nil {
 		log.WithError(err).Debug("Could not broadcast block")
 		return err
@@ -249,7 +326,10 @@ func (s *Service) handleBlockProcessingError(ctx context.Context, err error, b i
 
 // getBestPeers returns the list of best peers based on finalized checkpoint epoch.
 func (s *Service) getBestPeers() []core.PeerID {
-	_, bestPeers := s.cfg.p2p.Peers().BestFinalized(maxPeerRequest, s.cfg.chain.FinalizedCheckpt().Epoch)
+	_, bestPeers := s.cfg.p2p.Peers().BestFinalized(s.cfg.chain.FinalizedCheckpt().Epoch)
+	if len(bestPeers) > maxPeerRequest {
+		bestPeers = bestPeers[:maxPeerRequest]
+	}
 	return bestPeers
 }
 
@@ -286,56 +366,210 @@ func (s *Service) sendBatchRootRequest(ctx context.Context, roots [][32]byte, ra
 	ctx, span := prysmTrace.StartSpan(ctx, "sendBatchRootRequest")
 	defer span.End()
 
-	roots = dedupRoots(roots)
+	// Exit early if there are no roots to request.
+	if len(roots) == 0 {
+		return nil
+	}
+
+	// Filter out roots that are already seen in pending blocks or being synced.
+	roots = s.filterOutPendingAndSynced(roots)
+
+	// Nothing to do, exit early.
+	if len(roots) == 0 {
+		return nil
+	}
+
+	// Fetch best peers to request blocks from.
+	bestPeers := s.getBestPeers()
+
+	// No suitable peer, exit early.
+	if len(bestPeers) == 0 {
+		log.WithField("roots", fmt.Sprintf("%#x", roots)).Debug("Send batch root request: No suitable peers")
+		return nil
+	}
+
+	// Randomly choose a peer to query from our best peers.
+	// If that peer cannot return all the requested blocks,
+	// we randomly select another peer.
+	randomIndex := randGen.Int() % len(bestPeers)
+	pid := bestPeers[randomIndex]
+
+	for range numOfTries {
+		req := p2ptypes.BeaconBlockByRootsReq(roots)
+
+		// Get the current epoch.
+		currentSlot := s.cfg.clock.CurrentSlot()
+		currentEpoch := slots.ToEpoch(currentSlot)
+
+		// Trim the request to the maximum number of blocks we can request if needed.
+		maxReqBlock := params.MaxRequestBlock(currentEpoch)
+		rootCount := uint64(len(roots))
+		if rootCount > maxReqBlock {
+			req = roots[:maxReqBlock]
+		}
+
+		if logrus.GetLevel() >= logrus.DebugLevel {
+			rootsStr := make([]string, 0, len(roots))
+			for _, req := range roots {
+				rootsStr = append(rootsStr, fmt.Sprintf("%#x", req))
+			}
+
+			log.WithFields(logrus.Fields{
+				"peer":  pid,
+				"count": len(req),
+				"roots": rootsStr,
+			}).Debug("Requesting blocks by root")
+		}
+
+		// Send the request to the peer.
+		if err := s.sendBeaconBlocksRequest(ctx, &req, pid); err != nil {
+			tracing.AnnotateError(span, err)
+			log.WithError(err).Debug("Could not send recent block request")
+		} else {
+			// For post-Gloas blocks received by root, fetch and queue payload envelopes by root.
+			s.fetchAndQueuePayloadEnvelopesForRoots(ctx, pid, req)
+		}
+
+		// Filter out roots that are already seen in pending blocks.
+		newRoots := make([][32]byte, 0, rootCount)
+		func() {
+			s.pendingQueueLock.RLock()
+			defer s.pendingQueueLock.RUnlock()
+
+			for _, rt := range roots {
+				if !s.seenPendingBlocks[rt] {
+					newRoots = append(newRoots, rt)
+				}
+			}
+		}()
+
+		// Exit early if all roots have been seen.
+		// This is the happy path.
+		if len(newRoots) == 0 {
+			return nil
+		}
+
+		// There is still some roots that have not been seen.
+		// Choosing a new peer with the leftover set of oots to request.
+		roots = newRoots
+
+		// Choose a new peer to query.
+		randomIndex = randGen.Int() % len(bestPeers)
+		pid = bestPeers[randomIndex]
+	}
+
+	// Some roots are still missing after all allowed tries.
+	// This is the unhappy path.
+	log.WithFields(logrus.Fields{
+		"roots": fmt.Sprintf("%#x", roots),
+		"tries": numOfTries,
+	}).Debug("Send batch root request: Some roots are still missing after all allowed tries")
+
+	return nil
+}
+
+func (s *Service) fetchAndQueuePayloadEnvelopesForRoots(
+	ctx context.Context,
+	pid core.PeerID,
+	roots p2ptypes.BeaconBlockByRootsReq,
+) {
+	gloasStartSlot, err := slots.EpochStart(params.BeaconConfig().GloasForkEpoch)
+	if err != nil {
+		log.WithError(err).Debug("Could not compute Gloas start slot")
+		return
+	}
+
+	var envelopeRoots p2ptypes.ExecutionPayloadEnvelopesByRootReq
+	for _, root := range roots {
+		if s.cfg.beaconDB.HasExecutionPayloadEnvelope(ctx, root) {
+			continue
+		}
+		blk, found, err := s.pendingBlockByRoot(root)
+		if err != nil {
+			log.WithError(err).WithField("root", fmt.Sprintf("%#x", root)).Debug("Could not inspect pending block by root")
+			continue
+		}
+		if !found || blk.Block().Slot() <= gloasStartSlot {
+			continue
+		}
+		envelopeRoots = append(envelopeRoots, root)
+	}
+
+	if len(envelopeRoots) == 0 {
+		return
+	}
+
+	envelopes, err := SendExecutionPayloadEnvelopesByRootRequest(ctx, s.cfg.clock, s.cfg.p2p, pid, s.ctxMap, &envelopeRoots)
+	if err != nil {
+		log.WithError(err).Debug("Could not request execution payload envelopes by root")
+		return
+	}
+
+	for _, env := range envelopes {
+		if env == nil || env.Message == nil {
+			continue
+		}
+		s.queuePendingPayloadEnvelopeFromRootRequest(env)
+	}
+}
+
+func (s *Service) pendingBlockByRoot(root [32]byte) (interfaces.ReadOnlySignedBeaconBlock, bool, error) {
 	s.pendingQueueLock.RLock()
+	defer s.pendingQueueLock.RUnlock()
+
+	for key := range s.slotToPendingBlocks.Items() {
+		slot := cacheKeyToSlot(key)
+		blks := s.pendingBlocksInCache(slot)
+		for _, blk := range blks {
+			blkRoot, err := blk.Block().HashTreeRoot()
+			if err != nil {
+				return nil, false, errors.Wrap(err, "hash tree root")
+			}
+			if blkRoot == root {
+				return blk, true, nil
+			}
+		}
+	}
+
+	return nil, false, nil
+}
+
+func (s *Service) queuePendingPayloadEnvelopeFromRootRequest(signedEnvelope *ethpb.SignedExecutionPayloadEnvelope) {
+	if signedEnvelope == nil || signedEnvelope.Message == nil {
+		return
+	}
+
+	root := bytesutil.ToBytes32(signedEnvelope.Message.BeaconBlockRoot)
+	builderIdx := uint64(signedEnvelope.Message.BuilderIndex)
+
+	s.pendingEnvelopeLock.Lock()
+	defer s.pendingEnvelopeLock.Unlock()
+
+	inner, ok := s.pendingPayloadEnvelopes[root]
+	if !ok {
+		inner = make(map[uint64]*ethpb.SignedExecutionPayloadEnvelope)
+		s.pendingPayloadEnvelopes[root] = inner
+	}
+	inner[builderIdx] = signedEnvelope
+}
+
+// filterOutPendingAndSynced filters out roots that are already seen in pending blocks or being synced.
+func (s *Service) filterOutPendingAndSynced(roots [][fieldparams.RootLength]byte) [][fieldparams.RootLength]byte {
+	// Remove duplicates (if any) from the list of roots.
+	roots = dedupRoots(roots)
+
+	// Filters out in place roots that are already seen in pending blocks or being synced.
+	s.pendingQueueLock.RLock()
+	defer s.pendingQueueLock.RUnlock()
+
 	for i := len(roots) - 1; i >= 0; i-- {
 		r := roots[i]
 		if s.seenPendingBlocks[r] || s.cfg.chain.BlockBeingSynced(r) {
 			roots = append(roots[:i], roots[i+1:]...)
-		} else {
-			log.WithField("blockRoot", fmt.Sprintf("%#x", r)).Debug("Requesting block by root")
+			continue
 		}
 	}
-	s.pendingQueueLock.RUnlock()
-
-	if len(roots) == 0 {
-		return nil
-	}
-	bestPeers := s.getBestPeers()
-	if len(bestPeers) == 0 {
-		return nil
-	}
-	// Randomly choose a peer to query from our best peers. If that peer cannot return
-	// all the requested blocks, we randomly select another peer.
-	pid := bestPeers[randGen.Int()%len(bestPeers)]
-	for i := 0; i < numOfTries; i++ {
-		req := p2ptypes.BeaconBlockByRootsReq(roots)
-		currentEpoch := slots.ToEpoch(s.cfg.clock.CurrentSlot())
-		maxReqBlock := params.MaxRequestBlock(currentEpoch)
-		if uint64(len(roots)) > maxReqBlock {
-			req = roots[:maxReqBlock]
-		}
-		if err := s.sendBeaconBlocksRequest(ctx, &req, pid); err != nil {
-			tracing.AnnotateError(span, err)
-			log.WithError(err).Debug("Could not send recent block request")
-		}
-		newRoots := make([][32]byte, 0, len(roots))
-		s.pendingQueueLock.RLock()
-		for _, rt := range roots {
-			if !s.seenPendingBlocks[rt] {
-				newRoots = append(newRoots, rt)
-			}
-		}
-		s.pendingQueueLock.RUnlock()
-		if len(newRoots) == 0 {
-			break
-		}
-		// Choosing a new peer with the leftover set of
-		// roots to request.
-		roots = newRoots
-		pid = bestPeers[randGen.Int()%len(bestPeers)]
-	}
-	return nil
+	return roots
 }
 
 func (s *Service) sortedPendingSlots() []primitives.Slot {
@@ -349,9 +583,7 @@ func (s *Service) sortedPendingSlots() []primitives.Slot {
 		slot := cacheKeyToSlot(k)
 		ss = append(ss, slot)
 	}
-	sort.Slice(ss, func(i, j int) bool {
-		return ss[i] < ss[j]
-	})
+	slices.Sort(ss)
 	return ss
 }
 

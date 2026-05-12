@@ -1,28 +1,27 @@
 package db
 
 import (
-	"context"
 	"flag"
 	"os"
 	"path"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/kv"
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/kv"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/urfave/cli/v2"
 )
 
 func TestRestore(t *testing.T) {
 	logHook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 
-	backupDb, err := kv.NewKVStore(context.Background(), t.TempDir())
+	backupDb, err := kv.NewKVStore(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	head := util.NewBeaconBlock()
 	head.Block.Slot = 5000
@@ -58,7 +57,7 @@ func TestRestore(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(files))
 	assert.Equal(t, kv.DatabaseFileName, files[0].Name())
-	restoredDb, err := kv.NewKVStore(context.Background(), path.Join(restoreDir, kv.BeaconNodeDbDirName))
+	restoredDb, err := kv.NewKVStore(t.Context(), path.Join(restoreDir, kv.BeaconNodeDbDirName))
 	defer func() {
 		require.NoError(t, restoredDb.Close())
 	}()

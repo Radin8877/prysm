@@ -3,8 +3,8 @@ package params
 import (
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestConfigset_Add(t *testing.T) {
@@ -22,7 +22,7 @@ func TestConfigset_Add(t *testing.T) {
 
 func TestConfigsetReplaceMainnet(t *testing.T) {
 	r := newConfigset()
-	mainnet := MainnetConfig().Copy()
+	mainnet := MainnetConfig()
 	require.NoError(t, r.setActive(mainnet))
 	FillTestVersions(mainnet, 128)
 	require.NoError(t, r.replace(mainnet))
@@ -30,7 +30,7 @@ func TestConfigsetReplaceMainnet(t *testing.T) {
 
 func TestConfigset_Replace(t *testing.T) {
 	r := newConfigset()
-	mainnet := MainnetConfig().Copy()
+	mainnet := MainnetConfig()
 	require.NoError(t, r.add(mainnet))
 	require.NoError(t, r.setActive(mainnet))
 	require.ErrorIs(t, r.add(mainnet), errCollisionName)
@@ -66,7 +66,7 @@ func TestConfigset_Replace(t *testing.T) {
 }
 
 func testConfig(name string) *BeaconChainConfig {
-	c := MainnetConfig().Copy()
+	c := MainnetConfig()
 	FillTestVersions(c, 127)
 	c.ConfigName = name
 	return c
@@ -98,10 +98,12 @@ func compareConfigs(t *testing.T, expected, actual *BeaconChainConfig) {
 	require.DeepEqual(t, expected.EjectionBalance, actual.EjectionBalance)
 	require.DeepEqual(t, expected.EffectiveBalanceIncrement, actual.EffectiveBalanceIncrement)
 	require.DeepEqual(t, expected.BLSWithdrawalPrefixByte, actual.BLSWithdrawalPrefixByte)
+	require.DeepEqual(t, expected.BuilderWithdrawalPrefixByte, actual.BuilderWithdrawalPrefixByte)
 	require.DeepEqual(t, expected.ZeroHash, actual.ZeroHash)
 	require.DeepEqual(t, expected.GenesisDelay, actual.GenesisDelay)
 	require.DeepEqual(t, expected.MinAttestationInclusionDelay, actual.MinAttestationInclusionDelay)
 	require.DeepEqual(t, expected.SecondsPerSlot, actual.SecondsPerSlot)
+	require.DeepEqual(t, expected.SlotDurationMilliseconds, actual.SlotDurationMilliseconds)
 	require.DeepEqual(t, expected.SlotsPerEpoch, actual.SlotsPerEpoch)
 	require.DeepEqual(t, expected.SqrRootSlotsPerEpoch, actual.SqrRootSlotsPerEpoch)
 	require.DeepEqual(t, expected.MinSeedLookahead, actual.MinSeedLookahead)
@@ -132,6 +134,7 @@ func compareConfigs(t *testing.T, expected, actual *BeaconChainConfig) {
 	require.DeepEqual(t, expected.ProportionalSlashingMultiplier, actual.ProportionalSlashingMultiplier)
 	require.DeepEqual(t, expected.MaxProposerSlashings, actual.MaxProposerSlashings)
 	require.DeepEqual(t, expected.MaxAttesterSlashings, actual.MaxAttesterSlashings)
+	require.DeepEqual(t, expected.MaxAttesterSlashingsElectra, actual.MaxAttesterSlashingsElectra)
 	require.DeepEqual(t, expected.MaxAttestations, actual.MaxAttestations)
 	require.DeepEqual(t, expected.MaxDeposits, actual.MaxDeposits)
 	require.DeepEqual(t, expected.MaxVoluntaryExits, actual.MaxVoluntaryExits)

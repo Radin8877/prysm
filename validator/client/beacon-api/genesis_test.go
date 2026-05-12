@@ -1,14 +1,13 @@
 package beacon_api
 
 import (
-	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -16,11 +15,11 @@ func TestGetGenesis_ValidGenesis(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesisResponseJson := structs.GetGenesisResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Get(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Get(
 		gomock.Any(),
 		"/eth/v1/beacon/genesis",
 		&genesisResponseJson,
@@ -36,7 +35,7 @@ func TestGetGenesis_ValidGenesis(t *testing.T) {
 		},
 	).Times(1)
 
-	genesisProvider := &beaconApiGenesisProvider{jsonRestHandler: jsonRestHandler}
+	genesisProvider := &beaconApiGenesisProvider{handler: handler}
 	resp, err := genesisProvider.Genesis(ctx)
 	assert.NoError(t, err)
 	require.NotNil(t, resp)
@@ -48,11 +47,11 @@ func TestGetGenesis_NilData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesisResponseJson := structs.GetGenesisResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Get(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Get(
 		gomock.Any(),
 		"/eth/v1/beacon/genesis",
 		&genesisResponseJson,
@@ -63,7 +62,7 @@ func TestGetGenesis_NilData(t *testing.T) {
 		structs.GetGenesisResponse{Data: nil},
 	).Times(1)
 
-	genesisProvider := &beaconApiGenesisProvider{jsonRestHandler: jsonRestHandler}
+	genesisProvider := &beaconApiGenesisProvider{handler: handler}
 	_, err := genesisProvider.Genesis(ctx)
 	assert.ErrorContains(t, "genesis data is nil", err)
 }
@@ -72,11 +71,11 @@ func TestGetGenesis_EndpointCalledOnlyOnce(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesisResponseJson := structs.GetGenesisResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Get(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Get(
 		gomock.Any(),
 		"/eth/v1/beacon/genesis",
 		&genesisResponseJson,
@@ -92,7 +91,7 @@ func TestGetGenesis_EndpointCalledOnlyOnce(t *testing.T) {
 		},
 	).Times(1)
 
-	genesisProvider := &beaconApiGenesisProvider{jsonRestHandler: jsonRestHandler}
+	genesisProvider := &beaconApiGenesisProvider{handler: handler}
 	_, err := genesisProvider.Genesis(ctx)
 	assert.NoError(t, err)
 	resp, err := genesisProvider.Genesis(ctx)
@@ -106,18 +105,18 @@ func TestGetGenesis_EndpointCanBeCalledAgainAfterError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesisResponseJson := structs.GetGenesisResponse{}
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Get(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Get(
 		gomock.Any(),
 		"/eth/v1/beacon/genesis",
 		&genesisResponseJson,
 	).Return(
 		errors.New("foo"),
 	).Times(1)
-	jsonRestHandler.EXPECT().Get(
+	handler.EXPECT().Get(
 		gomock.Any(),
 		"/eth/v1/beacon/genesis",
 		&genesisResponseJson,
@@ -133,7 +132,7 @@ func TestGetGenesis_EndpointCanBeCalledAgainAfterError(t *testing.T) {
 		},
 	).Times(1)
 
-	genesisProvider := &beaconApiGenesisProvider{jsonRestHandler: jsonRestHandler}
+	genesisProvider := &beaconApiGenesisProvider{handler: handler}
 	_, err := genesisProvider.Genesis(ctx)
 	require.ErrorContains(t, "foo", err)
 	resp, err := genesisProvider.Genesis(ctx)

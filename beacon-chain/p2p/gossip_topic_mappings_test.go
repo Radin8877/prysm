@@ -4,11 +4,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestMappingHasNoDuplicates(t *testing.T) {
@@ -18,7 +19,7 @@ func TestMappingHasNoDuplicates(t *testing.T) {
 		if _, ok := m[reflect.TypeOf(v())]; ok {
 			t.Errorf("%T is duplicated in the topic mapping", v)
 		}
-		m[reflect.TypeOf(v)] = true
+		m[reflect.TypeFor[func() proto.Message]()] = true
 	}
 }
 
@@ -30,6 +31,7 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	capellaForkEpoch := primitives.Epoch(300)
 	denebForkEpoch := primitives.Epoch(400)
 	electraForkEpoch := primitives.Epoch(500)
+	gloasForkEpoch := primitives.Epoch(550)
 	fuluForkEpoch := primitives.Epoch(600)
 
 	bCfg.AltairForkEpoch = altairForkEpoch
@@ -37,12 +39,14 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	bCfg.CapellaForkEpoch = capellaForkEpoch
 	bCfg.DenebForkEpoch = denebForkEpoch
 	bCfg.ElectraForkEpoch = electraForkEpoch
+	bCfg.GloasForkEpoch = gloasForkEpoch
 	bCfg.FuluForkEpoch = fuluForkEpoch
 	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.AltairForkVersion)] = primitives.Epoch(100)
 	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.BellatrixForkVersion)] = primitives.Epoch(200)
 	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.CapellaForkVersion)] = primitives.Epoch(300)
 	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.DenebForkVersion)] = primitives.Epoch(400)
 	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.ElectraForkVersion)] = primitives.Epoch(500)
+	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.GloasForkVersion)] = primitives.Epoch(550)
 	bCfg.ForkVersionSchedule[bytesutil.ToBytes4(bCfg.FuluForkVersion)] = primitives.Epoch(600)
 	params.OverrideBeaconConfig(bCfg)
 
@@ -73,6 +77,12 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	pMessage = GossipTopicMappings(AggregateAndProofSubnetTopicFormat, altairForkEpoch)
 	_, ok = pMessage.(*ethpb.SignedAggregateAttestationAndProof)
 	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientOptimisticUpdateTopicFormat, altairForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientOptimisticUpdateAltair)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientFinalityUpdateTopicFormat, altairForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientFinalityUpdateAltair)
+	assert.Equal(t, true, ok)
 
 	// Bellatrix Fork
 	pMessage = GossipTopicMappings(BlockSubnetTopicFormat, bellatrixForkEpoch)
@@ -86,6 +96,12 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	assert.Equal(t, true, ok)
 	pMessage = GossipTopicMappings(AggregateAndProofSubnetTopicFormat, bellatrixForkEpoch)
 	_, ok = pMessage.(*ethpb.SignedAggregateAttestationAndProof)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientOptimisticUpdateTopicFormat, bellatrixForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientOptimisticUpdateAltair)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientFinalityUpdateTopicFormat, bellatrixForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientFinalityUpdateAltair)
 	assert.Equal(t, true, ok)
 
 	// Capella Fork
@@ -101,6 +117,12 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	pMessage = GossipTopicMappings(AggregateAndProofSubnetTopicFormat, capellaForkEpoch)
 	_, ok = pMessage.(*ethpb.SignedAggregateAttestationAndProof)
 	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientOptimisticUpdateTopicFormat, capellaForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientOptimisticUpdateCapella)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientFinalityUpdateTopicFormat, capellaForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientFinalityUpdateCapella)
+	assert.Equal(t, true, ok)
 
 	// Deneb Fork
 	pMessage = GossipTopicMappings(BlockSubnetTopicFormat, denebForkEpoch)
@@ -114,6 +136,12 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	assert.Equal(t, true, ok)
 	pMessage = GossipTopicMappings(AggregateAndProofSubnetTopicFormat, denebForkEpoch)
 	_, ok = pMessage.(*ethpb.SignedAggregateAttestationAndProof)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientOptimisticUpdateTopicFormat, denebForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientOptimisticUpdateDeneb)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientFinalityUpdateTopicFormat, denebForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientFinalityUpdateDeneb)
 	assert.Equal(t, true, ok)
 
 	// Electra Fork
@@ -129,4 +157,23 @@ func TestGossipTopicMappings_CorrectType(t *testing.T) {
 	pMessage = GossipTopicMappings(AggregateAndProofSubnetTopicFormat, electraForkEpoch)
 	_, ok = pMessage.(*ethpb.SignedAggregateAttestationAndProofElectra)
 	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientOptimisticUpdateTopicFormat, electraForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientOptimisticUpdateDeneb)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(LightClientFinalityUpdateTopicFormat, electraForkEpoch)
+	_, ok = pMessage.(*ethpb.LightClientFinalityUpdateElectra)
+	assert.Equal(t, true, ok)
+
+	// Gloas Fork
+	pMessage = GossipTopicMappings(BlockSubnetTopicFormat, gloasForkEpoch)
+	_, ok = pMessage.(*ethpb.SignedBeaconBlockGloas)
+	assert.Equal(t, true, ok)
+	pMessage = GossipTopicMappings(ExecutionPayloadBidTopicFormat, gloasForkEpoch)
+	_, ok = pMessage.(*ethpb.SignedExecutionPayloadBid)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, ExecutionPayloadBidTopicFormat, GossipTypeMapping[reflect.TypeFor[*ethpb.SignedExecutionPayloadBid]()])
+	pMessage = GossipTopicMappings(SignedProposerPreferencesTopicFormat, gloasForkEpoch)
+	_, ok = pMessage.(*ethpb.SignedProposerPreferences)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, SignedProposerPreferencesTopicFormat, GossipTypeMapping[reflect.TypeFor[*ethpb.SignedProposerPreferences]()])
 }

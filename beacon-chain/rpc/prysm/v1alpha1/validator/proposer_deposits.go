@@ -5,16 +5,16 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/math"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -71,6 +71,10 @@ func (vs *Server) packDepositsAndAttestations(
 // this eth1data has enough support to be considered for deposits inclusion. If current vote has
 // enough support, then use that vote for basis of determining deposits, otherwise use current state
 // eth1data.
+// In the post-electra phase, this function will usually return an empty list,
+// as the legacy deposit process is deprecated. (EIP-6110)
+// NOTE: During the transition period, the legacy deposit process
+// may still be active and managed. This function handles that scenario.
 func (vs *Server) deposits(
 	ctx context.Context,
 	beaconState state.BeaconState,
@@ -84,22 +88,20 @@ func (vs *Server) deposits(
 	}
 
 	if !vs.Eth1InfoFetcher.ExecutionClientConnected() {
-		log.Warn("not connected to eth1 node, skip pending deposit insertion")
+		log.Warn("Not connected to eth1 node, skip pending deposit insertion")
 		return []*ethpb.Deposit{}, nil
 	}
+
+	// skip legacy deposits if eth1 deposit index is already at the index of deposit requests start
+	if helpers.DepositRequestsStarted(beaconState) {
+		return []*ethpb.Deposit{}, nil
+	}
+
 	// Need to fetch if the deposits up to the state's latest eth1 data matches
 	// the number of all deposits in this RPC call. If not, then we return nil.
 	canonicalEth1Data, canonicalEth1DataHeight, err := vs.canonicalEth1Data(ctx, beaconState, currentVote)
 	if err != nil {
 		return nil, err
-	}
-
-	// In the post-electra phase, this function will usually return an empty list,
-	// as the legacy deposit process is deprecated. (EIP-6110)
-	// NOTE: During the transition period, the legacy deposit process
-	// may still be active and managed. This function handles that scenario.
-	if !isLegacyDepositProcessPeriod(beaconState, canonicalEth1Data) {
-		return []*ethpb.Deposit{}, nil
 	}
 
 	_, genesisEth1Block := vs.Eth1InfoFetcher.GenesisExecutionChainInfo()
@@ -110,7 +112,7 @@ func (vs *Server) deposits(
 	// If there are no pending deposits, exit early.
 	allPendingContainers := vs.PendingDepositsFetcher.PendingContainers(ctx, canonicalEth1DataHeight)
 	if len(allPendingContainers) == 0 {
-		log.Debug("no pending deposits for inclusion in block")
+		log.Debug("No pending deposits for inclusion in block")
 		return []*ethpb.Deposit{}, nil
 	}
 
@@ -140,7 +142,7 @@ func (vs *Server) deposits(
 			if err != nil {
 				return nil, errors.Wrap(err, "could not retrieve requests start index")
 			}
-			eth1DepositIndexLimit := math.Min(canonicalEth1Data.DepositCount, requestsStartIndex)
+			eth1DepositIndexLimit := min(canonicalEth1Data.DepositCount, requestsStartIndex)
 			if beaconState.Eth1DepositIndex() < eth1DepositIndexLimit {
 				if uint64(dep.Index) >= beaconState.Eth1DepositIndex() && uint64(dep.Index) < eth1DepositIndexLimit {
 					pendingDeps = append(pendingDeps, dep)
@@ -284,22 +286,4 @@ func shouldRebuildTrie(totalDepCount, unFinalizedDeps uint64) bool {
 	// the deposit trie, the value of log(x) + k is fixed at 32.
 	unFinalizedCompute := unFinalizedDeps * params.BeaconConfig().DepositContractTreeDepth
 	return unFinalizedCompute > totalDepCount
-}
-
-// isLegacyDepositProcessPeriod determines if the current state should use the legacy deposit process.
-func isLegacyDepositProcessPeriod(beaconState state.BeaconState, canonicalEth1Data *ethpb.Eth1Data) bool {
-	// Before the Electra upgrade, always use the legacy deposit process.
-	if beaconState.Version() < version.Electra {
-		return true
-	}
-
-	// Handle the transition period between the legacy and the new deposit process.
-	requestsStartIndex, err := beaconState.DepositRequestsStartIndex()
-	if err != nil {
-		// If we can't get the deposit requests start index,
-		// we should default to the legacy deposit process.
-		return true
-	}
-	eth1DepositIndexLimit := math.Min(canonicalEth1Data.DepositCount, requestsStartIndex)
-	return beaconState.Eth1DepositIndex() < eth1DepositIndexLimit
 }

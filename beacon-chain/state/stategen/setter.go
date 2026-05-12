@@ -3,15 +3,14 @@ package stategen
 import (
 	"context"
 	"fmt"
-	"math"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -48,13 +47,13 @@ func (s *State) ForceCheckpoint(ctx context.Context, blockRoot []byte) error {
 
 // This saves a post beacon state. On the epoch boundary,
 // it saves a full state. On an intermediate slot, it saves a back pointer to the
-// nearest epoch boundary state.
+// nearest epoch boundary state. If state-diff mode is enabled, it skips saving to hot state db.
 func (s *State) saveStateByRoot(ctx context.Context, blockRoot [32]byte, st state.BeaconState) error {
 	ctx, span := trace.StartSpan(ctx, "stateGen.saveStateByRoot")
 	defer span.End()
 
 	// Duration can't be 0 to prevent panic for division.
-	duration := uint64(math.Max(float64(s.saveHotStateDB.duration), 1))
+	duration := uint64(max(float64(s.saveHotStateDB.duration), 1))
 
 	s.saveHotStateDB.lock.Lock()
 	if s.saveHotStateDB.enabled && st.Slot().Mod(duration) == 0 {

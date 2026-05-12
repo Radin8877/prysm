@@ -1,22 +1,21 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/validator"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/validator"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestStore_ProposerSettings_ReadAndWrite(t *testing.T) {
 	t.Run("save to db in full", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		db := setupDB(t, [][fieldparams.BLSPubkeyLength]byte{})
 		key1, err := hexutil.Decode("0xa057816155ad77931185101128655c0191bd0214c201ca48ed887f6c4c6adf334070efcd75140eada5ac83a92506dd7a")
 		require.NoError(t, err)
@@ -50,7 +49,7 @@ func TestStore_ProposerSettings_ReadAndWrite(t *testing.T) {
 		require.DeepEqual(t, settings, dbSettings)
 	})
 	t.Run("update default settings then update at specific key", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		db := setupDB(t, [][fieldparams.BLSPubkeyLength]byte{})
 		key1, err := hexutil.Decode("0xa057816155ad77931185101128655c0191bd0214c201ca48ed887f6c4c6adf334070efcd75140eada5ac83a92506dd7a")
 		require.NoError(t, err)

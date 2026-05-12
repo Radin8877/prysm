@@ -2,9 +2,9 @@
 package eth
 
 import (
+	github_com_OffchainLabs_prysm_v7_consensus_types_primitives "github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	v1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
 	ssz "github.com/prysmaticlabs/fastssz"
-	github_com_prysmaticlabs_prysm_v5_consensus_types_primitives "github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	v1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
 )
 
 // MarshalSSZ ssz marshals the SignedBeaconBlockContentsFulu object
@@ -38,8 +38,8 @@ func (s *SignedBeaconBlockContentsFulu) MarshalSSZTo(buf []byte) (dst []byte, er
 	}
 
 	// Field (1) 'KzgProofs'
-	if size := len(s.KzgProofs); size > 4096 {
-		err = ssz.ErrListTooBigFn("--.KzgProofs", size, 4096)
+	if size := len(s.KzgProofs); size > 33554432 {
+		err = ssz.ErrListTooBigFn("--.KzgProofs", size, 33554432)
 		return
 	}
 	for ii := 0; ii < len(s.KzgProofs); ii++ {
@@ -110,7 +110,7 @@ func (s *SignedBeaconBlockContentsFulu) UnmarshalSSZ(buf []byte) error {
 	// Field (1) 'KzgProofs'
 	{
 		buf = tail[o1:o2]
-		num, err := ssz.DivideInt2(len(buf), 48, 4096)
+		num, err := ssz.DivideInt2(len(buf), 48, 33554432)
 		if err != nil {
 			return err
 		}
@@ -176,8 +176,8 @@ func (s *SignedBeaconBlockContentsFulu) HashTreeRootWith(hh *ssz.Hasher) (err er
 
 	// Field (1) 'KzgProofs'
 	{
-		if size := len(s.KzgProofs); size > 4096 {
-			err = ssz.ErrListTooBigFn("--.KzgProofs", size, 4096)
+		if size := len(s.KzgProofs); size > 33554432 {
+			err = ssz.ErrListTooBigFn("--.KzgProofs", size, 33554432)
 			return
 		}
 		subIndx := hh.Index()
@@ -190,7 +190,7 @@ func (s *SignedBeaconBlockContentsFulu) HashTreeRootWith(hh *ssz.Hasher) (err er
 		}
 
 		numItems := uint64(len(s.KzgProofs))
-		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
+		hh.MerkleizeWithMixin(subIndx, numItems, 33554432)
 	}
 
 	// Field (2) 'Blobs'
@@ -229,7 +229,7 @@ func (s *SignedBeaconBlockFulu) MarshalSSZTo(buf []byte) (dst []byte, err error)
 	// Offset (0) 'Block'
 	dst = ssz.WriteOffset(dst, offset)
 	if s.Block == nil {
-		s.Block = new(BeaconBlockFulu)
+		s.Block = new(BeaconBlockElectra)
 	}
 	offset += s.Block.SizeSSZ()
 
@@ -278,7 +278,7 @@ func (s *SignedBeaconBlockFulu) UnmarshalSSZ(buf []byte) error {
 	{
 		buf = tail[o0:]
 		if s.Block == nil {
-			s.Block = new(BeaconBlockFulu)
+			s.Block = new(BeaconBlockElectra)
 		}
 		if err = s.Block.UnmarshalSSZ(buf); err != nil {
 			return err
@@ -293,7 +293,7 @@ func (s *SignedBeaconBlockFulu) SizeSSZ() (size int) {
 
 	// Field (0) 'Block'
 	if s.Block == nil {
-		s.Block = new(BeaconBlockFulu)
+		s.Block = new(BeaconBlockElectra)
 	}
 	size += s.Block.SizeSSZ()
 
@@ -338,7 +338,7 @@ func (b *BeaconBlockContentsFulu) MarshalSSZTo(buf []byte) (dst []byte, err erro
 	// Offset (0) 'Block'
 	dst = ssz.WriteOffset(dst, offset)
 	if b.Block == nil {
-		b.Block = new(BeaconBlockFulu)
+		b.Block = new(BeaconBlockElectra)
 	}
 	offset += b.Block.SizeSSZ()
 
@@ -356,8 +356,8 @@ func (b *BeaconBlockContentsFulu) MarshalSSZTo(buf []byte) (dst []byte, err erro
 	}
 
 	// Field (1) 'KzgProofs'
-	if size := len(b.KzgProofs); size > 4096 {
-		err = ssz.ErrListTooBigFn("--.KzgProofs", size, 4096)
+	if size := len(b.KzgProofs); size > 33554432 {
+		err = ssz.ErrListTooBigFn("--.KzgProofs", size, 33554432)
 		return
 	}
 	for ii := 0; ii < len(b.KzgProofs); ii++ {
@@ -418,7 +418,7 @@ func (b *BeaconBlockContentsFulu) UnmarshalSSZ(buf []byte) error {
 	{
 		buf = tail[o0:o1]
 		if b.Block == nil {
-			b.Block = new(BeaconBlockFulu)
+			b.Block = new(BeaconBlockElectra)
 		}
 		if err = b.Block.UnmarshalSSZ(buf); err != nil {
 			return err
@@ -428,7 +428,7 @@ func (b *BeaconBlockContentsFulu) UnmarshalSSZ(buf []byte) error {
 	// Field (1) 'KzgProofs'
 	{
 		buf = tail[o1:o2]
-		num, err := ssz.DivideInt2(len(buf), 48, 4096)
+		num, err := ssz.DivideInt2(len(buf), 48, 33554432)
 		if err != nil {
 			return err
 		}
@@ -465,7 +465,7 @@ func (b *BeaconBlockContentsFulu) SizeSSZ() (size int) {
 
 	// Field (0) 'Block'
 	if b.Block == nil {
-		b.Block = new(BeaconBlockFulu)
+		b.Block = new(BeaconBlockElectra)
 	}
 	size += b.Block.SizeSSZ()
 
@@ -494,8 +494,8 @@ func (b *BeaconBlockContentsFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 
 	// Field (1) 'KzgProofs'
 	{
-		if size := len(b.KzgProofs); size > 4096 {
-			err = ssz.ErrListTooBigFn("--.KzgProofs", size, 4096)
+		if size := len(b.KzgProofs); size > 33554432 {
+			err = ssz.ErrListTooBigFn("--.KzgProofs", size, 33554432)
 			return
 		}
 		subIndx := hh.Index()
@@ -508,7 +508,7 @@ func (b *BeaconBlockContentsFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 
 		numItems := uint64(len(b.KzgProofs))
-		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
+		hh.MerkleizeWithMixin(subIndx, numItems, 33554432)
 	}
 
 	// Field (2) 'Blobs'
@@ -528,799 +528,6 @@ func (b *BeaconBlockContentsFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 
 		numItems := uint64(len(b.Blobs))
 		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
-	}
-
-	hh.Merkleize(indx)
-	return
-}
-
-// MarshalSSZ ssz marshals the BeaconBlockFulu object
-func (b *BeaconBlockFulu) MarshalSSZ() ([]byte, error) {
-	return ssz.MarshalSSZ(b)
-}
-
-// MarshalSSZTo ssz marshals the BeaconBlockFulu object to a target array
-func (b *BeaconBlockFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
-	dst = buf
-	offset := int(84)
-
-	// Field (0) 'Slot'
-	dst = ssz.MarshalUint64(dst, uint64(b.Slot))
-
-	// Field (1) 'ProposerIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.ProposerIndex))
-
-	// Field (2) 'ParentRoot'
-	if size := len(b.ParentRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.ParentRoot", size, 32)
-		return
-	}
-	dst = append(dst, b.ParentRoot...)
-
-	// Field (3) 'StateRoot'
-	if size := len(b.StateRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.StateRoot", size, 32)
-		return
-	}
-	dst = append(dst, b.StateRoot...)
-
-	// Offset (4) 'Body'
-	dst = ssz.WriteOffset(dst, offset)
-	if b.Body == nil {
-		b.Body = new(BeaconBlockBodyFulu)
-	}
-	offset += b.Body.SizeSSZ()
-
-	// Field (4) 'Body'
-	if dst, err = b.Body.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	return
-}
-
-// UnmarshalSSZ ssz unmarshals the BeaconBlockFulu object
-func (b *BeaconBlockFulu) UnmarshalSSZ(buf []byte) error {
-	var err error
-	size := uint64(len(buf))
-	if size < 84 {
-		return ssz.ErrSize
-	}
-
-	tail := buf
-	var o4 uint64
-
-	// Field (0) 'Slot'
-	b.Slot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[0:8]))
-
-	// Field (1) 'ProposerIndex'
-	b.ProposerIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[8:16]))
-
-	// Field (2) 'ParentRoot'
-	if cap(b.ParentRoot) == 0 {
-		b.ParentRoot = make([]byte, 0, len(buf[16:48]))
-	}
-	b.ParentRoot = append(b.ParentRoot, buf[16:48]...)
-
-	// Field (3) 'StateRoot'
-	if cap(b.StateRoot) == 0 {
-		b.StateRoot = make([]byte, 0, len(buf[48:80]))
-	}
-	b.StateRoot = append(b.StateRoot, buf[48:80]...)
-
-	// Offset (4) 'Body'
-	if o4 = ssz.ReadOffset(buf[80:84]); o4 > size {
-		return ssz.ErrOffset
-	}
-
-	if o4 != 84 {
-		return ssz.ErrInvalidVariableOffset
-	}
-
-	// Field (4) 'Body'
-	{
-		buf = tail[o4:]
-		if b.Body == nil {
-			b.Body = new(BeaconBlockBodyFulu)
-		}
-		if err = b.Body.UnmarshalSSZ(buf); err != nil {
-			return err
-		}
-	}
-	return err
-}
-
-// SizeSSZ returns the ssz encoded size in bytes for the BeaconBlockFulu object
-func (b *BeaconBlockFulu) SizeSSZ() (size int) {
-	size = 84
-
-	// Field (4) 'Body'
-	if b.Body == nil {
-		b.Body = new(BeaconBlockBodyFulu)
-	}
-	size += b.Body.SizeSSZ()
-
-	return
-}
-
-// HashTreeRoot ssz hashes the BeaconBlockFulu object
-func (b *BeaconBlockFulu) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(b)
-}
-
-// HashTreeRootWith ssz hashes the BeaconBlockFulu object with a hasher
-func (b *BeaconBlockFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
-	indx := hh.Index()
-
-	// Field (0) 'Slot'
-	hh.PutUint64(uint64(b.Slot))
-
-	// Field (1) 'ProposerIndex'
-	hh.PutUint64(uint64(b.ProposerIndex))
-
-	// Field (2) 'ParentRoot'
-	if size := len(b.ParentRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.ParentRoot", size, 32)
-		return
-	}
-	hh.PutBytes(b.ParentRoot)
-
-	// Field (3) 'StateRoot'
-	if size := len(b.StateRoot); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.StateRoot", size, 32)
-		return
-	}
-	hh.PutBytes(b.StateRoot)
-
-	// Field (4) 'Body'
-	if err = b.Body.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	hh.Merkleize(indx)
-	return
-}
-
-// MarshalSSZ ssz marshals the BeaconBlockBodyFulu object
-func (b *BeaconBlockBodyFulu) MarshalSSZ() ([]byte, error) {
-	return ssz.MarshalSSZ(b)
-}
-
-// MarshalSSZTo ssz marshals the BeaconBlockBodyFulu object to a target array
-func (b *BeaconBlockBodyFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
-	dst = buf
-	offset := int(396)
-
-	// Field (0) 'RandaoReveal'
-	if size := len(b.RandaoReveal); size != 96 {
-		err = ssz.ErrBytesLengthFn("--.RandaoReveal", size, 96)
-		return
-	}
-	dst = append(dst, b.RandaoReveal...)
-
-	// Field (1) 'Eth1Data'
-	if b.Eth1Data == nil {
-		b.Eth1Data = new(Eth1Data)
-	}
-	if dst, err = b.Eth1Data.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Field (2) 'Graffiti'
-	if size := len(b.Graffiti); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.Graffiti", size, 32)
-		return
-	}
-	dst = append(dst, b.Graffiti...)
-
-	// Offset (3) 'ProposerSlashings'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.ProposerSlashings) * 416
-
-	// Offset (4) 'AttesterSlashings'
-	dst = ssz.WriteOffset(dst, offset)
-	for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-		offset += 4
-		offset += b.AttesterSlashings[ii].SizeSSZ()
-	}
-
-	// Offset (5) 'Attestations'
-	dst = ssz.WriteOffset(dst, offset)
-	for ii := 0; ii < len(b.Attestations); ii++ {
-		offset += 4
-		offset += b.Attestations[ii].SizeSSZ()
-	}
-
-	// Offset (6) 'Deposits'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.Deposits) * 1240
-
-	// Offset (7) 'VoluntaryExits'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.VoluntaryExits) * 112
-
-	// Field (8) 'SyncAggregate'
-	if b.SyncAggregate == nil {
-		b.SyncAggregate = new(SyncAggregate)
-	}
-	if dst, err = b.SyncAggregate.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Offset (9) 'ExecutionPayload'
-	dst = ssz.WriteOffset(dst, offset)
-	if b.ExecutionPayload == nil {
-		b.ExecutionPayload = new(v1.ExecutionPayloadDeneb)
-	}
-	offset += b.ExecutionPayload.SizeSSZ()
-
-	// Offset (10) 'BlsToExecutionChanges'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.BlsToExecutionChanges) * 172
-
-	// Offset (11) 'BlobKzgCommitments'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.BlobKzgCommitments) * 48
-
-	// Offset (12) 'ExecutionRequests'
-	dst = ssz.WriteOffset(dst, offset)
-	if b.ExecutionRequests == nil {
-		b.ExecutionRequests = new(v1.ExecutionRequests)
-	}
-	offset += b.ExecutionRequests.SizeSSZ()
-
-	// Field (3) 'ProposerSlashings'
-	if size := len(b.ProposerSlashings); size > 16 {
-		err = ssz.ErrListTooBigFn("--.ProposerSlashings", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.ProposerSlashings); ii++ {
-		if dst, err = b.ProposerSlashings[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (4) 'AttesterSlashings'
-	if size := len(b.AttesterSlashings); size > 1 {
-		err = ssz.ErrListTooBigFn("--.AttesterSlashings", size, 1)
-		return
-	}
-	{
-		offset = 4 * len(b.AttesterSlashings)
-		for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-			dst = ssz.WriteOffset(dst, offset)
-			offset += b.AttesterSlashings[ii].SizeSSZ()
-		}
-	}
-	for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-		if dst, err = b.AttesterSlashings[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (5) 'Attestations'
-	if size := len(b.Attestations); size > 8 {
-		err = ssz.ErrListTooBigFn("--.Attestations", size, 8)
-		return
-	}
-	{
-		offset = 4 * len(b.Attestations)
-		for ii := 0; ii < len(b.Attestations); ii++ {
-			dst = ssz.WriteOffset(dst, offset)
-			offset += b.Attestations[ii].SizeSSZ()
-		}
-	}
-	for ii := 0; ii < len(b.Attestations); ii++ {
-		if dst, err = b.Attestations[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (6) 'Deposits'
-	if size := len(b.Deposits); size > 16 {
-		err = ssz.ErrListTooBigFn("--.Deposits", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.Deposits); ii++ {
-		if dst, err = b.Deposits[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (7) 'VoluntaryExits'
-	if size := len(b.VoluntaryExits); size > 16 {
-		err = ssz.ErrListTooBigFn("--.VoluntaryExits", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.VoluntaryExits); ii++ {
-		if dst, err = b.VoluntaryExits[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (9) 'ExecutionPayload'
-	if dst, err = b.ExecutionPayload.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Field (10) 'BlsToExecutionChanges'
-	if size := len(b.BlsToExecutionChanges); size > 16 {
-		err = ssz.ErrListTooBigFn("--.BlsToExecutionChanges", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.BlsToExecutionChanges); ii++ {
-		if dst, err = b.BlsToExecutionChanges[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (11) 'BlobKzgCommitments'
-	if size := len(b.BlobKzgCommitments); size > 4096 {
-		err = ssz.ErrListTooBigFn("--.BlobKzgCommitments", size, 4096)
-		return
-	}
-	for ii := 0; ii < len(b.BlobKzgCommitments); ii++ {
-		if size := len(b.BlobKzgCommitments[ii]); size != 48 {
-			err = ssz.ErrBytesLengthFn("--.BlobKzgCommitments[ii]", size, 48)
-			return
-		}
-		dst = append(dst, b.BlobKzgCommitments[ii]...)
-	}
-
-	// Field (12) 'ExecutionRequests'
-	if dst, err = b.ExecutionRequests.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	return
-}
-
-// UnmarshalSSZ ssz unmarshals the BeaconBlockBodyFulu object
-func (b *BeaconBlockBodyFulu) UnmarshalSSZ(buf []byte) error {
-	var err error
-	size := uint64(len(buf))
-	if size < 396 {
-		return ssz.ErrSize
-	}
-
-	tail := buf
-	var o3, o4, o5, o6, o7, o9, o10, o11, o12 uint64
-
-	// Field (0) 'RandaoReveal'
-	if cap(b.RandaoReveal) == 0 {
-		b.RandaoReveal = make([]byte, 0, len(buf[0:96]))
-	}
-	b.RandaoReveal = append(b.RandaoReveal, buf[0:96]...)
-
-	// Field (1) 'Eth1Data'
-	if b.Eth1Data == nil {
-		b.Eth1Data = new(Eth1Data)
-	}
-	if err = b.Eth1Data.UnmarshalSSZ(buf[96:168]); err != nil {
-		return err
-	}
-
-	// Field (2) 'Graffiti'
-	if cap(b.Graffiti) == 0 {
-		b.Graffiti = make([]byte, 0, len(buf[168:200]))
-	}
-	b.Graffiti = append(b.Graffiti, buf[168:200]...)
-
-	// Offset (3) 'ProposerSlashings'
-	if o3 = ssz.ReadOffset(buf[200:204]); o3 > size {
-		return ssz.ErrOffset
-	}
-
-	if o3 != 396 {
-		return ssz.ErrInvalidVariableOffset
-	}
-
-	// Offset (4) 'AttesterSlashings'
-	if o4 = ssz.ReadOffset(buf[204:208]); o4 > size || o3 > o4 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (5) 'Attestations'
-	if o5 = ssz.ReadOffset(buf[208:212]); o5 > size || o4 > o5 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (6) 'Deposits'
-	if o6 = ssz.ReadOffset(buf[212:216]); o6 > size || o5 > o6 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (7) 'VoluntaryExits'
-	if o7 = ssz.ReadOffset(buf[216:220]); o7 > size || o6 > o7 {
-		return ssz.ErrOffset
-	}
-
-	// Field (8) 'SyncAggregate'
-	if b.SyncAggregate == nil {
-		b.SyncAggregate = new(SyncAggregate)
-	}
-	if err = b.SyncAggregate.UnmarshalSSZ(buf[220:380]); err != nil {
-		return err
-	}
-
-	// Offset (9) 'ExecutionPayload'
-	if o9 = ssz.ReadOffset(buf[380:384]); o9 > size || o7 > o9 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (10) 'BlsToExecutionChanges'
-	if o10 = ssz.ReadOffset(buf[384:388]); o10 > size || o9 > o10 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (11) 'BlobKzgCommitments'
-	if o11 = ssz.ReadOffset(buf[388:392]); o11 > size || o10 > o11 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (12) 'ExecutionRequests'
-	if o12 = ssz.ReadOffset(buf[392:396]); o12 > size || o11 > o12 {
-		return ssz.ErrOffset
-	}
-
-	// Field (3) 'ProposerSlashings'
-	{
-		buf = tail[o3:o4]
-		num, err := ssz.DivideInt2(len(buf), 416, 16)
-		if err != nil {
-			return err
-		}
-		b.ProposerSlashings = make([]*ProposerSlashing, num)
-		for ii := 0; ii < num; ii++ {
-			if b.ProposerSlashings[ii] == nil {
-				b.ProposerSlashings[ii] = new(ProposerSlashing)
-			}
-			if err = b.ProposerSlashings[ii].UnmarshalSSZ(buf[ii*416 : (ii+1)*416]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (4) 'AttesterSlashings'
-	{
-		buf = tail[o4:o5]
-		num, err := ssz.DecodeDynamicLength(buf, 1)
-		if err != nil {
-			return err
-		}
-		b.AttesterSlashings = make([]*AttesterSlashingElectra, num)
-		err = ssz.UnmarshalDynamic(buf, num, func(indx int, buf []byte) (err error) {
-			if b.AttesterSlashings[indx] == nil {
-				b.AttesterSlashings[indx] = new(AttesterSlashingElectra)
-			}
-			if err = b.AttesterSlashings[indx].UnmarshalSSZ(buf); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Field (5) 'Attestations'
-	{
-		buf = tail[o5:o6]
-		num, err := ssz.DecodeDynamicLength(buf, 8)
-		if err != nil {
-			return err
-		}
-		b.Attestations = make([]*AttestationElectra, num)
-		err = ssz.UnmarshalDynamic(buf, num, func(indx int, buf []byte) (err error) {
-			if b.Attestations[indx] == nil {
-				b.Attestations[indx] = new(AttestationElectra)
-			}
-			if err = b.Attestations[indx].UnmarshalSSZ(buf); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Field (6) 'Deposits'
-	{
-		buf = tail[o6:o7]
-		num, err := ssz.DivideInt2(len(buf), 1240, 16)
-		if err != nil {
-			return err
-		}
-		b.Deposits = make([]*Deposit, num)
-		for ii := 0; ii < num; ii++ {
-			if b.Deposits[ii] == nil {
-				b.Deposits[ii] = new(Deposit)
-			}
-			if err = b.Deposits[ii].UnmarshalSSZ(buf[ii*1240 : (ii+1)*1240]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (7) 'VoluntaryExits'
-	{
-		buf = tail[o7:o9]
-		num, err := ssz.DivideInt2(len(buf), 112, 16)
-		if err != nil {
-			return err
-		}
-		b.VoluntaryExits = make([]*SignedVoluntaryExit, num)
-		for ii := 0; ii < num; ii++ {
-			if b.VoluntaryExits[ii] == nil {
-				b.VoluntaryExits[ii] = new(SignedVoluntaryExit)
-			}
-			if err = b.VoluntaryExits[ii].UnmarshalSSZ(buf[ii*112 : (ii+1)*112]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (9) 'ExecutionPayload'
-	{
-		buf = tail[o9:o10]
-		if b.ExecutionPayload == nil {
-			b.ExecutionPayload = new(v1.ExecutionPayloadDeneb)
-		}
-		if err = b.ExecutionPayload.UnmarshalSSZ(buf); err != nil {
-			return err
-		}
-	}
-
-	// Field (10) 'BlsToExecutionChanges'
-	{
-		buf = tail[o10:o11]
-		num, err := ssz.DivideInt2(len(buf), 172, 16)
-		if err != nil {
-			return err
-		}
-		b.BlsToExecutionChanges = make([]*SignedBLSToExecutionChange, num)
-		for ii := 0; ii < num; ii++ {
-			if b.BlsToExecutionChanges[ii] == nil {
-				b.BlsToExecutionChanges[ii] = new(SignedBLSToExecutionChange)
-			}
-			if err = b.BlsToExecutionChanges[ii].UnmarshalSSZ(buf[ii*172 : (ii+1)*172]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (11) 'BlobKzgCommitments'
-	{
-		buf = tail[o11:o12]
-		num, err := ssz.DivideInt2(len(buf), 48, 4096)
-		if err != nil {
-			return err
-		}
-		b.BlobKzgCommitments = make([][]byte, num)
-		for ii := 0; ii < num; ii++ {
-			if cap(b.BlobKzgCommitments[ii]) == 0 {
-				b.BlobKzgCommitments[ii] = make([]byte, 0, len(buf[ii*48:(ii+1)*48]))
-			}
-			b.BlobKzgCommitments[ii] = append(b.BlobKzgCommitments[ii], buf[ii*48:(ii+1)*48]...)
-		}
-	}
-
-	// Field (12) 'ExecutionRequests'
-	{
-		buf = tail[o12:]
-		if b.ExecutionRequests == nil {
-			b.ExecutionRequests = new(v1.ExecutionRequests)
-		}
-		if err = b.ExecutionRequests.UnmarshalSSZ(buf); err != nil {
-			return err
-		}
-	}
-	return err
-}
-
-// SizeSSZ returns the ssz encoded size in bytes for the BeaconBlockBodyFulu object
-func (b *BeaconBlockBodyFulu) SizeSSZ() (size int) {
-	size = 396
-
-	// Field (3) 'ProposerSlashings'
-	size += len(b.ProposerSlashings) * 416
-
-	// Field (4) 'AttesterSlashings'
-	for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-		size += 4
-		size += b.AttesterSlashings[ii].SizeSSZ()
-	}
-
-	// Field (5) 'Attestations'
-	for ii := 0; ii < len(b.Attestations); ii++ {
-		size += 4
-		size += b.Attestations[ii].SizeSSZ()
-	}
-
-	// Field (6) 'Deposits'
-	size += len(b.Deposits) * 1240
-
-	// Field (7) 'VoluntaryExits'
-	size += len(b.VoluntaryExits) * 112
-
-	// Field (9) 'ExecutionPayload'
-	if b.ExecutionPayload == nil {
-		b.ExecutionPayload = new(v1.ExecutionPayloadDeneb)
-	}
-	size += b.ExecutionPayload.SizeSSZ()
-
-	// Field (10) 'BlsToExecutionChanges'
-	size += len(b.BlsToExecutionChanges) * 172
-
-	// Field (11) 'BlobKzgCommitments'
-	size += len(b.BlobKzgCommitments) * 48
-
-	// Field (12) 'ExecutionRequests'
-	if b.ExecutionRequests == nil {
-		b.ExecutionRequests = new(v1.ExecutionRequests)
-	}
-	size += b.ExecutionRequests.SizeSSZ()
-
-	return
-}
-
-// HashTreeRoot ssz hashes the BeaconBlockBodyFulu object
-func (b *BeaconBlockBodyFulu) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(b)
-}
-
-// HashTreeRootWith ssz hashes the BeaconBlockBodyFulu object with a hasher
-func (b *BeaconBlockBodyFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
-	indx := hh.Index()
-
-	// Field (0) 'RandaoReveal'
-	if size := len(b.RandaoReveal); size != 96 {
-		err = ssz.ErrBytesLengthFn("--.RandaoReveal", size, 96)
-		return
-	}
-	hh.PutBytes(b.RandaoReveal)
-
-	// Field (1) 'Eth1Data'
-	if err = b.Eth1Data.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (2) 'Graffiti'
-	if size := len(b.Graffiti); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.Graffiti", size, 32)
-		return
-	}
-	hh.PutBytes(b.Graffiti)
-
-	// Field (3) 'ProposerSlashings'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.ProposerSlashings))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.ProposerSlashings {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (4) 'AttesterSlashings'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.AttesterSlashings))
-		if num > 1 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.AttesterSlashings {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 1)
-	}
-
-	// Field (5) 'Attestations'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.Attestations))
-		if num > 8 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.Attestations {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 8)
-	}
-
-	// Field (6) 'Deposits'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.Deposits))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.Deposits {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (7) 'VoluntaryExits'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.VoluntaryExits))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.VoluntaryExits {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (8) 'SyncAggregate'
-	if err = b.SyncAggregate.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (9) 'ExecutionPayload'
-	if err = b.ExecutionPayload.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (10) 'BlsToExecutionChanges'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.BlsToExecutionChanges))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.BlsToExecutionChanges {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (11) 'BlobKzgCommitments'
-	{
-		if size := len(b.BlobKzgCommitments); size > 4096 {
-			err = ssz.ErrListTooBigFn("--.BlobKzgCommitments", size, 4096)
-			return
-		}
-		subIndx := hh.Index()
-		for _, i := range b.BlobKzgCommitments {
-			if len(i) != 48 {
-				err = ssz.ErrBytesLength
-				return
-			}
-			hh.PutBytes(i)
-		}
-
-		numItems := uint64(len(b.BlobKzgCommitments))
-		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
-	}
-
-	// Field (12) 'ExecutionRequests'
-	if err = b.ExecutionRequests.HashTreeRootWith(hh); err != nil {
-		return
 	}
 
 	hh.Merkleize(indx)
@@ -1447,10 +654,10 @@ func (b *BlindedBeaconBlockFulu) MarshalSSZTo(buf []byte) (dst []byte, err error
 	offset := int(84)
 
 	// Field (0) 'Slot'
-	dst = ssz.MarshalUint64(dst, uint64(b.Slot))
+	dst = ssz.MarshalUint(dst, b.Slot)
 
 	// Field (1) 'ProposerIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.ProposerIndex))
+	dst = ssz.MarshalUint(dst, b.ProposerIndex)
 
 	// Field (2) 'ParentRoot'
 	if size := len(b.ParentRoot); size != 32 {
@@ -1469,7 +676,7 @@ func (b *BlindedBeaconBlockFulu) MarshalSSZTo(buf []byte) (dst []byte, err error
 	// Offset (4) 'Body'
 	dst = ssz.WriteOffset(dst, offset)
 	if b.Body == nil {
-		b.Body = new(BlindedBeaconBlockBodyFulu)
+		b.Body = new(BlindedBeaconBlockBodyElectra)
 	}
 	offset += b.Body.SizeSSZ()
 
@@ -1493,10 +700,10 @@ func (b *BlindedBeaconBlockFulu) UnmarshalSSZ(buf []byte) error {
 	var o4 uint64
 
 	// Field (0) 'Slot'
-	b.Slot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[0:8]))
+	b.Slot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[0:8])
 
 	// Field (1) 'ProposerIndex'
-	b.ProposerIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[8:16]))
+	b.ProposerIndex = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[8:16])
 
 	// Field (2) 'ParentRoot'
 	if cap(b.ParentRoot) == 0 {
@@ -1523,7 +730,7 @@ func (b *BlindedBeaconBlockFulu) UnmarshalSSZ(buf []byte) error {
 	{
 		buf = tail[o4:]
 		if b.Body == nil {
-			b.Body = new(BlindedBeaconBlockBodyFulu)
+			b.Body = new(BlindedBeaconBlockBodyElectra)
 		}
 		if err = b.Body.UnmarshalSSZ(buf); err != nil {
 			return err
@@ -1538,7 +745,7 @@ func (b *BlindedBeaconBlockFulu) SizeSSZ() (size int) {
 
 	// Field (4) 'Body'
 	if b.Body == nil {
-		b.Body = new(BlindedBeaconBlockBodyFulu)
+		b.Body = new(BlindedBeaconBlockBodyElectra)
 	}
 	size += b.Body.SizeSSZ()
 
@@ -1555,10 +762,10 @@ func (b *BlindedBeaconBlockFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Slot'
-	hh.PutUint64(uint64(b.Slot))
+	ssz.PutUint(hh, b.Slot)
 
 	// Field (1) 'ProposerIndex'
-	hh.PutUint64(uint64(b.ProposerIndex))
+	ssz.PutUint(hh, b.ProposerIndex)
 
 	// Field (2) 'ParentRoot'
 	if size := len(b.ParentRoot); size != 32 {
@@ -1583,652 +790,6 @@ func (b *BlindedBeaconBlockFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	return
 }
 
-// MarshalSSZ ssz marshals the BlindedBeaconBlockBodyFulu object
-func (b *BlindedBeaconBlockBodyFulu) MarshalSSZ() ([]byte, error) {
-	return ssz.MarshalSSZ(b)
-}
-
-// MarshalSSZTo ssz marshals the BlindedBeaconBlockBodyFulu object to a target array
-func (b *BlindedBeaconBlockBodyFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
-	dst = buf
-	offset := int(396)
-
-	// Field (0) 'RandaoReveal'
-	if size := len(b.RandaoReveal); size != 96 {
-		err = ssz.ErrBytesLengthFn("--.RandaoReveal", size, 96)
-		return
-	}
-	dst = append(dst, b.RandaoReveal...)
-
-	// Field (1) 'Eth1Data'
-	if b.Eth1Data == nil {
-		b.Eth1Data = new(Eth1Data)
-	}
-	if dst, err = b.Eth1Data.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Field (2) 'Graffiti'
-	if size := len(b.Graffiti); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.Graffiti", size, 32)
-		return
-	}
-	dst = append(dst, b.Graffiti...)
-
-	// Offset (3) 'ProposerSlashings'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.ProposerSlashings) * 416
-
-	// Offset (4) 'AttesterSlashings'
-	dst = ssz.WriteOffset(dst, offset)
-	for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-		offset += 4
-		offset += b.AttesterSlashings[ii].SizeSSZ()
-	}
-
-	// Offset (5) 'Attestations'
-	dst = ssz.WriteOffset(dst, offset)
-	for ii := 0; ii < len(b.Attestations); ii++ {
-		offset += 4
-		offset += b.Attestations[ii].SizeSSZ()
-	}
-
-	// Offset (6) 'Deposits'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.Deposits) * 1240
-
-	// Offset (7) 'VoluntaryExits'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.VoluntaryExits) * 112
-
-	// Field (8) 'SyncAggregate'
-	if b.SyncAggregate == nil {
-		b.SyncAggregate = new(SyncAggregate)
-	}
-	if dst, err = b.SyncAggregate.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Offset (9) 'ExecutionPayloadHeader'
-	dst = ssz.WriteOffset(dst, offset)
-	if b.ExecutionPayloadHeader == nil {
-		b.ExecutionPayloadHeader = new(v1.ExecutionPayloadHeaderDeneb)
-	}
-	offset += b.ExecutionPayloadHeader.SizeSSZ()
-
-	// Offset (10) 'BlsToExecutionChanges'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.BlsToExecutionChanges) * 172
-
-	// Offset (11) 'BlobKzgCommitments'
-	dst = ssz.WriteOffset(dst, offset)
-	offset += len(b.BlobKzgCommitments) * 48
-
-	// Offset (12) 'ExecutionRequests'
-	dst = ssz.WriteOffset(dst, offset)
-	if b.ExecutionRequests == nil {
-		b.ExecutionRequests = new(v1.ExecutionRequests)
-	}
-	offset += b.ExecutionRequests.SizeSSZ()
-
-	// Field (3) 'ProposerSlashings'
-	if size := len(b.ProposerSlashings); size > 16 {
-		err = ssz.ErrListTooBigFn("--.ProposerSlashings", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.ProposerSlashings); ii++ {
-		if dst, err = b.ProposerSlashings[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (4) 'AttesterSlashings'
-	if size := len(b.AttesterSlashings); size > 1 {
-		err = ssz.ErrListTooBigFn("--.AttesterSlashings", size, 1)
-		return
-	}
-	{
-		offset = 4 * len(b.AttesterSlashings)
-		for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-			dst = ssz.WriteOffset(dst, offset)
-			offset += b.AttesterSlashings[ii].SizeSSZ()
-		}
-	}
-	for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-		if dst, err = b.AttesterSlashings[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (5) 'Attestations'
-	if size := len(b.Attestations); size > 8 {
-		err = ssz.ErrListTooBigFn("--.Attestations", size, 8)
-		return
-	}
-	{
-		offset = 4 * len(b.Attestations)
-		for ii := 0; ii < len(b.Attestations); ii++ {
-			dst = ssz.WriteOffset(dst, offset)
-			offset += b.Attestations[ii].SizeSSZ()
-		}
-	}
-	for ii := 0; ii < len(b.Attestations); ii++ {
-		if dst, err = b.Attestations[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (6) 'Deposits'
-	if size := len(b.Deposits); size > 16 {
-		err = ssz.ErrListTooBigFn("--.Deposits", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.Deposits); ii++ {
-		if dst, err = b.Deposits[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (7) 'VoluntaryExits'
-	if size := len(b.VoluntaryExits); size > 16 {
-		err = ssz.ErrListTooBigFn("--.VoluntaryExits", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.VoluntaryExits); ii++ {
-		if dst, err = b.VoluntaryExits[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (9) 'ExecutionPayloadHeader'
-	if dst, err = b.ExecutionPayloadHeader.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	// Field (10) 'BlsToExecutionChanges'
-	if size := len(b.BlsToExecutionChanges); size > 16 {
-		err = ssz.ErrListTooBigFn("--.BlsToExecutionChanges", size, 16)
-		return
-	}
-	for ii := 0; ii < len(b.BlsToExecutionChanges); ii++ {
-		if dst, err = b.BlsToExecutionChanges[ii].MarshalSSZTo(dst); err != nil {
-			return
-		}
-	}
-
-	// Field (11) 'BlobKzgCommitments'
-	if size := len(b.BlobKzgCommitments); size > 4096 {
-		err = ssz.ErrListTooBigFn("--.BlobKzgCommitments", size, 4096)
-		return
-	}
-	for ii := 0; ii < len(b.BlobKzgCommitments); ii++ {
-		if size := len(b.BlobKzgCommitments[ii]); size != 48 {
-			err = ssz.ErrBytesLengthFn("--.BlobKzgCommitments[ii]", size, 48)
-			return
-		}
-		dst = append(dst, b.BlobKzgCommitments[ii]...)
-	}
-
-	// Field (12) 'ExecutionRequests'
-	if dst, err = b.ExecutionRequests.MarshalSSZTo(dst); err != nil {
-		return
-	}
-
-	return
-}
-
-// UnmarshalSSZ ssz unmarshals the BlindedBeaconBlockBodyFulu object
-func (b *BlindedBeaconBlockBodyFulu) UnmarshalSSZ(buf []byte) error {
-	var err error
-	size := uint64(len(buf))
-	if size < 396 {
-		return ssz.ErrSize
-	}
-
-	tail := buf
-	var o3, o4, o5, o6, o7, o9, o10, o11, o12 uint64
-
-	// Field (0) 'RandaoReveal'
-	if cap(b.RandaoReveal) == 0 {
-		b.RandaoReveal = make([]byte, 0, len(buf[0:96]))
-	}
-	b.RandaoReveal = append(b.RandaoReveal, buf[0:96]...)
-
-	// Field (1) 'Eth1Data'
-	if b.Eth1Data == nil {
-		b.Eth1Data = new(Eth1Data)
-	}
-	if err = b.Eth1Data.UnmarshalSSZ(buf[96:168]); err != nil {
-		return err
-	}
-
-	// Field (2) 'Graffiti'
-	if cap(b.Graffiti) == 0 {
-		b.Graffiti = make([]byte, 0, len(buf[168:200]))
-	}
-	b.Graffiti = append(b.Graffiti, buf[168:200]...)
-
-	// Offset (3) 'ProposerSlashings'
-	if o3 = ssz.ReadOffset(buf[200:204]); o3 > size {
-		return ssz.ErrOffset
-	}
-
-	if o3 != 396 {
-		return ssz.ErrInvalidVariableOffset
-	}
-
-	// Offset (4) 'AttesterSlashings'
-	if o4 = ssz.ReadOffset(buf[204:208]); o4 > size || o3 > o4 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (5) 'Attestations'
-	if o5 = ssz.ReadOffset(buf[208:212]); o5 > size || o4 > o5 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (6) 'Deposits'
-	if o6 = ssz.ReadOffset(buf[212:216]); o6 > size || o5 > o6 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (7) 'VoluntaryExits'
-	if o7 = ssz.ReadOffset(buf[216:220]); o7 > size || o6 > o7 {
-		return ssz.ErrOffset
-	}
-
-	// Field (8) 'SyncAggregate'
-	if b.SyncAggregate == nil {
-		b.SyncAggregate = new(SyncAggregate)
-	}
-	if err = b.SyncAggregate.UnmarshalSSZ(buf[220:380]); err != nil {
-		return err
-	}
-
-	// Offset (9) 'ExecutionPayloadHeader'
-	if o9 = ssz.ReadOffset(buf[380:384]); o9 > size || o7 > o9 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (10) 'BlsToExecutionChanges'
-	if o10 = ssz.ReadOffset(buf[384:388]); o10 > size || o9 > o10 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (11) 'BlobKzgCommitments'
-	if o11 = ssz.ReadOffset(buf[388:392]); o11 > size || o10 > o11 {
-		return ssz.ErrOffset
-	}
-
-	// Offset (12) 'ExecutionRequests'
-	if o12 = ssz.ReadOffset(buf[392:396]); o12 > size || o11 > o12 {
-		return ssz.ErrOffset
-	}
-
-	// Field (3) 'ProposerSlashings'
-	{
-		buf = tail[o3:o4]
-		num, err := ssz.DivideInt2(len(buf), 416, 16)
-		if err != nil {
-			return err
-		}
-		b.ProposerSlashings = make([]*ProposerSlashing, num)
-		for ii := 0; ii < num; ii++ {
-			if b.ProposerSlashings[ii] == nil {
-				b.ProposerSlashings[ii] = new(ProposerSlashing)
-			}
-			if err = b.ProposerSlashings[ii].UnmarshalSSZ(buf[ii*416 : (ii+1)*416]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (4) 'AttesterSlashings'
-	{
-		buf = tail[o4:o5]
-		num, err := ssz.DecodeDynamicLength(buf, 1)
-		if err != nil {
-			return err
-		}
-		b.AttesterSlashings = make([]*AttesterSlashingElectra, num)
-		err = ssz.UnmarshalDynamic(buf, num, func(indx int, buf []byte) (err error) {
-			if b.AttesterSlashings[indx] == nil {
-				b.AttesterSlashings[indx] = new(AttesterSlashingElectra)
-			}
-			if err = b.AttesterSlashings[indx].UnmarshalSSZ(buf); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Field (5) 'Attestations'
-	{
-		buf = tail[o5:o6]
-		num, err := ssz.DecodeDynamicLength(buf, 8)
-		if err != nil {
-			return err
-		}
-		b.Attestations = make([]*AttestationElectra, num)
-		err = ssz.UnmarshalDynamic(buf, num, func(indx int, buf []byte) (err error) {
-			if b.Attestations[indx] == nil {
-				b.Attestations[indx] = new(AttestationElectra)
-			}
-			if err = b.Attestations[indx].UnmarshalSSZ(buf); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// Field (6) 'Deposits'
-	{
-		buf = tail[o6:o7]
-		num, err := ssz.DivideInt2(len(buf), 1240, 16)
-		if err != nil {
-			return err
-		}
-		b.Deposits = make([]*Deposit, num)
-		for ii := 0; ii < num; ii++ {
-			if b.Deposits[ii] == nil {
-				b.Deposits[ii] = new(Deposit)
-			}
-			if err = b.Deposits[ii].UnmarshalSSZ(buf[ii*1240 : (ii+1)*1240]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (7) 'VoluntaryExits'
-	{
-		buf = tail[o7:o9]
-		num, err := ssz.DivideInt2(len(buf), 112, 16)
-		if err != nil {
-			return err
-		}
-		b.VoluntaryExits = make([]*SignedVoluntaryExit, num)
-		for ii := 0; ii < num; ii++ {
-			if b.VoluntaryExits[ii] == nil {
-				b.VoluntaryExits[ii] = new(SignedVoluntaryExit)
-			}
-			if err = b.VoluntaryExits[ii].UnmarshalSSZ(buf[ii*112 : (ii+1)*112]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (9) 'ExecutionPayloadHeader'
-	{
-		buf = tail[o9:o10]
-		if b.ExecutionPayloadHeader == nil {
-			b.ExecutionPayloadHeader = new(v1.ExecutionPayloadHeaderDeneb)
-		}
-		if err = b.ExecutionPayloadHeader.UnmarshalSSZ(buf); err != nil {
-			return err
-		}
-	}
-
-	// Field (10) 'BlsToExecutionChanges'
-	{
-		buf = tail[o10:o11]
-		num, err := ssz.DivideInt2(len(buf), 172, 16)
-		if err != nil {
-			return err
-		}
-		b.BlsToExecutionChanges = make([]*SignedBLSToExecutionChange, num)
-		for ii := 0; ii < num; ii++ {
-			if b.BlsToExecutionChanges[ii] == nil {
-				b.BlsToExecutionChanges[ii] = new(SignedBLSToExecutionChange)
-			}
-			if err = b.BlsToExecutionChanges[ii].UnmarshalSSZ(buf[ii*172 : (ii+1)*172]); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Field (11) 'BlobKzgCommitments'
-	{
-		buf = tail[o11:o12]
-		num, err := ssz.DivideInt2(len(buf), 48, 4096)
-		if err != nil {
-			return err
-		}
-		b.BlobKzgCommitments = make([][]byte, num)
-		for ii := 0; ii < num; ii++ {
-			if cap(b.BlobKzgCommitments[ii]) == 0 {
-				b.BlobKzgCommitments[ii] = make([]byte, 0, len(buf[ii*48:(ii+1)*48]))
-			}
-			b.BlobKzgCommitments[ii] = append(b.BlobKzgCommitments[ii], buf[ii*48:(ii+1)*48]...)
-		}
-	}
-
-	// Field (12) 'ExecutionRequests'
-	{
-		buf = tail[o12:]
-		if b.ExecutionRequests == nil {
-			b.ExecutionRequests = new(v1.ExecutionRequests)
-		}
-		if err = b.ExecutionRequests.UnmarshalSSZ(buf); err != nil {
-			return err
-		}
-	}
-	return err
-}
-
-// SizeSSZ returns the ssz encoded size in bytes for the BlindedBeaconBlockBodyFulu object
-func (b *BlindedBeaconBlockBodyFulu) SizeSSZ() (size int) {
-	size = 396
-
-	// Field (3) 'ProposerSlashings'
-	size += len(b.ProposerSlashings) * 416
-
-	// Field (4) 'AttesterSlashings'
-	for ii := 0; ii < len(b.AttesterSlashings); ii++ {
-		size += 4
-		size += b.AttesterSlashings[ii].SizeSSZ()
-	}
-
-	// Field (5) 'Attestations'
-	for ii := 0; ii < len(b.Attestations); ii++ {
-		size += 4
-		size += b.Attestations[ii].SizeSSZ()
-	}
-
-	// Field (6) 'Deposits'
-	size += len(b.Deposits) * 1240
-
-	// Field (7) 'VoluntaryExits'
-	size += len(b.VoluntaryExits) * 112
-
-	// Field (9) 'ExecutionPayloadHeader'
-	if b.ExecutionPayloadHeader == nil {
-		b.ExecutionPayloadHeader = new(v1.ExecutionPayloadHeaderDeneb)
-	}
-	size += b.ExecutionPayloadHeader.SizeSSZ()
-
-	// Field (10) 'BlsToExecutionChanges'
-	size += len(b.BlsToExecutionChanges) * 172
-
-	// Field (11) 'BlobKzgCommitments'
-	size += len(b.BlobKzgCommitments) * 48
-
-	// Field (12) 'ExecutionRequests'
-	if b.ExecutionRequests == nil {
-		b.ExecutionRequests = new(v1.ExecutionRequests)
-	}
-	size += b.ExecutionRequests.SizeSSZ()
-
-	return
-}
-
-// HashTreeRoot ssz hashes the BlindedBeaconBlockBodyFulu object
-func (b *BlindedBeaconBlockBodyFulu) HashTreeRoot() ([32]byte, error) {
-	return ssz.HashWithDefaultHasher(b)
-}
-
-// HashTreeRootWith ssz hashes the BlindedBeaconBlockBodyFulu object with a hasher
-func (b *BlindedBeaconBlockBodyFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
-	indx := hh.Index()
-
-	// Field (0) 'RandaoReveal'
-	if size := len(b.RandaoReveal); size != 96 {
-		err = ssz.ErrBytesLengthFn("--.RandaoReveal", size, 96)
-		return
-	}
-	hh.PutBytes(b.RandaoReveal)
-
-	// Field (1) 'Eth1Data'
-	if err = b.Eth1Data.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (2) 'Graffiti'
-	if size := len(b.Graffiti); size != 32 {
-		err = ssz.ErrBytesLengthFn("--.Graffiti", size, 32)
-		return
-	}
-	hh.PutBytes(b.Graffiti)
-
-	// Field (3) 'ProposerSlashings'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.ProposerSlashings))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.ProposerSlashings {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (4) 'AttesterSlashings'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.AttesterSlashings))
-		if num > 1 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.AttesterSlashings {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 1)
-	}
-
-	// Field (5) 'Attestations'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.Attestations))
-		if num > 8 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.Attestations {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 8)
-	}
-
-	// Field (6) 'Deposits'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.Deposits))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.Deposits {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (7) 'VoluntaryExits'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.VoluntaryExits))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.VoluntaryExits {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (8) 'SyncAggregate'
-	if err = b.SyncAggregate.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (9) 'ExecutionPayloadHeader'
-	if err = b.ExecutionPayloadHeader.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	// Field (10) 'BlsToExecutionChanges'
-	{
-		subIndx := hh.Index()
-		num := uint64(len(b.BlsToExecutionChanges))
-		if num > 16 {
-			err = ssz.ErrIncorrectListSize
-			return
-		}
-		for _, elem := range b.BlsToExecutionChanges {
-			if err = elem.HashTreeRootWith(hh); err != nil {
-				return
-			}
-		}
-		hh.MerkleizeWithMixin(subIndx, num, 16)
-	}
-
-	// Field (11) 'BlobKzgCommitments'
-	{
-		if size := len(b.BlobKzgCommitments); size > 4096 {
-			err = ssz.ErrListTooBigFn("--.BlobKzgCommitments", size, 4096)
-			return
-		}
-		subIndx := hh.Index()
-		for _, i := range b.BlobKzgCommitments {
-			if len(i) != 48 {
-				err = ssz.ErrBytesLength
-				return
-			}
-			hh.PutBytes(i)
-		}
-
-		numItems := uint64(len(b.BlobKzgCommitments))
-		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
-	}
-
-	// Field (12) 'ExecutionRequests'
-	if err = b.ExecutionRequests.HashTreeRootWith(hh); err != nil {
-		return
-	}
-
-	hh.Merkleize(indx)
-	return
-}
-
 // MarshalSSZ ssz marshals the BeaconStateFulu object
 func (b *BeaconStateFulu) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
@@ -2237,10 +798,10 @@ func (b *BeaconStateFulu) MarshalSSZ() ([]byte, error) {
 // MarshalSSZTo ssz marshals the BeaconStateFulu object to a target array
 func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
-	offset := int(2736713)
+	offset := int(2737225)
 
 	// Field (0) 'GenesisTime'
-	dst = ssz.MarshalUint64(dst, b.GenesisTime)
+	dst = ssz.MarshalUint(dst, b.GenesisTime)
 
 	// Field (1) 'GenesisValidatorsRoot'
 	if size := len(b.GenesisValidatorsRoot); size != 32 {
@@ -2250,7 +811,7 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = append(dst, b.GenesisValidatorsRoot...)
 
 	// Field (2) 'Slot'
-	dst = ssz.MarshalUint64(dst, uint64(b.Slot))
+	dst = ssz.MarshalUint(dst, b.Slot)
 
 	// Field (3) 'Fork'
 	if b.Fork == nil {
@@ -2311,7 +872,7 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	offset += len(b.Eth1DataVotes) * 72
 
 	// Field (10) 'Eth1DepositIndex'
-	dst = ssz.MarshalUint64(dst, b.Eth1DepositIndex)
+	dst = ssz.MarshalUint(dst, b.Eth1DepositIndex)
 
 	// Offset (11) 'Validators'
 	dst = ssz.WriteOffset(dst, offset)
@@ -2340,7 +901,7 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		return
 	}
 	for ii := 0; ii < 8192; ii++ {
-		dst = ssz.MarshalUint64(dst, b.Slashings[ii])
+		dst = ssz.MarshalUint(dst, b.Slashings[ii])
 	}
 
 	// Offset (15) 'PreviousEpochParticipation'
@@ -2410,32 +971,32 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	offset += b.LatestExecutionPayloadHeader.SizeSSZ()
 
 	// Field (25) 'NextWithdrawalIndex'
-	dst = ssz.MarshalUint64(dst, b.NextWithdrawalIndex)
+	dst = ssz.MarshalUint(dst, b.NextWithdrawalIndex)
 
 	// Field (26) 'NextWithdrawalValidatorIndex'
-	dst = ssz.MarshalUint64(dst, uint64(b.NextWithdrawalValidatorIndex))
+	dst = ssz.MarshalUint(dst, b.NextWithdrawalValidatorIndex)
 
 	// Offset (27) 'HistoricalSummaries'
 	dst = ssz.WriteOffset(dst, offset)
 	offset += len(b.HistoricalSummaries) * 64
 
 	// Field (28) 'DepositRequestsStartIndex'
-	dst = ssz.MarshalUint64(dst, b.DepositRequestsStartIndex)
+	dst = ssz.MarshalUint(dst, b.DepositRequestsStartIndex)
 
 	// Field (29) 'DepositBalanceToConsume'
-	dst = ssz.MarshalUint64(dst, uint64(b.DepositBalanceToConsume))
+	dst = ssz.MarshalUint(dst, b.DepositBalanceToConsume)
 
 	// Field (30) 'ExitBalanceToConsume'
-	dst = ssz.MarshalUint64(dst, uint64(b.ExitBalanceToConsume))
+	dst = ssz.MarshalUint(dst, b.ExitBalanceToConsume)
 
 	// Field (31) 'EarliestExitEpoch'
-	dst = ssz.MarshalUint64(dst, uint64(b.EarliestExitEpoch))
+	dst = ssz.MarshalUint(dst, b.EarliestExitEpoch)
 
 	// Field (32) 'ConsolidationBalanceToConsume'
-	dst = ssz.MarshalUint64(dst, uint64(b.ConsolidationBalanceToConsume))
+	dst = ssz.MarshalUint(dst, b.ConsolidationBalanceToConsume)
 
 	// Field (33) 'EarliestConsolidationEpoch'
-	dst = ssz.MarshalUint64(dst, uint64(b.EarliestConsolidationEpoch))
+	dst = ssz.MarshalUint(dst, b.EarliestConsolidationEpoch)
 
 	// Offset (34) 'PendingDeposits'
 	dst = ssz.WriteOffset(dst, offset)
@@ -2448,6 +1009,15 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	// Offset (36) 'PendingConsolidations'
 	dst = ssz.WriteOffset(dst, offset)
 	offset += len(b.PendingConsolidations) * 16
+
+	// Field (37) 'ProposerLookahead'
+	if size := len(b.ProposerLookahead); size != 64 {
+		err = ssz.ErrVectorLengthFn("--.ProposerLookahead", size, 64)
+		return
+	}
+	for ii := 0; ii < 64; ii++ {
+		dst = ssz.MarshalUint(dst, b.ProposerLookahead[ii])
+	}
 
 	// Field (7) 'HistoricalRoots'
 	if size := len(b.HistoricalRoots); size > 16777216 {
@@ -2490,7 +1060,7 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		return
 	}
 	for ii := 0; ii < len(b.Balances); ii++ {
-		dst = ssz.MarshalUint64(dst, b.Balances[ii])
+		dst = ssz.MarshalUint(dst, b.Balances[ii])
 	}
 
 	// Field (15) 'PreviousEpochParticipation'
@@ -2513,7 +1083,7 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		return
 	}
 	for ii := 0; ii < len(b.InactivityScores); ii++ {
-		dst = ssz.MarshalUint64(dst, b.InactivityScores[ii])
+		dst = ssz.MarshalUint(dst, b.InactivityScores[ii])
 	}
 
 	// Field (24) 'LatestExecutionPayloadHeader'
@@ -2572,7 +1142,7 @@ func (b *BeaconStateFulu) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size < 2736713 {
+	if size < 2737225 {
 		return ssz.ErrSize
 	}
 
@@ -2580,7 +1150,7 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	var o7, o9, o11, o12, o15, o16, o21, o24, o27, o34, o35, o36 uint64
 
 	// Field (0) 'GenesisTime'
-	b.GenesisTime = ssz.UnmarshallUint64(buf[0:8])
+	b.GenesisTime = ssz.UnmarshallUint[uint64](buf[0:8])
 
 	// Field (1) 'GenesisValidatorsRoot'
 	if cap(b.GenesisValidatorsRoot) == 0 {
@@ -2589,7 +1159,7 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	b.GenesisValidatorsRoot = append(b.GenesisValidatorsRoot, buf[8:40]...)
 
 	// Field (2) 'Slot'
-	b.Slot = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Slot(ssz.UnmarshallUint64(buf[40:48]))
+	b.Slot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[40:48])
 
 	// Field (3) 'Fork'
 	if b.Fork == nil {
@@ -2630,7 +1200,7 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 		return ssz.ErrOffset
 	}
 
-	if o7 != 2736713 {
+	if o7 != 2737225 {
 		return ssz.ErrInvalidVariableOffset
 	}
 
@@ -2648,7 +1218,7 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (10) 'Eth1DepositIndex'
-	b.Eth1DepositIndex = ssz.UnmarshallUint64(buf[524544:524552])
+	b.Eth1DepositIndex = ssz.UnmarshallUint[uint64](buf[524544:524552])
 
 	// Offset (11) 'Validators'
 	if o11 = ssz.ReadOffset(buf[524552:524556]); o11 > size || o9 > o11 {
@@ -2670,9 +1240,9 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (14) 'Slashings'
-	b.Slashings = ssz.ExtendUint64(b.Slashings, 8192)
+	b.Slashings = ssz.ExtendUint(b.Slashings, 8192)
 	for ii := 0; ii < 8192; ii++ {
-		b.Slashings[ii] = ssz.UnmarshallUint64(buf[2621712:2687248][ii*8 : (ii+1)*8])
+		b.Slashings[ii] = ssz.UnmarshallUint[uint64](buf[2621712:2687248][ii*8 : (ii+1)*8])
 	}
 
 	// Offset (15) 'PreviousEpochParticipation'
@@ -2742,10 +1312,10 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (25) 'NextWithdrawalIndex'
-	b.NextWithdrawalIndex = ssz.UnmarshallUint64(buf[2736633:2736641])
+	b.NextWithdrawalIndex = ssz.UnmarshallUint[uint64](buf[2736633:2736641])
 
 	// Field (26) 'NextWithdrawalValidatorIndex'
-	b.NextWithdrawalValidatorIndex = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.ValidatorIndex(ssz.UnmarshallUint64(buf[2736641:2736649]))
+	b.NextWithdrawalValidatorIndex = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[2736641:2736649])
 
 	// Offset (27) 'HistoricalSummaries'
 	if o27 = ssz.ReadOffset(buf[2736649:2736653]); o27 > size || o24 > o27 {
@@ -2753,22 +1323,22 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	}
 
 	// Field (28) 'DepositRequestsStartIndex'
-	b.DepositRequestsStartIndex = ssz.UnmarshallUint64(buf[2736653:2736661])
+	b.DepositRequestsStartIndex = ssz.UnmarshallUint[uint64](buf[2736653:2736661])
 
 	// Field (29) 'DepositBalanceToConsume'
-	b.DepositBalanceToConsume = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Gwei(ssz.UnmarshallUint64(buf[2736661:2736669]))
+	b.DepositBalanceToConsume = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Gwei](buf[2736661:2736669])
 
 	// Field (30) 'ExitBalanceToConsume'
-	b.ExitBalanceToConsume = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Gwei(ssz.UnmarshallUint64(buf[2736669:2736677]))
+	b.ExitBalanceToConsume = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Gwei](buf[2736669:2736677])
 
 	// Field (31) 'EarliestExitEpoch'
-	b.EarliestExitEpoch = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Epoch(ssz.UnmarshallUint64(buf[2736677:2736685]))
+	b.EarliestExitEpoch = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Epoch](buf[2736677:2736685])
 
 	// Field (32) 'ConsolidationBalanceToConsume'
-	b.ConsolidationBalanceToConsume = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Gwei(ssz.UnmarshallUint64(buf[2736685:2736693]))
+	b.ConsolidationBalanceToConsume = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Gwei](buf[2736685:2736693])
 
 	// Field (33) 'EarliestConsolidationEpoch'
-	b.EarliestConsolidationEpoch = github_com_prysmaticlabs_prysm_v5_consensus_types_primitives.Epoch(ssz.UnmarshallUint64(buf[2736693:2736701]))
+	b.EarliestConsolidationEpoch = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Epoch](buf[2736693:2736701])
 
 	// Offset (34) 'PendingDeposits'
 	if o34 = ssz.ReadOffset(buf[2736701:2736705]); o34 > size || o27 > o34 {
@@ -2783,6 +1353,12 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 	// Offset (36) 'PendingConsolidations'
 	if o36 = ssz.ReadOffset(buf[2736709:2736713]); o36 > size || o35 > o36 {
 		return ssz.ErrOffset
+	}
+
+	// Field (37) 'ProposerLookahead'
+	b.ProposerLookahead = ssz.ExtendUint(b.ProposerLookahead, 64)
+	for ii := 0; ii < 64; ii++ {
+		b.ProposerLookahead[ii] = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.ValidatorIndex](buf[2736713:2737225][ii*8 : (ii+1)*8])
 	}
 
 	// Field (7) 'HistoricalRoots'
@@ -2844,9 +1420,9 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		b.Balances = ssz.ExtendUint64(b.Balances, num)
+		b.Balances = ssz.ExtendUint(b.Balances, num)
 		for ii := 0; ii < num; ii++ {
-			b.Balances[ii] = ssz.UnmarshallUint64(buf[ii*8 : (ii+1)*8])
+			b.Balances[ii] = ssz.UnmarshallUint[uint64](buf[ii*8 : (ii+1)*8])
 		}
 	}
 
@@ -2881,9 +1457,9 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		b.InactivityScores = ssz.ExtendUint64(b.InactivityScores, num)
+		b.InactivityScores = ssz.ExtendUint(b.InactivityScores, num)
 		for ii := 0; ii < num; ii++ {
-			b.InactivityScores[ii] = ssz.UnmarshallUint64(buf[ii*8 : (ii+1)*8])
+			b.InactivityScores[ii] = ssz.UnmarshallUint[uint64](buf[ii*8 : (ii+1)*8])
 		}
 	}
 
@@ -2974,7 +1550,7 @@ func (b *BeaconStateFulu) UnmarshalSSZ(buf []byte) error {
 
 // SizeSSZ returns the ssz encoded size in bytes for the BeaconStateFulu object
 func (b *BeaconStateFulu) SizeSSZ() (size int) {
-	size = 2736713
+	size = 2737225
 
 	// Field (7) 'HistoricalRoots'
 	size += len(b.HistoricalRoots) * 32
@@ -3028,7 +1604,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'GenesisTime'
-	hh.PutUint64(b.GenesisTime)
+	ssz.PutUint(hh, b.GenesisTime)
 
 	// Field (1) 'GenesisValidatorsRoot'
 	if size := len(b.GenesisValidatorsRoot); size != 32 {
@@ -3038,7 +1614,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	hh.PutBytes(b.GenesisValidatorsRoot)
 
 	// Field (2) 'Slot'
-	hh.PutUint64(uint64(b.Slot))
+	ssz.PutUint(hh, b.Slot)
 
 	// Field (3) 'Fork'
 	if err = b.Fork.HashTreeRootWith(hh); err != nil {
@@ -3125,7 +1701,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	}
 
 	// Field (10) 'Eth1DepositIndex'
-	hh.PutUint64(b.Eth1DepositIndex)
+	ssz.PutUint(hh, b.Eth1DepositIndex)
 
 	// Field (11) 'Validators'
 	{
@@ -3151,7 +1727,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		subIndx := hh.Index()
 		for _, i := range b.Balances {
-			hh.AppendUint64(i)
+			ssz.AppendUint(hh, i)
 		}
 		hh.FillUpTo32()
 
@@ -3184,7 +1760,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		subIndx := hh.Index()
 		for _, i := range b.Slashings {
-			hh.AppendUint64(i)
+			ssz.AppendUint(hh, i)
 		}
 		hh.Merkleize(subIndx)
 	}
@@ -3197,7 +1773,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 			err = ssz.ErrIncorrectListSize
 			return
 		}
-		hh.PutBytes(b.PreviousEpochParticipation)
+		hh.AppendBytes32(b.PreviousEpochParticipation)
 		hh.MerkleizeWithMixin(elemIndx, byteLen, (1099511627776+31)/32)
 	}
 
@@ -3209,7 +1785,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 			err = ssz.ErrIncorrectListSize
 			return
 		}
-		hh.PutBytes(b.CurrentEpochParticipation)
+		hh.AppendBytes32(b.CurrentEpochParticipation)
 		hh.MerkleizeWithMixin(elemIndx, byteLen, (1099511627776+31)/32)
 	}
 
@@ -3243,7 +1819,7 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		}
 		subIndx := hh.Index()
 		for _, i := range b.InactivityScores {
-			hh.AppendUint64(i)
+			ssz.AppendUint(hh, i)
 		}
 		hh.FillUpTo32()
 
@@ -3267,10 +1843,10 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	}
 
 	// Field (25) 'NextWithdrawalIndex'
-	hh.PutUint64(b.NextWithdrawalIndex)
+	ssz.PutUint(hh, b.NextWithdrawalIndex)
 
 	// Field (26) 'NextWithdrawalValidatorIndex'
-	hh.PutUint64(uint64(b.NextWithdrawalValidatorIndex))
+	ssz.PutUint(hh, b.NextWithdrawalValidatorIndex)
 
 	// Field (27) 'HistoricalSummaries'
 	{
@@ -3289,22 +1865,22 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	}
 
 	// Field (28) 'DepositRequestsStartIndex'
-	hh.PutUint64(b.DepositRequestsStartIndex)
+	ssz.PutUint(hh, b.DepositRequestsStartIndex)
 
 	// Field (29) 'DepositBalanceToConsume'
-	hh.PutUint64(uint64(b.DepositBalanceToConsume))
+	ssz.PutUint(hh, b.DepositBalanceToConsume)
 
 	// Field (30) 'ExitBalanceToConsume'
-	hh.PutUint64(uint64(b.ExitBalanceToConsume))
+	ssz.PutUint(hh, b.ExitBalanceToConsume)
 
 	// Field (31) 'EarliestExitEpoch'
-	hh.PutUint64(uint64(b.EarliestExitEpoch))
+	ssz.PutUint(hh, b.EarliestExitEpoch)
 
 	// Field (32) 'ConsolidationBalanceToConsume'
-	hh.PutUint64(uint64(b.ConsolidationBalanceToConsume))
+	ssz.PutUint(hh, b.ConsolidationBalanceToConsume)
 
 	// Field (33) 'EarliestConsolidationEpoch'
-	hh.PutUint64(uint64(b.EarliestConsolidationEpoch))
+	ssz.PutUint(hh, b.EarliestConsolidationEpoch)
 
 	// Field (34) 'PendingDeposits'
 	{
@@ -3354,6 +1930,19 @@ func (b *BeaconStateFulu) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		hh.MerkleizeWithMixin(subIndx, num, 262144)
 	}
 
+	// Field (37) 'ProposerLookahead'
+	{
+		if size := len(b.ProposerLookahead); size != 64 {
+			err = ssz.ErrVectorLengthFn("--.ProposerLookahead", size, 64)
+			return
+		}
+		subIndx := hh.Index()
+		for _, i := range b.ProposerLookahead {
+			ssz.AppendUint(hh, i)
+		}
+		hh.Merkleize(subIndx)
+	}
+
 	hh.Merkleize(indx)
 	return
 }
@@ -3368,20 +1957,20 @@ func (d *DataColumnSidecar) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(356)
 
-	// Field (0) 'ColumnIndex'
-	dst = ssz.MarshalUint64(dst, d.ColumnIndex)
+	// Field (0) 'Index'
+	dst = ssz.MarshalUint(dst, d.Index)
 
-	// Offset (1) 'DataColumn'
+	// Offset (1) 'Column'
 	dst = ssz.WriteOffset(dst, offset)
-	offset += len(d.DataColumn) * 2048
+	offset += len(d.Column) * 2048
 
 	// Offset (2) 'KzgCommitments'
 	dst = ssz.WriteOffset(dst, offset)
 	offset += len(d.KzgCommitments) * 48
 
-	// Offset (3) 'KzgProof'
+	// Offset (3) 'KzgProofs'
 	dst = ssz.WriteOffset(dst, offset)
-	offset += len(d.KzgProof) * 48
+	offset += len(d.KzgProofs) * 48
 
 	// Field (4) 'SignedBlockHeader'
 	if d.SignedBlockHeader == nil {
@@ -3404,17 +1993,17 @@ func (d *DataColumnSidecar) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		dst = append(dst, d.KzgCommitmentsInclusionProof[ii]...)
 	}
 
-	// Field (1) 'DataColumn'
-	if size := len(d.DataColumn); size > 4096 {
-		err = ssz.ErrListTooBigFn("--.DataColumn", size, 4096)
+	// Field (1) 'Column'
+	if size := len(d.Column); size > 4096 {
+		err = ssz.ErrListTooBigFn("--.Column", size, 4096)
 		return
 	}
-	for ii := 0; ii < len(d.DataColumn); ii++ {
-		if size := len(d.DataColumn[ii]); size != 2048 {
-			err = ssz.ErrBytesLengthFn("--.DataColumn[ii]", size, 2048)
+	for ii := 0; ii < len(d.Column); ii++ {
+		if size := len(d.Column[ii]); size != 2048 {
+			err = ssz.ErrBytesLengthFn("--.Column[ii]", size, 2048)
 			return
 		}
-		dst = append(dst, d.DataColumn[ii]...)
+		dst = append(dst, d.Column[ii]...)
 	}
 
 	// Field (2) 'KzgCommitments'
@@ -3430,17 +2019,17 @@ func (d *DataColumnSidecar) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 		dst = append(dst, d.KzgCommitments[ii]...)
 	}
 
-	// Field (3) 'KzgProof'
-	if size := len(d.KzgProof); size > 4096 {
-		err = ssz.ErrListTooBigFn("--.KzgProof", size, 4096)
+	// Field (3) 'KzgProofs'
+	if size := len(d.KzgProofs); size > 4096 {
+		err = ssz.ErrListTooBigFn("--.KzgProofs", size, 4096)
 		return
 	}
-	for ii := 0; ii < len(d.KzgProof); ii++ {
-		if size := len(d.KzgProof[ii]); size != 48 {
-			err = ssz.ErrBytesLengthFn("--.KzgProof[ii]", size, 48)
+	for ii := 0; ii < len(d.KzgProofs); ii++ {
+		if size := len(d.KzgProofs[ii]); size != 48 {
+			err = ssz.ErrBytesLengthFn("--.KzgProofs[ii]", size, 48)
 			return
 		}
-		dst = append(dst, d.KzgProof[ii]...)
+		dst = append(dst, d.KzgProofs[ii]...)
 	}
 
 	return
@@ -3457,10 +2046,10 @@ func (d *DataColumnSidecar) UnmarshalSSZ(buf []byte) error {
 	tail := buf
 	var o1, o2, o3 uint64
 
-	// Field (0) 'ColumnIndex'
-	d.ColumnIndex = ssz.UnmarshallUint64(buf[0:8])
+	// Field (0) 'Index'
+	d.Index = ssz.UnmarshallUint[uint64](buf[0:8])
 
-	// Offset (1) 'DataColumn'
+	// Offset (1) 'Column'
 	if o1 = ssz.ReadOffset(buf[8:12]); o1 > size {
 		return ssz.ErrOffset
 	}
@@ -3474,7 +2063,7 @@ func (d *DataColumnSidecar) UnmarshalSSZ(buf []byte) error {
 		return ssz.ErrOffset
 	}
 
-	// Offset (3) 'KzgProof'
+	// Offset (3) 'KzgProofs'
 	if o3 = ssz.ReadOffset(buf[16:20]); o3 > size || o2 > o3 {
 		return ssz.ErrOffset
 	}
@@ -3496,19 +2085,19 @@ func (d *DataColumnSidecar) UnmarshalSSZ(buf []byte) error {
 		d.KzgCommitmentsInclusionProof[ii] = append(d.KzgCommitmentsInclusionProof[ii], buf[228:356][ii*32:(ii+1)*32]...)
 	}
 
-	// Field (1) 'DataColumn'
+	// Field (1) 'Column'
 	{
 		buf = tail[o1:o2]
 		num, err := ssz.DivideInt2(len(buf), 2048, 4096)
 		if err != nil {
 			return err
 		}
-		d.DataColumn = make([][]byte, num)
+		d.Column = make([][]byte, num)
 		for ii := 0; ii < num; ii++ {
-			if cap(d.DataColumn[ii]) == 0 {
-				d.DataColumn[ii] = make([]byte, 0, len(buf[ii*2048:(ii+1)*2048]))
+			if cap(d.Column[ii]) == 0 {
+				d.Column[ii] = make([]byte, 0, len(buf[ii*2048:(ii+1)*2048]))
 			}
-			d.DataColumn[ii] = append(d.DataColumn[ii], buf[ii*2048:(ii+1)*2048]...)
+			d.Column[ii] = append(d.Column[ii], buf[ii*2048:(ii+1)*2048]...)
 		}
 	}
 
@@ -3528,19 +2117,19 @@ func (d *DataColumnSidecar) UnmarshalSSZ(buf []byte) error {
 		}
 	}
 
-	// Field (3) 'KzgProof'
+	// Field (3) 'KzgProofs'
 	{
 		buf = tail[o3:]
 		num, err := ssz.DivideInt2(len(buf), 48, 4096)
 		if err != nil {
 			return err
 		}
-		d.KzgProof = make([][]byte, num)
+		d.KzgProofs = make([][]byte, num)
 		for ii := 0; ii < num; ii++ {
-			if cap(d.KzgProof[ii]) == 0 {
-				d.KzgProof[ii] = make([]byte, 0, len(buf[ii*48:(ii+1)*48]))
+			if cap(d.KzgProofs[ii]) == 0 {
+				d.KzgProofs[ii] = make([]byte, 0, len(buf[ii*48:(ii+1)*48]))
 			}
-			d.KzgProof[ii] = append(d.KzgProof[ii], buf[ii*48:(ii+1)*48]...)
+			d.KzgProofs[ii] = append(d.KzgProofs[ii], buf[ii*48:(ii+1)*48]...)
 		}
 	}
 	return err
@@ -3550,14 +2139,14 @@ func (d *DataColumnSidecar) UnmarshalSSZ(buf []byte) error {
 func (d *DataColumnSidecar) SizeSSZ() (size int) {
 	size = 356
 
-	// Field (1) 'DataColumn'
-	size += len(d.DataColumn) * 2048
+	// Field (1) 'Column'
+	size += len(d.Column) * 2048
 
 	// Field (2) 'KzgCommitments'
 	size += len(d.KzgCommitments) * 48
 
-	// Field (3) 'KzgProof'
-	size += len(d.KzgProof) * 48
+	// Field (3) 'KzgProofs'
+	size += len(d.KzgProofs) * 48
 
 	return
 }
@@ -3571,17 +2160,17 @@ func (d *DataColumnSidecar) HashTreeRoot() ([32]byte, error) {
 func (d *DataColumnSidecar) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
-	// Field (0) 'ColumnIndex'
-	hh.PutUint64(d.ColumnIndex)
+	// Field (0) 'Index'
+	ssz.PutUint(hh, d.Index)
 
-	// Field (1) 'DataColumn'
+	// Field (1) 'Column'
 	{
-		if size := len(d.DataColumn); size > 4096 {
-			err = ssz.ErrListTooBigFn("--.DataColumn", size, 4096)
+		if size := len(d.Column); size > 4096 {
+			err = ssz.ErrListTooBigFn("--.Column", size, 4096)
 			return
 		}
 		subIndx := hh.Index()
-		for _, i := range d.DataColumn {
+		for _, i := range d.Column {
 			if len(i) != 2048 {
 				err = ssz.ErrBytesLength
 				return
@@ -3589,7 +2178,7 @@ func (d *DataColumnSidecar) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 			hh.PutBytes(i)
 		}
 
-		numItems := uint64(len(d.DataColumn))
+		numItems := uint64(len(d.Column))
 		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
 	}
 
@@ -3612,14 +2201,14 @@ func (d *DataColumnSidecar) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
 	}
 
-	// Field (3) 'KzgProof'
+	// Field (3) 'KzgProofs'
 	{
-		if size := len(d.KzgProof); size > 4096 {
-			err = ssz.ErrListTooBigFn("--.KzgProof", size, 4096)
+		if size := len(d.KzgProofs); size > 4096 {
+			err = ssz.ErrListTooBigFn("--.KzgProofs", size, 4096)
 			return
 		}
 		subIndx := hh.Index()
-		for _, i := range d.KzgProof {
+		for _, i := range d.KzgProofs {
 			if len(i) != 48 {
 				err = ssz.ErrBytesLength
 				return
@@ -3627,7 +2216,7 @@ func (d *DataColumnSidecar) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 			hh.PutBytes(i)
 		}
 
-		numItems := uint64(len(d.KzgProof))
+		numItems := uint64(len(d.KzgProofs))
 		hh.MerkleizeWithMixin(subIndx, numItems, 4096)
 	}
 
@@ -3657,14 +2246,15 @@ func (d *DataColumnSidecar) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	return
 }
 
-// MarshalSSZ ssz marshals the DataColumnIdentifier object
-func (d *DataColumnIdentifier) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the DataColumnsByRootIdentifier object
+func (d *DataColumnsByRootIdentifier) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(d)
 }
 
-// MarshalSSZTo ssz marshals the DataColumnIdentifier object to a target array
-func (d *DataColumnIdentifier) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the DataColumnsByRootIdentifier object to a target array
+func (d *DataColumnsByRootIdentifier) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
+	offset := int(36)
 
 	// Field (0) 'BlockRoot'
 	if size := len(d.BlockRoot); size != 32 {
@@ -3673,19 +2263,32 @@ func (d *DataColumnIdentifier) MarshalSSZTo(buf []byte) (dst []byte, err error) 
 	}
 	dst = append(dst, d.BlockRoot...)
 
-	// Field (1) 'ColumnIndex'
-	dst = ssz.MarshalUint64(dst, d.ColumnIndex)
+	// Offset (1) 'Columns'
+	dst = ssz.WriteOffset(dst, offset)
+	offset += len(d.Columns) * 8
+
+	// Field (1) 'Columns'
+	if size := len(d.Columns); size > 128 {
+		err = ssz.ErrListTooBigFn("--.Columns", size, 128)
+		return
+	}
+	for ii := 0; ii < len(d.Columns); ii++ {
+		dst = ssz.MarshalUint(dst, d.Columns[ii])
+	}
 
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the DataColumnIdentifier object
-func (d *DataColumnIdentifier) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the DataColumnsByRootIdentifier object
+func (d *DataColumnsByRootIdentifier) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
-	if size != 40 {
+	if size < 36 {
 		return ssz.ErrSize
 	}
+
+	tail := buf
+	var o1 uint64
 
 	// Field (0) 'BlockRoot'
 	if cap(d.BlockRoot) == 0 {
@@ -3693,25 +2296,47 @@ func (d *DataColumnIdentifier) UnmarshalSSZ(buf []byte) error {
 	}
 	d.BlockRoot = append(d.BlockRoot, buf[0:32]...)
 
-	// Field (1) 'ColumnIndex'
-	d.ColumnIndex = ssz.UnmarshallUint64(buf[32:40])
+	// Offset (1) 'Columns'
+	if o1 = ssz.ReadOffset(buf[32:36]); o1 > size {
+		return ssz.ErrOffset
+	}
 
+	if o1 != 36 {
+		return ssz.ErrInvalidVariableOffset
+	}
+
+	// Field (1) 'Columns'
+	{
+		buf = tail[o1:]
+		num, err := ssz.DivideInt2(len(buf), 8, 128)
+		if err != nil {
+			return err
+		}
+		d.Columns = ssz.ExtendUint(d.Columns, num)
+		for ii := 0; ii < num; ii++ {
+			d.Columns[ii] = ssz.UnmarshallUint[uint64](buf[ii*8 : (ii+1)*8])
+		}
+	}
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the DataColumnIdentifier object
-func (d *DataColumnIdentifier) SizeSSZ() (size int) {
-	size = 40
+// SizeSSZ returns the ssz encoded size in bytes for the DataColumnsByRootIdentifier object
+func (d *DataColumnsByRootIdentifier) SizeSSZ() (size int) {
+	size = 36
+
+	// Field (1) 'Columns'
+	size += len(d.Columns) * 8
+
 	return
 }
 
-// HashTreeRoot ssz hashes the DataColumnIdentifier object
-func (d *DataColumnIdentifier) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the DataColumnsByRootIdentifier object
+func (d *DataColumnsByRootIdentifier) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(d)
 }
 
-// HashTreeRootWith ssz hashes the DataColumnIdentifier object with a hasher
-func (d *DataColumnIdentifier) HashTreeRootWith(hh *ssz.Hasher) (err error) {
+// HashTreeRootWith ssz hashes the DataColumnsByRootIdentifier object with a hasher
+func (d *DataColumnsByRootIdentifier) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'BlockRoot'
@@ -3721,8 +2346,150 @@ func (d *DataColumnIdentifier) HashTreeRootWith(hh *ssz.Hasher) (err error) {
 	}
 	hh.PutBytes(d.BlockRoot)
 
-	// Field (1) 'ColumnIndex'
-	hh.PutUint64(d.ColumnIndex)
+	// Field (1) 'Columns'
+	{
+		if size := len(d.Columns); size > 128 {
+			err = ssz.ErrListTooBigFn("--.Columns", size, 128)
+			return
+		}
+		subIndx := hh.Index()
+		for _, i := range d.Columns {
+			ssz.AppendUint(hh, i)
+		}
+		hh.FillUpTo32()
+
+		numItems := uint64(len(d.Columns))
+		hh.MerkleizeWithMixin(subIndx, numItems, ssz.CalculateLimit(128, numItems, 8))
+	}
+
+	hh.Merkleize(indx)
+	return
+}
+
+// MarshalSSZ ssz marshals the StatusV2 object
+func (s *StatusV2) MarshalSSZ() ([]byte, error) {
+	return ssz.MarshalSSZ(s)
+}
+
+// MarshalSSZTo ssz marshals the StatusV2 object to a target array
+func (s *StatusV2) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+	dst = buf
+
+	// Field (0) 'ForkDigest'
+	if size := len(s.ForkDigest); size != 4 {
+		err = ssz.ErrBytesLengthFn("--.ForkDigest", size, 4)
+		return
+	}
+	dst = append(dst, s.ForkDigest...)
+
+	// Field (1) 'FinalizedRoot'
+	if size := len(s.FinalizedRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.FinalizedRoot", size, 32)
+		return
+	}
+	dst = append(dst, s.FinalizedRoot...)
+
+	// Field (2) 'FinalizedEpoch'
+	dst = ssz.MarshalUint(dst, s.FinalizedEpoch)
+
+	// Field (3) 'HeadRoot'
+	if size := len(s.HeadRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.HeadRoot", size, 32)
+		return
+	}
+	dst = append(dst, s.HeadRoot...)
+
+	// Field (4) 'HeadSlot'
+	dst = ssz.MarshalUint(dst, s.HeadSlot)
+
+	// Field (5) 'EarliestAvailableSlot'
+	dst = ssz.MarshalUint(dst, s.EarliestAvailableSlot)
+
+	return
+}
+
+// UnmarshalSSZ ssz unmarshals the StatusV2 object
+func (s *StatusV2) UnmarshalSSZ(buf []byte) error {
+	var err error
+	size := uint64(len(buf))
+	if size != 92 {
+		return ssz.ErrSize
+	}
+
+	// Field (0) 'ForkDigest'
+	if cap(s.ForkDigest) == 0 {
+		s.ForkDigest = make([]byte, 0, len(buf[0:4]))
+	}
+	s.ForkDigest = append(s.ForkDigest, buf[0:4]...)
+
+	// Field (1) 'FinalizedRoot'
+	if cap(s.FinalizedRoot) == 0 {
+		s.FinalizedRoot = make([]byte, 0, len(buf[4:36]))
+	}
+	s.FinalizedRoot = append(s.FinalizedRoot, buf[4:36]...)
+
+	// Field (2) 'FinalizedEpoch'
+	s.FinalizedEpoch = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Epoch](buf[36:44])
+
+	// Field (3) 'HeadRoot'
+	if cap(s.HeadRoot) == 0 {
+		s.HeadRoot = make([]byte, 0, len(buf[44:76]))
+	}
+	s.HeadRoot = append(s.HeadRoot, buf[44:76]...)
+
+	// Field (4) 'HeadSlot'
+	s.HeadSlot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[76:84])
+
+	// Field (5) 'EarliestAvailableSlot'
+	s.EarliestAvailableSlot = ssz.UnmarshallUint[github_com_OffchainLabs_prysm_v7_consensus_types_primitives.Slot](buf[84:92])
+
+	return err
+}
+
+// SizeSSZ returns the ssz encoded size in bytes for the StatusV2 object
+func (s *StatusV2) SizeSSZ() (size int) {
+	size = 92
+	return
+}
+
+// HashTreeRoot ssz hashes the StatusV2 object
+func (s *StatusV2) HashTreeRoot() ([32]byte, error) {
+	return ssz.HashWithDefaultHasher(s)
+}
+
+// HashTreeRootWith ssz hashes the StatusV2 object with a hasher
+func (s *StatusV2) HashTreeRootWith(hh *ssz.Hasher) (err error) {
+	indx := hh.Index()
+
+	// Field (0) 'ForkDigest'
+	if size := len(s.ForkDigest); size != 4 {
+		err = ssz.ErrBytesLengthFn("--.ForkDigest", size, 4)
+		return
+	}
+	hh.PutBytes(s.ForkDigest)
+
+	// Field (1) 'FinalizedRoot'
+	if size := len(s.FinalizedRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.FinalizedRoot", size, 32)
+		return
+	}
+	hh.PutBytes(s.FinalizedRoot)
+
+	// Field (2) 'FinalizedEpoch'
+	ssz.PutUint(hh, s.FinalizedEpoch)
+
+	// Field (3) 'HeadRoot'
+	if size := len(s.HeadRoot); size != 32 {
+		err = ssz.ErrBytesLengthFn("--.HeadRoot", size, 32)
+		return
+	}
+	hh.PutBytes(s.HeadRoot)
+
+	// Field (4) 'HeadSlot'
+	ssz.PutUint(hh, s.HeadSlot)
+
+	// Field (5) 'EarliestAvailableSlot'
+	ssz.PutUint(hh, s.EarliestAvailableSlot)
 
 	hh.Merkleize(indx)
 	return

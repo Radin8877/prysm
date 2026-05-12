@@ -4,20 +4,20 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/math"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/math"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestProcessRewardsAndPenaltiesPrecompute(t *testing.T) {
@@ -25,7 +25,7 @@ func TestProcessRewardsAndPenaltiesPrecompute(t *testing.T) {
 	validatorCount := uint64(2048)
 	base := buildState(e+3, validatorCount)
 	atts := make([]*ethpb.PendingAttestation, 3)
-	for i := 0; i < len(atts); i++ {
+	for i := range atts {
 		atts[i] = &ethpb.PendingAttestation{
 			Data: &ethpb.AttestationData{
 				Target: &ethpb.Checkpoint{Root: make([]byte, fieldparams.RootLength)},
@@ -40,9 +40,9 @@ func TestProcessRewardsAndPenaltiesPrecompute(t *testing.T) {
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
 
-	vp, bp, err := New(context.Background(), beaconState)
+	vp, bp, err := New(t.Context(), beaconState)
 	require.NoError(t, err)
-	vp, bp, err = ProcessAttestations(context.Background(), beaconState, vp, bp)
+	vp, bp, err = ProcessAttestations(t.Context(), beaconState, vp, bp)
 	require.NoError(t, err)
 
 	processedState, err := ProcessRewardsAndPenaltiesPrecompute(beaconState, bp, vp, AttestationsDelta, ProposersDelta)
@@ -64,7 +64,7 @@ func TestAttestationDeltas_ZeroEpoch(t *testing.T) {
 	base := buildState(e+2, validatorCount)
 	atts := make([]*ethpb.PendingAttestation, 3)
 	var emptyRoot [32]byte
-	for i := 0; i < len(atts); i++ {
+	for i := range atts {
 		atts[i] = &ethpb.PendingAttestation{
 			Data: &ethpb.AttestationData{
 				Target: &ethpb.Checkpoint{
@@ -83,9 +83,9 @@ func TestAttestationDeltas_ZeroEpoch(t *testing.T) {
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
 
-	pVals, pBal, err := New(context.Background(), beaconState)
+	pVals, pBal, err := New(t.Context(), beaconState)
 	assert.NoError(t, err)
-	pVals, pBal, err = ProcessAttestations(context.Background(), beaconState, pVals, pBal)
+	pVals, pBal, err = ProcessAttestations(t.Context(), beaconState, pVals, pBal)
 	require.NoError(t, err)
 
 	pBal.ActiveCurrentEpoch = 0 // Could cause a divide by zero panic.
@@ -100,7 +100,7 @@ func TestAttestationDeltas_ZeroInclusionDelay(t *testing.T) {
 	base := buildState(e+2, validatorCount)
 	atts := make([]*ethpb.PendingAttestation, 3)
 	var emptyRoot [32]byte
-	for i := 0; i < len(atts); i++ {
+	for i := range atts {
 		atts[i] = &ethpb.PendingAttestation{
 			Data: &ethpb.AttestationData{
 				Target: &ethpb.Checkpoint{
@@ -121,9 +121,9 @@ func TestAttestationDeltas_ZeroInclusionDelay(t *testing.T) {
 	beaconState, err := state_native.InitializeFromProtoPhase0(base)
 	require.NoError(t, err)
 
-	pVals, pBal, err := New(context.Background(), beaconState)
+	pVals, pBal, err := New(t.Context(), beaconState)
 	require.NoError(t, err)
-	_, _, err = ProcessAttestations(context.Background(), beaconState, pVals, pBal)
+	_, _, err = ProcessAttestations(t.Context(), beaconState, pVals, pBal)
 	require.ErrorContains(t, "attestation with inclusion delay of 0", err)
 }
 
@@ -132,7 +132,7 @@ func TestProcessRewardsAndPenaltiesPrecompute_SlashedInactivePenalty(t *testing.
 	validatorCount := uint64(2048)
 	base := buildState(e+3, validatorCount)
 	atts := make([]*ethpb.PendingAttestation, 3)
-	for i := 0; i < len(atts); i++ {
+	for i := range atts {
 		atts[i] = &ethpb.PendingAttestation{
 			Data: &ethpb.AttestationData{
 				Target: &ethpb.Checkpoint{Root: make([]byte, fieldparams.RootLength)},
@@ -155,16 +155,16 @@ func TestProcessRewardsAndPenaltiesPrecompute_SlashedInactivePenalty(t *testing.
 		require.NoError(t, beaconState.SetValidators(vs))
 	}
 
-	vp, bp, err := New(context.Background(), beaconState)
+	vp, bp, err := New(t.Context(), beaconState)
 	require.NoError(t, err)
-	vp, bp, err = ProcessAttestations(context.Background(), beaconState, vp, bp)
+	vp, bp, err = ProcessAttestations(t.Context(), beaconState, vp, bp)
 	require.NoError(t, err)
 	rewards, penalties, err := AttestationsDelta(beaconState, bp, vp)
 	require.NoError(t, err)
 
 	finalityDelay := time.PrevEpoch(beaconState) - beaconState.FinalizedCheckpointEpoch()
 	for _, i := range slashedAttestedIndices {
-		base, err := baseReward(beaconState, i)
+		base, err := baseReward(t.Context(), beaconState, i)
 		require.NoError(t, err, "Could not get base reward")
 		penalty := 3 * base
 		proposerReward := base / params.BeaconConfig().ProposerRewardQuotient
@@ -177,28 +177,28 @@ func TestProcessRewardsAndPenaltiesPrecompute_SlashedInactivePenalty(t *testing.
 
 func buildState(slot primitives.Slot, validatorCount uint64) *ethpb.BeaconState {
 	validators := make([]*ethpb.Validator, validatorCount)
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		validators[i] = &ethpb.Validator{
 			ExitEpoch:        params.BeaconConfig().FarFutureEpoch,
 			EffectiveBalance: params.BeaconConfig().MaxEffectiveBalance,
 		}
 	}
 	validatorBalances := make([]uint64, len(validators))
-	for i := 0; i < len(validatorBalances); i++ {
+	for i := range validatorBalances {
 		validatorBalances[i] = params.BeaconConfig().MaxEffectiveBalance
 	}
 	latestActiveIndexRoots := make(
 		[][]byte,
 		params.BeaconConfig().EpochsPerHistoricalVector,
 	)
-	for i := 0; i < len(latestActiveIndexRoots); i++ {
+	for i := range latestActiveIndexRoots {
 		latestActiveIndexRoots[i] = params.BeaconConfig().ZeroHash[:]
 	}
 	latestRandaoMixes := make(
 		[][]byte,
 		params.BeaconConfig().EpochsPerHistoricalVector,
 	)
-	for i := 0; i < len(latestRandaoMixes); i++ {
+	for i := range latestRandaoMixes {
 		latestRandaoMixes[i] = params.BeaconConfig().ZeroHash[:]
 	}
 	return &ethpb.BeaconState{
@@ -278,8 +278,8 @@ func TestProposerDeltaPrecompute_SlashedCase(t *testing.T) {
 //	  total_balance = get_total_active_balance(state)
 //	  effective_balance = state.validators[index].effective_balance
 //	  return Gwei(effective_balance * BASE_REWARD_FACTOR // integer_squareroot(total_balance) // BASE_REWARDS_PER_EPOCH)
-func baseReward(state state.ReadOnlyBeaconState, index primitives.ValidatorIndex) (uint64, error) {
-	totalBalance, err := helpers.TotalActiveBalance(state)
+func baseReward(ctx context.Context, state state.ReadOnlyBeaconState, index primitives.ValidatorIndex) (uint64, error) {
+	totalBalance, err := helpers.TotalActiveBalance(ctx, state)
 	if err != nil {
 		return 0, errors.Wrap(err, "could not calculate active balance")
 	}

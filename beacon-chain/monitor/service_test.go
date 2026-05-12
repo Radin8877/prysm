@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/altair"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	testDB "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/altair"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	testDB "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -96,7 +96,7 @@ func setupService(t *testing.T) *Service {
 			InitialSyncComplete: make(chan struct{}),
 		},
 
-		ctx:                         context.Background(),
+		ctx:                         t.Context(),
 		TrackedValidators:           trackedVals,
 		latestPerformance:           latestPerformance,
 		aggregatedPerformance:       aggregatedPerformance,
@@ -133,7 +133,7 @@ func TestUpdateSyncCommitteeTrackedVals(t *testing.T) {
 func TestNewService(t *testing.T) {
 	config := &ValidatorMonitorConfig{}
 	var tracked []primitives.ValidatorIndex
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := NewService(ctx, config, tracked)
 	require.NoError(t, err)
 }
@@ -148,7 +148,7 @@ func TestStart(t *testing.T) {
 	// wait for Logrus
 	time.Sleep(1000 * time.Millisecond)
 	require.LogsContain(t, hook, "Synced to head epoch, starting reporting performance")
-	require.LogsContain(t, hook, "\"Starting service\" prefix=monitor validatorIndices=\"[1 2 12 15]\"")
+	require.LogsContain(t, hook, "\"Starting service\" package=beacon-chain/monitor validatorIndices=\"[1 2 12 15]\"")
 	s.Lock()
 	require.Equal(t, s.isLogging, true, "monitor is not running")
 	s.Unlock()
@@ -156,7 +156,7 @@ func TestStart(t *testing.T) {
 
 func TestInitializePerformanceStructures(t *testing.T) {
 	hook := logTest.NewGlobal()
-	ctx := context.Background()
+	ctx := t.Context()
 	s := setupService(t)
 	state, err := s.config.HeadFetcher.HeadState(ctx)
 	require.NoError(t, err)
@@ -197,19 +197,17 @@ func TestInitializePerformanceStructures(t *testing.T) {
 }
 
 func TestMonitorRoutine(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hook := logTest.NewGlobal()
 	s := setupService(t)
 	stateChannel := make(chan *feed.Event, 1)
 	stateSub := s.config.StateNotifier.StateFeed().Subscribe(stateChannel)
 
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
 
-	go func() {
+	wg.Go(func() {
 		s.monitorRoutine(stateChannel, stateSub)
-		wg.Done()
-	}()
+	})
 
 	genesis, keys := util.DeterministicGenesisStateAltair(t, 64)
 	c, err := altair.NextSyncCommittee(ctx, genesis)
@@ -237,13 +235,13 @@ func TestMonitorRoutine(t *testing.T) {
 
 	// Wait for Logrus
 	time.Sleep(1000 * time.Millisecond)
-	wanted1 := fmt.Sprintf("\"Proposed beacon block was included\" balanceChange=100000000 blockRoot=%#x newBalance=32000000000 parentRoot=0xf732eaeb7fae prefix=monitor proposerIndex=15 slot=1 version=1", bytesutil.Trunc(root[:]))
+	wanted1 := fmt.Sprintf("\"Proposed beacon block was included\" balanceChange=100000000 blockRoot=%#x newBalance=32000000000 package=beacon-chain/monitor parentRoot=0xf732eaeb7fae proposerIndex=15 slot=1 version=1", bytesutil.Trunc(root[:]))
 	require.LogsContain(t, hook, wanted1)
 
 }
 
 func TestWaitForSync(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	s := &Service{ctx: ctx}
 	syncChan := make(chan struct{})
 
@@ -260,7 +258,7 @@ func TestWaitForSync(t *testing.T) {
 }
 
 func TestWaitForSyncCanceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	s := &Service{ctx: ctx}
 	syncChan := make(chan struct{})
 

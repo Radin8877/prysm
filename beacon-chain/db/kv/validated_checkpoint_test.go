@@ -1,21 +1,20 @@
 package kv
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestStore_LastValidatedCheckpoint_CanSaveRetrieve(t *testing.T) {
 	db := setupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	root := bytesutil.ToBytes32([]byte{'A'})
 	cp := &ethpb.Checkpoint{
 		Epoch: 10,
@@ -34,7 +33,7 @@ func TestStore_LastValidatedCheckpoint_CanSaveRetrieve(t *testing.T) {
 
 func TestStore_LastValidatedCheckpoint_Recover(t *testing.T) {
 	db := setupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	blk := util.HydrateSignedBeaconBlock(&ethpb.SignedBeaconBlock{})
 	r, err := blk.Block.HashTreeRoot()
 	require.NoError(t, err)
@@ -53,7 +52,7 @@ func TestStore_LastValidatedCheckpoint_Recover(t *testing.T) {
 
 func BenchmarkStore_SaveLastValidatedCheckpoint(b *testing.B) {
 	db := setupDB(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	root := bytesutil.ToBytes32([]byte{'A'})
 	cp := &ethpb.Checkpoint{
 		Epoch: 10,
@@ -65,15 +64,14 @@ func BenchmarkStore_SaveLastValidatedCheckpoint(b *testing.B) {
 	require.NoError(b, db.SaveState(ctx, st, root))
 	db.stateSummaryCache.clear()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		require.NoError(b, db.SaveLastValidatedCheckpoint(ctx, cp))
 	}
 }
 
 func TestStore_LastValidatedCheckpoint_DefaultIsFinalized(t *testing.T) {
 	db := setupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	genesis := bytesutil.ToBytes32([]byte{'G', 'E', 'N', 'E', 'S', 'I', 'S'})
 	require.NoError(t, db.SaveGenesisBlockRoot(ctx, genesis))

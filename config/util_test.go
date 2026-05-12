@@ -1,16 +1,15 @@
 package config
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/sirupsen/logrus/hooks/test"
 )
 
@@ -23,7 +22,7 @@ func TestUnmarshalFromURL_Success(t *testing.T) {
 	defer server.Close()
 
 	var result map[string]string
-	err := UnmarshalFromURL(context.Background(), server.URL, &result)
+	err := UnmarshalFromURL(t.Context(), server.URL, &result)
 	if err != nil {
 		t.Errorf("UnmarshalFromURL failed: %v", err)
 	}

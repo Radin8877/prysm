@@ -10,21 +10,21 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/api/pagination"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/eth/shared"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	"github.com/OffchainLabs/prysm/v7/network/httputil"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/petnames"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/derived"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/local"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/pagination"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/eth/shared"
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	"github.com/prysmaticlabs/prysm/v5/network/httputil"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/petnames"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/derived"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/local"
 )
 
 // ListAccounts allows retrieval of validating keys and their petnames
@@ -76,7 +76,7 @@ func (s *Server) ListAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accs := make([]*Account, len(keys))
-	for i := 0; i < len(keys); i++ {
+	for i := range keys {
 		accs[i] = &Account{
 			ValidatingPublicKey: hexutil.Encode(keys[i][:]),
 			AccountName:         petnames.DeterministicName(keys[i][:], "-"),
@@ -131,7 +131,7 @@ func (s *Server) BackupAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.PublicKeys == nil || len(req.PublicKeys) < 1 {
+	if len(req.PublicKeys) < 1 {
 		httputil.HandleError(w, "No public keys specified to backup", http.StatusBadRequest)
 		return
 	}

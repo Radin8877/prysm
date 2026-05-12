@@ -1,11 +1,10 @@
 package precompute
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/math"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
 )
 
 // ProcessSlashingsPrecompute processes the slashed validators during epoch processing.
@@ -21,7 +20,7 @@ func ProcessSlashingsPrecompute(s state.BeaconState, pBal *Balance) error {
 		totalSlashing += slashing
 	}
 
-	minSlashing := math.Min(totalSlashing*params.BeaconConfig().ProportionalSlashingMultiplier, pBal.ActiveCurrentEpoch)
+	minSlashing := min(totalSlashing*params.BeaconConfig().ProportionalSlashingMultiplier, pBal.ActiveCurrentEpoch)
 	epochToWithdraw := currentEpoch + exitLength/2
 
 	var hasSlashing bool

@@ -5,13 +5,14 @@ import (
 	"path"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/validators"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/spectest/utils"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/golang/snappy"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/spectest/utils"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func RunVoluntaryExitTest(t *testing.T, config string, fork string, block blockWithSSZObject, sszToState SSZToState) {
@@ -30,7 +31,7 @@ func RunVoluntaryExitTest(t *testing.T, config string, fork string, block blockW
 			blk, err := block(exitSSZ)
 			require.NoError(t, err)
 			RunBlockOperationTest(t, folderPath, blk, sszToState, func(ctx context.Context, s state.BeaconState, b interfaces.ReadOnlySignedBeaconBlock) (state.BeaconState, error) {
-				return blocks.ProcessVoluntaryExits(ctx, s, b.Block().Body().VoluntaryExits())
+				return blocks.ProcessVoluntaryExits(ctx, s, b.Block().Body().VoluntaryExits(), validators.ExitInformation(s))
 			})
 		})
 	}

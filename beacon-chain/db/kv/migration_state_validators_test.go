@@ -2,18 +2,17 @@ package kv
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	v1alpha1 "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/golang/snappy"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	v1alpha1 "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 	"go.etcd.io/bbolt"
 )
 
@@ -81,7 +80,7 @@ func Test_migrateStateValidators(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NoError(t, st.SetSlot(101))
 				assert.NoError(t, st.SetValidators(newValidators))
-				assert.NoError(t, dbStore.SaveState(context.Background(), st, blockRoot))
+				assert.NoError(t, dbStore.SaveState(t.Context(), st, blockRoot))
 				assert.NoError(t, err)
 
 				// now check if this newly saved state followed the migrated code path
@@ -136,7 +135,7 @@ func Test_migrateStateValidators(t *testing.T) {
 
 				// check if the migration worked
 				blockRoot := [32]byte{'A'}
-				rcvdState, err := dbStore.State(context.Background(), blockRoot)
+				rcvdState, err := dbStore.State(t.Context(), blockRoot)
 				assert.NoError(t, err)
 				require.DeepSSZEqual(t, rcvdState.ToProtoUnsafe(), state.ToProtoUnsafe(), "saved state with validators and retrieved state are not matching")
 
@@ -191,7 +190,7 @@ func Test_migrateStateValidators(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NoError(t, st.SetSlot(100))
 			assert.NoError(t, st.SetValidators(vals))
-			assert.NoError(t, dbStore.SaveState(context.Background(), st, blockRoot))
+			assert.NoError(t, dbStore.SaveState(t.Context(), st, blockRoot))
 			assert.NoError(t, err)
 
 			// enable historical state representation flag to test this
@@ -201,7 +200,7 @@ func Test_migrateStateValidators(t *testing.T) {
 			defer resetCfg()
 
 			tt.setup(t, dbStore, st, vals)
-			assert.NoError(t, migrateStateValidators(context.Background(), dbStore.db), "migrateArchivedIndex(tx) error")
+			assert.NoError(t, migrateStateValidators(t.Context(), dbStore.db), "migrateArchivedIndex(tx) error")
 			tt.eval(t, dbStore, st, vals)
 		})
 	}
@@ -239,7 +238,7 @@ func Test_migrateAltairStateValidators(t *testing.T) {
 
 				// check if the migration worked
 				blockRoot := [32]byte{'A'}
-				rcvdState, err := dbStore.State(context.Background(), blockRoot)
+				rcvdState, err := dbStore.State(t.Context(), blockRoot)
 				assert.NoError(t, err)
 				require.DeepSSZEqual(t, rcvdState.ToProtoUnsafe(), state.ToProtoUnsafe(), "saved state with validators and retrieved state are not matching")
 
@@ -299,7 +298,7 @@ func Test_migrateAltairStateValidators(t *testing.T) {
 			require.NoError(t, err)
 			assert.NoError(t, st.SetSlot(100))
 			assert.NoError(t, st.SetValidators(vals))
-			assert.NoError(t, dbStore.SaveState(context.Background(), st, blockRoot))
+			assert.NoError(t, dbStore.SaveState(t.Context(), st, blockRoot))
 
 			// enable historical state representation flag to test this
 			resetCfg := features.InitWithReset(&features.Flags{
@@ -308,7 +307,7 @@ func Test_migrateAltairStateValidators(t *testing.T) {
 			defer resetCfg()
 
 			tt.setup(t, dbStore, st, vals)
-			assert.NoError(t, migrateStateValidators(context.Background(), dbStore.db), "migrateArchivedIndex(tx) error")
+			assert.NoError(t, migrateStateValidators(t.Context(), dbStore.db), "migrateArchivedIndex(tx) error")
 			tt.eval(t, dbStore, st, vals)
 		})
 	}
@@ -346,7 +345,7 @@ func Test_migrateBellatrixStateValidators(t *testing.T) {
 
 				// check if the migration worked
 				blockRoot := [32]byte{'A'}
-				rcvdState, err := dbStore.State(context.Background(), blockRoot)
+				rcvdState, err := dbStore.State(t.Context(), blockRoot)
 				assert.NoError(t, err)
 				require.DeepSSZEqual(t, rcvdState.ToProtoUnsafe(), state.ToProtoUnsafe(), "saved state with validators and retrieved state are not matching")
 
@@ -406,7 +405,7 @@ func Test_migrateBellatrixStateValidators(t *testing.T) {
 			require.NoError(t, err)
 			assert.NoError(t, st.SetSlot(100))
 			assert.NoError(t, st.SetValidators(vals))
-			assert.NoError(t, dbStore.SaveState(context.Background(), st, blockRoot))
+			assert.NoError(t, dbStore.SaveState(t.Context(), st, blockRoot))
 
 			// enable historical state representation flag to test this
 			resetCfg := features.InitWithReset(&features.Flags{
@@ -415,7 +414,7 @@ func Test_migrateBellatrixStateValidators(t *testing.T) {
 			defer resetCfg()
 
 			tt.setup(t, dbStore, st, vals)
-			assert.NoError(t, migrateStateValidators(context.Background(), dbStore.db), "migrateArchivedIndex(tx) error")
+			assert.NoError(t, migrateStateValidators(t.Context(), dbStore.db), "migrateArchivedIndex(tx) error")
 			tt.eval(t, dbStore, st, vals)
 		})
 	}
@@ -453,7 +452,7 @@ func Test_migrateCapellaStateValidators(t *testing.T) {
 
 				// check if the migration worked
 				blockRoot := [32]byte{'A'}
-				rcvdState, err := dbStore.State(context.Background(), blockRoot)
+				rcvdState, err := dbStore.State(t.Context(), blockRoot)
 				assert.NoError(t, err)
 				require.DeepSSZEqual(t, rcvdState.ToProtoUnsafe(), state.ToProtoUnsafe(), "saved state with validators and retrieved state are not matching")
 
@@ -513,7 +512,7 @@ func Test_migrateCapellaStateValidators(t *testing.T) {
 			require.NoError(t, err)
 			assert.NoError(t, st.SetSlot(100))
 			assert.NoError(t, st.SetValidators(vals))
-			assert.NoError(t, dbStore.SaveState(context.Background(), st, blockRoot))
+			assert.NoError(t, dbStore.SaveState(t.Context(), st, blockRoot))
 
 			// enable historical state representation flag to test this
 			resetCfg := features.InitWithReset(&features.Flags{
@@ -522,7 +521,7 @@ func Test_migrateCapellaStateValidators(t *testing.T) {
 			defer resetCfg()
 
 			tt.setup(t, dbStore, st, vals)
-			assert.NoError(t, migrateStateValidators(context.Background(), dbStore.db), "migrateArchivedIndex(tx) error")
+			assert.NoError(t, migrateStateValidators(t.Context(), dbStore.db), "migrateArchivedIndex(tx) error")
 			tt.eval(t, dbStore, st, vals)
 		})
 	}

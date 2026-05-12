@@ -4,16 +4,16 @@ import (
 	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stateutil"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stateutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // DeterministicGenesisStateCapella returns a genesis state in Capella format made using the deterministic deposits.
@@ -26,7 +26,7 @@ func DeterministicGenesisStateCapella(t testing.TB, numValidators uint64) (state
 	if err != nil {
 		t.Fatal(errors.Wrapf(err, "failed to get eth1data for %d deposits", numValidators))
 	}
-	beaconState, err := genesisBeaconStateCapella(context.Background(), deposits, uint64(0), eth1Data)
+	beaconState, err := genesisBeaconStateCapella(t.Context(), deposits, uint64(0), eth1Data)
 	if err != nil {
 		t.Fatal(errors.Wrapf(err, "failed to get genesis beacon state of %d validators", numValidators))
 	}
@@ -82,7 +82,7 @@ func emptyGenesisStateCapella() (state.BeaconState, error) {
 
 		LatestExecutionPayloadHeader: &enginev1.ExecutionPayloadHeaderCapella{},
 	}
-	return state_native.InitializeFromProtoCapella(st)
+	return state_native.InitializeFromProtoUnsafeCapella(st)
 }
 
 func buildGenesisBeaconStateCapella(genesisTime uint64, preState state.BeaconState, eth1Data *ethpb.Eth1Data) (state.BeaconState, error) {
@@ -91,7 +91,7 @@ func buildGenesisBeaconStateCapella(genesisTime uint64, preState state.BeaconSta
 	}
 
 	randaoMixes := make([][]byte, params.BeaconConfig().EpochsPerHistoricalVector)
-	for i := 0; i < len(randaoMixes); i++ {
+	for i := range randaoMixes {
 		h := make([]byte, 32)
 		copy(h, eth1Data.BlockHash)
 		randaoMixes[i] = h
@@ -100,23 +100,24 @@ func buildGenesisBeaconStateCapella(genesisTime uint64, preState state.BeaconSta
 	zeroHash := params.BeaconConfig().ZeroHash[:]
 
 	activeIndexRoots := make([][]byte, params.BeaconConfig().EpochsPerHistoricalVector)
-	for i := 0; i < len(activeIndexRoots); i++ {
+	for i := range activeIndexRoots {
 		activeIndexRoots[i] = zeroHash
 	}
 
 	blockRoots := make([][]byte, params.BeaconConfig().SlotsPerHistoricalRoot)
-	for i := 0; i < len(blockRoots); i++ {
+	for i := range blockRoots {
 		blockRoots[i] = zeroHash
 	}
 
 	stateRoots := make([][]byte, params.BeaconConfig().SlotsPerHistoricalRoot)
-	for i := 0; i < len(stateRoots); i++ {
+	for i := range stateRoots {
 		stateRoots[i] = zeroHash
 	}
 
 	slashings := make([]uint64, params.BeaconConfig().EpochsPerSlashingsVector)
 
-	genesisValidatorsRoot, err := stateutil.ValidatorRegistryRoot(preState.Validators())
+	compactValidators := stateutil.CompactValidatorsFromProto(preState.Validators())
+	genesisValidatorsRoot, err := stateutil.ValidatorRegistryRoot(compactValidators)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not hash tree root genesis validators %v", err)
 	}
@@ -250,5 +251,5 @@ func buildGenesisBeaconStateCapella(genesisTime uint64, preState state.BeaconSta
 		WithdrawalsRoot:  make([]byte, 32),
 	}
 
-	return state_native.InitializeFromProtoCapella(st)
+	return state_native.InitializeFromProtoUnsafeCapella(st)
 }

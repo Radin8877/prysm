@@ -1,22 +1,25 @@
 package blockchain
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filesystem"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/attestations"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/blstoexec"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/slashings"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/voluntaryexits"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"time"
+
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filesystem"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/execution"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice"
+	lightclient "github.com/OffchainLabs/prysm/v7/beacon-chain/light-client"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/attestations"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/blstoexec"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/slashings"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/voluntaryexits"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 )
 
 type Option func(s *Service) error
@@ -25,6 +28,14 @@ type Option func(s *Service) error
 func WithMaxGoroutines(x int) Option {
 	return func(s *Service) error {
 		s.cfg.MaxRoutines = x
+		return nil
+	}
+}
+
+// WithLCStore for light client store access.
+func WithLCStore() Option {
+	return func(s *Service) error {
+		s.lcStore = lightclient.NewLightClientStore(s.cfg.P2P, s.cfg.StateNotifier.StateFeed(), s.cfg.BeaconDB)
 		return nil
 	}
 }
@@ -85,6 +96,15 @@ func WithTrackedValidatorsCache(c *cache.TrackedValidatorsCache) Option {
 	}
 }
 
+// WithProposerPreferencesCache sets the proposer preferences cache used to
+// look up fee recipient and gas limit from Gloas gossip preferences.
+func WithProposerPreferencesCache(c *cache.ProposerPreferencesCache) Option {
+	return func(s *Service) error {
+		s.cfg.ProposerPreferencesCache = c
+		return nil
+	}
+}
+
 // WithAttestationCache for attestation lifecycle after chain inclusion.
 func WithAttestationCache(c *cache.AttestationCache) Option {
 	return func(s *Service) error {
@@ -126,9 +146,9 @@ func WithBLSToExecPool(p blstoexec.PoolManager) Option {
 }
 
 // WithP2PBroadcaster to broadcast messages after appropriate processing.
-func WithP2PBroadcaster(p p2p.Broadcaster) Option {
+func WithP2PBroadcaster(p p2p.Accessor) Option {
 	return func(s *Service) error {
-		s.cfg.P2p = p
+		s.cfg.P2P = p
 		return nil
 	}
 }
@@ -207,9 +227,51 @@ func WithBlobStorage(b *filesystem.BlobStorage) Option {
 	}
 }
 
+// WithDataColumnStorage sets the data column storage backend for the blockchain service.
+func WithDataColumnStorage(b *filesystem.DataColumnStorage) Option {
+	return func(s *Service) error {
+		s.dataColumnStorage = b
+		return nil
+	}
+}
+
+// WithSyncChecker sets the sync checker for the blockchain service.
 func WithSyncChecker(checker Checker) Option {
 	return func(s *Service) error {
 		s.cfg.SyncChecker = checker
+		return nil
+	}
+}
+
+// WithSlasherEnabled sets whether the slasher is enabled or not.
+func WithSlasherEnabled(enabled bool) Option {
+	return func(s *Service) error {
+		s.slasherEnabled = enabled
+		return nil
+	}
+}
+
+// WithGenesisTime sets the genesis time for the blockchain service.
+func WithGenesisTime(genesisTime time.Time) Option {
+	return func(s *Service) error {
+		s.genesisTime = genesisTime.Truncate(time.Second) // Genesis time has a precision of 1 second.
+		return nil
+	}
+}
+
+// WithLightClientStore sets the light client store for the blockchain service.
+func WithLightClientStore(lcs *lightclient.Store) Option {
+	return func(s *Service) error {
+		s.lcStore = lcs
+		return nil
+	}
+}
+
+// WithStartWaitingDataColumnSidecars sets a channel that the `areDataColumnsAvailable` function will fill
+// in when starting to wait for additional data columns.
+func WithStartWaitingDataColumnSidecars(c chan bool) Option {
+	return func(s *Service) error {
+		s.startWaitingDataColumnSidecars = c
 		return nil
 	}
 }

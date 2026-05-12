@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
+	"github.com/OffchainLabs/prysm/v7/config/params"
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
 )
@@ -36,6 +36,11 @@ var (
 		Usage: "Logging verbosity. (trace, debug, info, warn, error, fatal, panic)",
 		Value: "info",
 	}
+	// LogVModuleFlag defines per-package log levels.
+	LogVModuleFlag = &cli.StringSliceFlag{
+		Name:  "log.vmodule",
+		Usage: "Per-package log verbosity. packagePath=level entries separated by commas.",
+	}
 	// DataDirFlag defines a path on disk where Prysm databases are stored.
 	DataDirFlag = &cli.StringFlag{
 		Name:  "datadir",
@@ -48,32 +53,26 @@ var (
 		Usage: `Serves HTTP handler to initiate database backups.
 		The handler is served on the monitoring port at path /db/backup.`,
 	}
-	// BackupWebhookOutputDir to customize the output directory for db backups.
-	BackupWebhookOutputDir = &cli.StringFlag{
-		Name:  "db-backup-output-dir",
-		Usage: "Output directory for db backups.",
-	}
-	// EnableTracingFlag defines a flag to enable p2p message tracing.
+	// EnableTracingFlag defines a flag to enable OpenTelemetry tracing.
 	EnableTracingFlag = &cli.BoolFlag{
 		Name:  "enable-tracing",
-		Usage: "Enables request tracing.",
+		Usage: "Enables OpenTelemetry tracing.",
 	}
 	// TracingProcessNameFlag defines a flag to specify a process name.
 	TracingProcessNameFlag = &cli.StringFlag{
 		Name:  "tracing-process-name",
 		Usage: "Name to apply to tracing tag `process_name`.",
 	}
-	// TracingEndpointFlag flag defines the http endpoint for serving traces to Jaeger.
+	// TracingEndpointFlag defines the OTLP/HTTP endpoint that traces are exported to.
 	TracingEndpointFlag = &cli.StringFlag{
 		Name:  "tracing-endpoint",
-		Usage: "Tracing endpoint defines where beacon chain traces are exposed to Jaeger.",
+		Usage: "OTLP/HTTP endpoint that traces are exported to (e.g. an OpenTelemetry Collector or a Tempo receiver).",
 		Value: "http://127.0.0.1:14268/api/traces",
 	}
-	// TraceSampleFractionFlag defines a flag to indicate what fraction of p2p
-	// messages are sampled for tracing.
+	// TraceSampleFractionFlag defines the head-sampling ratio applied to all traces.
 	TraceSampleFractionFlag = &cli.Float64Flag{
 		Name:  "trace-sample-fraction",
-		Usage: "Indicates what fraction of p2p messages are sampled for tracing.",
+		Usage: "Head-sampling ratio applied to every trace started by the process. 1.0 keeps all traces.",
 		Value: 0.20,
 	}
 	// MonitoringHostFlag defines the host used to serve prometheus metrics.
@@ -93,15 +92,20 @@ var (
 		Name:  "no-discovery",
 		Usage: "Enable only local network p2p and do not connect to cloud bootstrap nodes",
 	}
-	// StaticPeers specifies a set of peers to connect to explicitly.
+	// StaticPeers specifies a set of peers to connect to explicitly, accepting following format of addresses:
+	// enode, multiaddr, enr.
 	StaticPeers = &cli.StringSliceFlag{
-		Name:  "peer",
-		Usage: "Connect with this peer, this flag may be used multiple times. This peer is recognized as a trusted peer.",
+		Name: "peer",
+		Usage: "Connect with this peer, this flag may be used multiple times. " +
+			"This peer is recognized as a trusted peer." +
+			"Accepts enode, multiaddr, and enr formats.",
 	}
 	// BootstrapNode tells the beacon node which bootstrap node to connect to
 	BootstrapNode = &cli.StringSliceFlag{
-		Name:  "bootstrap-node",
-		Usage: "The address of bootstrap node. Beacon node will connect for peer discovery via DHT.  Multiple nodes can be passed by using the flag multiple times but not comma-separated. You can also pass YAML files containing multiple nodes.",
+		Name: "bootstrap-node",
+		Usage: "The enr/enode address of bootstrap node. Beacon node will connect for peer discovery via DHT. " +
+			"Multiple nodes can be passed by using the flag multiple times but not comma-separated. " +
+			"You can also pass YAML files containing multiple nodes.",
 		Value: cli.NewStringSlice(params.BeaconNetworkConfig().BootstrapNodes...),
 	}
 	// RelayNode tells the beacon node which relay node to connect to.
@@ -158,12 +162,6 @@ var (
 		Usage: "Enables the peer id of the node to be fixed by saving the generated network key to the default key path.",
 		Value: false,
 	}
-	// P2PMetadata defines a flag to specify the location of the peer metadata file.
-	P2PMetadata = &cli.StringFlag{
-		Name:  "p2p-metadata",
-		Usage: "The file containing the metadata to communicate with other peers.",
-		Value: "",
-	}
 	// P2PMaxPeers defines a flag to specify the max number of peers in libp2p.
 	P2PMaxPeers = &cli.IntFlag{
 		Name:  "p2p-max-peers",
@@ -186,6 +184,13 @@ var (
 			"192.168.0.0/16 would deny connections from peers on your local network only. The " +
 			"default is to accept all connections.",
 	}
+	// P2PColocationWhitelist defines a list of CIDR addresses to exempt from IP colocation restrictions.
+	P2PColocationWhitelist = &cli.StringSliceFlag{
+		Name: "p2p-colocation-whitelist",
+		Usage: "CIDR addresses to exempt from gossip sub IP colocation restrictions. " +
+			"Can be specified multiple times. Example: " +
+			"192.168.1.1/32 would exempt that specific IP from colocation restrictions.",
+	}
 	PubsubQueueSize = &cli.IntFlag{
 		Name:  "pubsub-queue-size",
 		Usage: "The size of the pubsub validation and outbound queue for the node.",
@@ -206,6 +211,11 @@ var (
 		Name:  "log-format",
 		Usage: "Specifies log formatting. Supports: text, json, fluentd, journald.",
 		Value: "text",
+	}
+	// DisableLogColor disables ANSI color codes in log output, useful when redirecting output to a file or pipe.
+	DisableLogColor = &cli.BoolFlag{
+		Name:  "disable-log-colors",
+		Usage: "Disable color formatting for terminal logs.",
 	}
 	// MaxGoroutines specifies the maximum amount of goroutines tolerated, before a status check fails.
 	MaxGoroutines = &cli.IntFlag{
@@ -236,7 +246,8 @@ var (
 	// GrpcMaxCallRecvMsgSizeFlag defines the max call message size for GRPC
 	GrpcMaxCallRecvMsgSizeFlag = &cli.IntFlag{
 		Name: "grpc-max-msg-size",
-		Usage: `Integer to define max receive message call size (in bytes).
+		Usage: `WARNING: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API..
+		Integer to define max receive message call size (in bytes).
 		If serving a public gRPC server, set this to a more reasonable size to avoid
 		resource exhaustion from large messages. 
 		Validators with as many as 10000 keys can be run with a max message size of less than 

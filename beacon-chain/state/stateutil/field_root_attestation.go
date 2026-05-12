@@ -5,10 +5,10 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	params "github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/ssz"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	params "github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/ssz"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 // RootsArrayHashTreeRoot computes the Merkle root of arrays of 32-byte hashes, such as [64][32]byte
@@ -24,7 +24,7 @@ func EpochAttestationsRoot(atts []*ethpb.PendingAttestation) ([32]byte, error) {
 	}
 
 	roots := make([][32]byte, len(atts))
-	for i := 0; i < len(atts); i++ {
+	for i := range atts {
 		pendingRoot, err := pendingAttestationRoot(atts[i])
 		if err != nil {
 			return [32]byte{}, errors.Wrap(err, "could not attestation merkleization")

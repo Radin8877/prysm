@@ -15,10 +15,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filters"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/kv"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
 	"github.com/emicklei/dot"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filters"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/kv"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
 )
 
 var (
@@ -56,7 +56,7 @@ func main() {
 
 	// Construct nodes
 	m := make(map[[32]byte]*node)
-	for i := 0; i < len(blks); i++ {
+	for i := range blks {
 		b := blks[i]
 		r := roots[i]
 		m[r] = &node{score: make(map[uint64]bool)}

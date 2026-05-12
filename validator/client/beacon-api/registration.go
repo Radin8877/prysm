@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 func (c *beaconApiValidatorClient) submitValidatorRegistrations(ctx context.Context, registrations []*ethpb.SignedValidatorRegistrationV1) error {
@@ -24,5 +24,5 @@ func (c *beaconApiValidatorClient) submitValidatorRegistrations(ctx context.Cont
 		return errors.Wrap(err, "failed to marshal registration")
 	}
 
-	return c.jsonRestHandler.Post(ctx, endpoint, nil, bytes.NewBuffer(marshalledJsonRegistration), nil)
+	return c.handler.Post(ctx, endpoint, nil, bytes.NewBuffer(marshalledJsonRegistration), nil)
 }

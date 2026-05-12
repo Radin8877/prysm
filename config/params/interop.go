@@ -2,7 +2,7 @@ package params
 
 // InteropConfig provides a generic config suitable for interop testing.
 func InteropConfig() *BeaconChainConfig {
-	c := MainnetConfig().Copy()
+	c := MainnetConfig()
 
 	// Prysm constants.
 	c.ConfigName = InteropName
@@ -13,6 +13,7 @@ func InteropConfig() *BeaconChainConfig {
 	c.DenebForkVersion = []byte{4, 0, 0, 235}
 	c.ElectraForkVersion = []byte{5, 0, 0, 235}
 	c.FuluForkVersion = []byte{6, 0, 0, 235}
+	c.GloasForkVersion = []byte{7, 0, 0, 235}
 
 	c.InitializeForkSchedule()
 	return c

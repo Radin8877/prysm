@@ -2,8 +2,10 @@
 package operation
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 )
 
 const (
@@ -32,6 +34,21 @@ const (
 
 	// AttesterSlashingReceived is sent after an attester slashing is received from gossip or rpc
 	AttesterSlashingReceived = 8
+
+	// SingleAttReceived is sent after a single attestation object is received from gossip or rpc
+	SingleAttReceived = 9
+
+	// DataColumnSidecarReceived is sent after a data column sidecar is received from gossip or rpc.
+	DataColumnSidecarReceived = 10
+
+	// BlockGossipReceived is sent after a block has been received from gossip or API that passes validation rules.
+	BlockGossipReceived = 11
+
+	// DataColumnReceived is sent after a data column has been seen after gossip validation rules.
+	DataColumnReceived = 12
+
+	// PayloadAttestationMessageReceived is sent after a payload attestation message is received from gossip or rpc.
+	PayloadAttestationMessageReceived = 13
 )
 
 // UnAggregatedAttReceivedData is the data sent with UnaggregatedAttReceived events.
@@ -43,7 +60,7 @@ type UnAggregatedAttReceivedData struct {
 // AggregatedAttReceivedData is the data sent with AggregatedAttReceived events.
 type AggregatedAttReceivedData struct {
 	// Attestation is the aggregated attestation object.
-	Attestation *ethpb.AggregateAttestationAndProof
+	Attestation ethpb.AggregateAttAndProof
 }
 
 // ExitReceivedData is the data sent with ExitReceived events.
@@ -76,4 +93,32 @@ type ProposerSlashingReceivedData struct {
 // AttesterSlashingReceivedData is the data sent with AttesterSlashingReceived events.
 type AttesterSlashingReceivedData struct {
 	AttesterSlashing ethpb.AttSlashing
+}
+
+// SingleAttReceivedData is the data sent with SingleAttReceived events.
+type SingleAttReceivedData struct {
+	Attestation ethpb.Att
+}
+
+// DataColumnSidecarReceivedData is the data sent with DataColumnSidecarReceived events.
+type DataColumnSidecarReceivedData struct {
+	DataColumn *blocks.VerifiedRODataColumn
+}
+
+// BlockGossipReceivedData is the data sent with BlockGossipReceived events.
+type BlockGossipReceivedData struct {
+	// SignedBlock is the block that was received.
+	SignedBlock interfaces.ReadOnlySignedBeaconBlock
+}
+
+type DataColumnReceivedData struct {
+	Slot           primitives.Slot
+	Index          uint64
+	BlockRoot      [32]byte
+	KzgCommitments [][]byte
+}
+
+// PayloadAttestationMessageReceivedData is the data sent with PayloadAttestationMessageReceived events.
+type PayloadAttestationMessageReceivedData struct {
+	Message *ethpb.PayloadAttestationMessage
 }

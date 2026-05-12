@@ -7,16 +7,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/io/prompt"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/petnames"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/userprompt"
 	"github.com/logrusorgru/aurora"
 	"github.com/manifoldco/promptui"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/io/prompt"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/petnames"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/userprompt"
 	"github.com/urfave/cli/v2"
 )
 
@@ -65,7 +65,7 @@ func selectAccounts(selectionPrompt string, pubKeys [][fieldparams.BLSPubkeyLeng
 		}
 		if result == allAccountsText {
 			fmt.Printf("%s\n", au.BrightRed("[Selected all accounts]").Bold())
-			for i := 0; i < len(pubKeys); i++ {
+			for i := range pubKeys {
 				results = append(results, i)
 			}
 			break

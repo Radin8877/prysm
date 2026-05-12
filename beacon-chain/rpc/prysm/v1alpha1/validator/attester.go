@@ -2,24 +2,29 @@ package validator
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // GetAttestationData requests that the beacon node produce an attestation data object,
 // which the validator acting as an attester will then sign.
 func (vs *Server) GetAttestationData(ctx context.Context, req *ethpb.AttestationDataRequest) (*ethpb.AttestationData, error) {
@@ -40,73 +45,85 @@ func (vs *Server) GetAttestationData(ctx context.Context, req *ethpb.Attestation
 	return res, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ProposeAttestation is a function called by an attester to vote
 // on a block via an attestation object as defined in the Ethereum specification.
 func (vs *Server) ProposeAttestation(ctx context.Context, att *ethpb.Attestation) (*ethpb.AttestResponse, error) {
 	ctx, span := trace.StartSpan(ctx, "AttesterServer.ProposeAttestation")
 	defer span.End()
 
-	resp, err := vs.proposeAtt(ctx, att, nil, att.GetData().CommitteeIndex)
+	if vs.SyncChecker.Syncing() {
+		return nil, status.Errorf(codes.Unavailable, "Syncing to latest head, not ready to respond")
+	}
+
+	resp, err := vs.proposeAtt(ctx, att, att.GetData().CommitteeIndex)
 	if err != nil {
 		return nil, err
 	}
 
-	if features.Get().EnableExperimentalAttestationPool {
-		if err = vs.AttestationCache.Add(att); err != nil {
-			log.WithError(err).Error("Could not save attestation")
-		}
-	} else {
-		go func() {
+	go func() {
+		if features.Get().EnableExperimentalAttestationPool {
+			if err := vs.AttestationCache.Add(att); err != nil {
+				log.WithError(err).Error("Could not save attestation")
+			}
+		} else {
 			attCopy := att.Copy()
 			if err := vs.AttPool.SaveUnaggregatedAttestation(attCopy); err != nil {
 				log.WithError(err).Error("Could not save unaggregated attestation")
-				return
 			}
-		}()
-	}
+		}
+	}()
 
 	return resp, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // ProposeAttestationElectra is a function called by an attester to vote
 // on a block via an attestation object as defined in the Ethereum specification.
+// Used for Post Electra
 func (vs *Server) ProposeAttestationElectra(ctx context.Context, singleAtt *ethpb.SingleAttestation) (*ethpb.AttestResponse, error) {
 	ctx, span := trace.StartSpan(ctx, "AttesterServer.ProposeAttestationElectra")
 	defer span.End()
+
+	if vs.SyncChecker.Syncing() {
+		return nil, status.Errorf(codes.Unavailable, "Syncing to latest head, not ready to respond")
+	}
+
+	resp, err := vs.proposeAtt(ctx, singleAtt, singleAtt.GetCommitteeIndex())
+	if err != nil {
+		return nil, err
+	}
 
 	targetState, err := vs.AttestationStateFetcher.AttestationTargetState(ctx, singleAtt.Data.Target)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "Could not get target state")
 	}
-	committeeIndex := singleAtt.GetCommitteeIndex()
-	committee, err := helpers.BeaconCommitteeFromState(ctx, targetState, singleAtt.Data.Slot, committeeIndex)
+	committee, err := helpers.BeaconCommitteeFromState(ctx, targetState, singleAtt.Data.Slot, singleAtt.GetCommitteeIndex())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "Could not get committee")
 	}
 
-	resp, err := vs.proposeAtt(ctx, singleAtt, committee, committeeIndex)
-	if err != nil {
-		return nil, err
-	}
-
 	singleAttCopy := singleAtt.Copy()
 	att := singleAttCopy.ToAttestationElectra(committee)
-	if features.Get().EnableExperimentalAttestationPool {
-		if err = vs.AttestationCache.Add(att); err != nil {
-			log.WithError(err).Error("Could not save attestation")
-		}
-	} else {
-		go func() {
+	go func() {
+		if features.Get().EnableExperimentalAttestationPool {
+			if err := vs.AttestationCache.Add(att); err != nil {
+				log.WithError(err).Error("Could not save attestation")
+			}
+		} else {
 			if err := vs.AttPool.SaveUnaggregatedAttestation(att); err != nil {
 				log.WithError(err).Error("Could not save unaggregated attestation")
-				return
 			}
-		}()
-	}
+		}
+	}()
 
 	return resp, nil
 }
 
+// Deprecated: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API.
+//
 // SubscribeCommitteeSubnets subscribes to the committee ID subnet given subscribe request.
 func (vs *Server) SubscribeCommitteeSubnets(ctx context.Context, req *ethpb.CommitteeSubnetsSubscribeRequest) (*emptypb.Empty, error) {
 	ctx, span := trace.StartSpan(ctx, "AttesterServer.SubscribeCommitteeSubnets")
@@ -158,7 +175,6 @@ func (vs *Server) SubscribeCommitteeSubnets(ctx context.Context, req *ethpb.Comm
 func (vs *Server) proposeAtt(
 	ctx context.Context,
 	att ethpb.Att,
-	committee []primitives.ValidatorIndex, // required post-Electra
 	committeeIndex primitives.CommitteeIndex,
 ) (*ethpb.AttestResponse, error) {
 	if _, err := bls.SignatureFromBytes(att.GetSignature()); err != nil {
@@ -170,24 +186,53 @@ func (vs *Server) proposeAtt(
 		return nil, status.Errorf(codes.Internal, "Could not get attestation root: %v", err)
 	}
 
-	var singleAtt *ethpb.SingleAttestation
+	currentEpoch := slots.ToEpoch(vs.TimeFetcher.CurrentSlot())
+	if att.Version() < version.Electra && currentEpoch >= params.BeaconConfig().ElectraForkEpoch {
+		return nil, status.Error(codes.InvalidArgument, "old attestation format, ProposeAttestationElectra should be called post Electra")
+	}
 	if att.Version() >= version.Electra {
-		var ok bool
-		singleAtt, ok = att.(*ethpb.SingleAttestation)
-		if !ok {
-			return nil, status.Errorf(codes.Internal, "Attestation has wrong type (expected %T, got %T)", &ethpb.SingleAttestation{}, att)
+		if currentEpoch < params.BeaconConfig().ElectraForkEpoch {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ProposeAttestationElectra not supported yet. The current epoch is %d supported starting epoch is %d", currentEpoch, params.BeaconConfig().ElectraForkEpoch))
 		}
-		att = singleAtt.ToAttestationElectra(committee)
+		data := att.GetData()
+		attEpoch := slots.ToEpoch(data.Slot)
+		if attEpoch >= params.BeaconConfig().ElectraForkEpoch && attEpoch < params.BeaconConfig().GloasForkEpoch {
+			if data.CommitteeIndex != 0 {
+				return nil, status.Error(codes.InvalidArgument, "Committee index must be 0 in Electra and Fulu")
+			}
+		} else if attEpoch >= params.BeaconConfig().GloasForkEpoch {
+			if data.CommitteeIndex >= 2 {
+				return nil, status.Error(codes.InvalidArgument, "index must be < 2 post-Gloas")
+			}
+			if data.CommitteeIndex != 0 {
+				blockSlot, err := vs.ForkchoiceFetcher.RecentBlockSlot(bytesutil.ToBytes32(data.BeaconBlockRoot))
+				if err != nil {
+					return nil, status.Error(codes.Internal, "could not determine block slot")
+				}
+				if blockSlot == data.Slot {
+					return nil, status.Error(codes.InvalidArgument, "same slot attestations must use index 0 post-Gloas")
+				}
+			}
+		}
 	}
 
 	// Broadcast the unaggregated attestation on a feed to notify other services in the beacon node
 	// of a received unaggregated attestation.
-	vs.OperationNotifier.OperationFeed().Send(&feed.Event{
-		Type: operation.UnaggregatedAttReceived,
-		Data: &operation.UnAggregatedAttReceivedData{
-			Attestation: att,
-		},
-	})
+	if att.IsSingle() {
+		vs.OperationNotifier.OperationFeed().Send(&feed.Event{
+			Type: operation.SingleAttReceived,
+			Data: &operation.SingleAttReceivedData{
+				Attestation: att,
+			},
+		})
+	} else {
+		vs.OperationNotifier.OperationFeed().Send(&feed.Event{
+			Type: operation.UnaggregatedAttReceived,
+			Data: &operation.UnAggregatedAttReceivedData{
+				Attestation: att,
+			},
+		})
+	}
 
 	// Determine subnet to broadcast attestation to
 	wantedEpoch := slots.ToEpoch(att.GetData().Slot)
@@ -198,13 +243,7 @@ func (vs *Server) proposeAtt(
 	subnet := helpers.ComputeSubnetFromCommitteeAndSlot(uint64(len(vals)), committeeIndex, att.GetData().Slot)
 
 	// Broadcast the new attestation to the network.
-	var attToBroadcast ethpb.Att
-	if singleAtt != nil {
-		attToBroadcast = singleAtt
-	} else {
-		attToBroadcast = att
-	}
-	if err := vs.P2P.BroadcastAttestation(ctx, subnet, attToBroadcast); err != nil {
+	if err := vs.P2P.BroadcastAttestation(ctx, subnet, att); err != nil {
 		return nil, status.Errorf(codes.Internal, "Could not broadcast attestation: %v", err)
 	}
 

@@ -1,18 +1,17 @@
 package sync
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	core "github.com/libp2p/go-libp2p/core"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestContextWrite_NoWrites(t *testing.T) {
@@ -27,7 +26,7 @@ func TestContextWrite_NoWrites(t *testing.T) {
 		wg.Done()
 		// no-op
 	})
-	strm, err := p1.BHost.NewStream(context.Background(), nPeer.PeerID(), p2p.RPCPingTopicV1)
+	strm, err := p1.BHost.NewStream(t.Context(), nPeer.PeerID(), p2p.RPCPingTopicV1)
 	assert.NoError(t, err)
 
 	// Nothing will be written to the stream
@@ -61,7 +60,7 @@ func TestContextRead_NoReads(t *testing.T) {
 
 		wg.Done()
 	})
-	strm, err := p1.BHost.NewStream(context.Background(), nPeer.PeerID(), p2p.RPCPingTopicV1)
+	strm, err := p1.BHost.NewStream(t.Context(), nPeer.PeerID(), p2p.RPCPingTopicV1)
 	assert.NoError(t, err)
 
 	n, err := strm.Write(wantedData)

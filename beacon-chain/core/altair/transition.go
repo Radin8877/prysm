@@ -3,11 +3,11 @@ package altair
 import (
 	"context"
 
+	e "github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/epoch/precompute"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
 	"github.com/pkg/errors"
-	e "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/epoch/precompute"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
 )
 
 // ProcessEpoch describes the per epoch operations that are performed on the beacon state.
@@ -69,7 +69,7 @@ func ProcessEpoch(ctx context.Context, state state.BeaconState) error {
 	}
 
 	// Modified in Altair and Bellatrix.
-	if err := e.ProcessSlashings(state); err != nil {
+	if err := e.ProcessSlashings(ctx, state); err != nil {
 		return err
 	}
 	state, err = e.ProcessEth1DataReset(state)

@@ -2,17 +2,16 @@ package filesystem
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/db/common"
-	"github.com/prysmaticlabs/prysm/v5/validator/slashing-protection-history/format"
-	valtest "github.com/prysmaticlabs/prysm/v5/validator/testing"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/db/common"
+	"github.com/OffchainLabs/prysm/v7/validator/slashing-protection-history/format"
+	valtest "github.com/OffchainLabs/prysm/v7/validator/testing"
 )
 
 func TestStore_ImportInterchangeData_BadJSON(t *testing.T) {
@@ -24,7 +23,7 @@ func TestStore_ImportInterchangeData_BadJSON(t *testing.T) {
 	require.NoError(t, err, "NewStore should not return an error")
 
 	buf := bytes.NewBuffer([]byte("helloworld"))
-	err = s.ImportStandardProtectionJSON(context.Background(), buf)
+	err = s.ImportStandardProtectionJSON(t.Context(), buf)
 	require.ErrorContains(t, "could not unmarshal slashing protection JSON file", err)
 }
 
@@ -41,12 +40,12 @@ func TestStore_ImportInterchangeData_NilData_FailsSilently(t *testing.T) {
 	require.NoError(t, err)
 
 	buf := bytes.NewBuffer(encoded)
-	err = s.ImportStandardProtectionJSON(context.Background(), buf)
+	err = s.ImportStandardProtectionJSON(t.Context(), buf)
 	require.NoError(t, err)
 }
 
 func TestStore_ImportInterchangeData_BadFormat_PreventsDBWrites(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	numValidators := 10
 	publicKeys, err := valtest.CreateRandomPubKeys(numValidators)
 	require.NoError(t, err)
@@ -81,7 +80,7 @@ func TestStore_ImportInterchangeData_BadFormat_PreventsDBWrites(t *testing.T) {
 	// verify nothing was saved to the DB. If there is an error in the import process, we need to make
 	// sure writing is an atomic operation: either the import succeeds and saves the slashing protection
 	// data to our DB, or it does not.
-	for i := 0; i < len(publicKeys); i++ {
+	for i := range publicKeys {
 		receivedHistory, err := s.ProposalHistoryForPubKey(ctx, publicKeys[i])
 		require.NoError(t, err)
 		require.DeepEqual(
@@ -94,7 +93,7 @@ func TestStore_ImportInterchangeData_BadFormat_PreventsDBWrites(t *testing.T) {
 }
 
 func TestStore_ImportInterchangeData_OK(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	numValidators := 10
 	publicKeys, err := valtest.CreateRandomPubKeys(numValidators)
 	require.NoError(t, err)
@@ -123,7 +122,7 @@ func TestStore_ImportInterchangeData_OK(t *testing.T) {
 
 	// Next, we attempt to retrieve the attesting and proposals histories from our database and
 	// verify those indeed match the originally generated mock histories.
-	for i := 0; i < len(publicKeys); i++ {
+	for i := range publicKeys {
 		for _, att := range attestingHistory[i] {
 			indexedAtt := &ethpb.IndexedAttestation{
 				Data: &ethpb.AttestationData{

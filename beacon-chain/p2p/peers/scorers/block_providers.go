@@ -6,11 +6,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers/peerdata"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers/peerdata"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
 )
 
 var _ Scorer = (*BlockProviderScorer)(nil)
@@ -124,6 +124,9 @@ func (s *BlockProviderScorer) Params() *BlockProviderScorerConfig {
 
 // IncrementProcessedBlocks increments the number of blocks that have been successfully processed.
 func (s *BlockProviderScorer) IncrementProcessedBlocks(pid peer.ID, cnt uint64) {
+	if pid == "" {
+		return
+	}
 	s.store.Lock()
 	defer s.store.Unlock()
 	defer s.touchNoLock(pid)
@@ -236,7 +239,7 @@ func (s *BlockProviderScorer) WeightSorted(
 
 	scores, _ := s.mapScoresAndPeers(pids, scoreFn)
 	peers := make([]peer.ID, 0)
-	for i := 0; i < len(pids); i++ {
+	for range pids {
 		if pid := nextPID(scores); pid != "" {
 			peers = append(peers, pid)
 			delete(scores, pid)

@@ -7,6 +7,7 @@
  *
  * Usage: Run bootnode --help for flag options.
  */
+// lint:nopanic -- This tool is OK to panic.
 package main
 
 import (
@@ -22,6 +23,17 @@ import (
 	"os"
 	"time"
 
+	"github.com/OffchainLabs/go-bitfield"
+	"github.com/OffchainLabs/prysm/v7/async"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	ecdsaprysm "github.com/OffchainLabs/prysm/v7/crypto/ecdsa"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/io/logs"
+	"github.com/OffchainLabs/prysm/v7/network"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	_ "github.com/OffchainLabs/prysm/v7/runtime/maxprocs"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	gcrypto "github.com/ethereum/go-ethereum/crypto"
 	gethlog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
@@ -31,17 +43,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prysmaticlabs/go-bitfield"
-	"github.com/prysmaticlabs/prysm/v5/async"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	ecdsaprysm "github.com/prysmaticlabs/prysm/v5/crypto/ecdsa"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/io/logs"
-	"github.com/prysmaticlabs/prysm/v5/network"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	_ "github.com/prysmaticlabs/prysm/v5/runtime/maxprocs"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 	"github.com/sirupsen/logrus"
 )
 
@@ -70,7 +71,7 @@ func main() {
 	flag.Parse()
 
 	if *logFileName != "" {
-		if err := logs.ConfigurePersistentLogging(*logFileName); err != nil {
+		if err := logs.ConfigurePersistentLogging(*logFileName, "text", logrus.DebugLevel, map[string]logrus.Level{}); err != nil {
 			log.WithError(err).Error("Failed to configuring logging to disk.")
 		}
 	}
@@ -178,7 +179,7 @@ func (h *handler) httpHandler(w http.ResponseWriter, _ *http.Request) {
 	allNodes := h.listener.AllNodes()
 	write(w, []byte("Nodes stored in the table:\n"))
 	for i, n := range allNodes {
-		write(w, []byte(fmt.Sprintf("Node %d\n", i)))
+		write(w, fmt.Appendf(nil, "Node %d\n", i))
 		write(w, []byte(n.String()+"\n"))
 		write(w, []byte("Node ID: "+n.ID().String()+"\n"))
 		write(w, []byte("IP: "+n.IP().String()+"\n"))

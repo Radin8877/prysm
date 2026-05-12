@@ -3,9 +3,9 @@ package doublylinkedtree
 import (
 	"context"
 
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 // NewSlot mimics the implementation of `on_tick` in fork choice consensus spec.

@@ -7,14 +7,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/encoder"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	pbrpc "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	pbrpc "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 const (
@@ -38,7 +39,7 @@ const (
 	rSubD = 8 // random gossip target
 )
 
-var errInvalidTopic = errors.New("invalid topic format")
+var ErrInvalidTopic = errors.New("invalid topic format")
 
 // Specifies the fixed size context length.
 const digestLength = 4
@@ -98,6 +99,27 @@ func (s *Service) PublishToTopic(ctx context.Context, topic string, data []byte,
 	}
 }
 
+// addToBatch joins (if necessary) a topic and adds the message to a message batch.
+func (s *Service) addToBatch(ctx context.Context, batch *pubsub.MessageBatch, topic string, data []byte, opts ...pubsub.PubOpt) error {
+	topicHandle, err := s.JoinTopic(topic)
+	if err != nil {
+		return fmt.Errorf("joining topic: %w", err)
+	}
+
+	// Wait for at least 1 peer to be available to receive the published message.
+	for {
+		if flags.Get().MinimumSyncPeers == 0 || len(topicHandle.ListPeers()) > 0 {
+			return topicHandle.AddToBatch(ctx, batch, data, opts...)
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Wrapf(ctx.Err(), "unable to find requisite number of peers for topic %s, 0 peers found to publish to", topic)
+		case <-time.After(100 * time.Millisecond):
+			// reenter the for loop after 100ms
+		}
+	}
+}
+
 // SubscribeToTopic joins (if necessary) and subscribes to PubSub topic.
 func (s *Service) SubscribeToTopic(topic string, opts ...pubsub.SubOpt) (*pubsub.Subscription, error) {
 	s.awaitStateInitialized() // Genesis time and genesis validators root are required to subscribe.
@@ -133,17 +155,19 @@ func (s *Service) peerInspector(peerMap map[peer.ID]*pubsub.PeerScoreSnapshot) {
 
 // pubsubOptions creates a list of options to configure our router with.
 func (s *Service) pubsubOptions() []pubsub.Option {
+	filt := pubsub.NewAllowlistSubscriptionFilter(s.allTopicStrings()...)
+	filt = pubsub.WrapLimitSubscriptionFilter(filt, pubsubSubscriptionRequestLimit)
 	psOpts := []pubsub.Option{
 		pubsub.WithMessageSignaturePolicy(pubsub.StrictNoSign),
 		pubsub.WithNoAuthor(),
 		pubsub.WithMessageIdFn(func(pmsg *pubsubpb.Message) string {
 			return MsgID(s.genesisValidatorsRoot, pmsg)
 		}),
-		pubsub.WithSubscriptionFilter(s),
+		pubsub.WithSubscriptionFilter(filt),
 		pubsub.WithPeerOutboundQueueSize(int(s.cfg.QueueSize)),
-		pubsub.WithMaxMessageSize(int(params.BeaconConfig().GossipMaxSize)),
+		pubsub.WithMaxMessageSize(int(MaxMessageSize())), // lint:ignore uintcast -- Max Message Size is a config value and is naturally bounded by networking limitations.
 		pubsub.WithValidateQueueSize(int(s.cfg.QueueSize)),
-		pubsub.WithPeerScore(peerScoringParams()),
+		pubsub.WithPeerScore(peerScoringParams(s.cfg.IPColocationWhitelist)),
 		pubsub.WithPeerScoreInspect(s.peerInspector, time.Minute),
 		pubsub.WithGossipSubParams(pubsubGossipParam()),
 		pubsub.WithRawTracer(gossipTracer{host: s.host}),
@@ -217,12 +241,12 @@ func convertTopicScores(topicMap map[string]*pubsub.TopicScoreSnapshot) map[stri
 func ExtractGossipDigest(topic string) ([4]byte, error) {
 	// Ensure the topic prefix is correct.
 	if len(topic) < len(gossipTopicPrefix)+1 || topic[:len(gossipTopicPrefix)] != gossipTopicPrefix {
-		return [4]byte{}, errInvalidTopic
+		return [4]byte{}, ErrInvalidTopic
 	}
 	start := len(gossipTopicPrefix)
 	end := strings.Index(topic[start:], "/")
 	if end == -1 { // Ensure a topic suffix exists.
-		return [4]byte{}, errInvalidTopic
+		return [4]byte{}, ErrInvalidTopic
 	}
 	end += start
 	strDigest := topic[start:end]
@@ -234,4 +258,15 @@ func ExtractGossipDigest(topic string) ([4]byte, error) {
 		return [4]byte{}, errors.Errorf("invalid digest length wanted %d but got %d", digestLength, len(digest))
 	}
 	return bytesutil.ToBytes4(digest), nil
+}
+
+// MaxMessageSize returns the maximum allowed compressed message size.
+//
+// Spec pseudocode definition:
+// def max_message_size() -> uint64:
+//
+//	# Allow 1024 bytes for framing and encoding overhead but at least 1MiB in case MAX_PAYLOAD_SIZE is small.
+//	return max(max_compressed_len(MAX_PAYLOAD_SIZE) + 1024, 1024 * 1024)
+func MaxMessageSize() uint64 {
+	return max(encoder.MaxCompressedLen(params.BeaconConfig().MaxPayloadSize)+1024, 1024*1024)
 }

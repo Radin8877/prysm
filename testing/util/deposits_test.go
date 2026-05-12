@@ -2,13 +2,12 @@ package util
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -104,7 +103,7 @@ func TestDepositsWithBalance_MatchesDeterministic(t *testing.T) {
 	entries := 64
 	resetCache()
 	balances := make([]uint64, entries)
-	for i := 0; i < entries; i++ {
+	for i := range entries {
 		balances[i] = params.BeaconConfig().MaxEffectiveBalance
 	}
 	deposits, depositTrie, err := DepositsWithBalance(balances)
@@ -117,7 +116,7 @@ func TestDepositsWithBalance_MatchesDeterministic(t *testing.T) {
 	_, determDepositDataRoots, err := DeterministicDepositTrie(entries)
 	require.NoError(t, err)
 
-	for i := 0; i < entries; i++ {
+	for i := range entries {
 		if !proto.Equal(deposits[i], determDeposits[i]) {
 			t.Errorf("Expected deposit %d to match", i)
 		}
@@ -255,7 +254,7 @@ func TestSetupInitialDeposits_1024Entries_PartialDeposits(t *testing.T) {
 func TestDeterministicGenesisState_100Validators(t *testing.T) {
 	validatorCount := uint64(100)
 	beaconState, privKeys := DeterministicGenesisState(t, validatorCount)
-	activeValidators, err := helpers.ActiveValidatorCount(context.Background(), beaconState, 0)
+	activeValidators, err := helpers.ActiveValidatorCount(t.Context(), beaconState, 0)
 	require.NoError(t, err)
 
 	// lint:ignore uintcast -- test code

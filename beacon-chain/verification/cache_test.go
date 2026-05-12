@@ -1,18 +1,17 @@
 package verification
 
 import (
-	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	forkchoicetypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/types"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func testSignedBlockBlobKeys(t *testing.T, valRoot []byte, slot primitives.Slot, nblobs int) (blocks.ROBlock, []blocks.ROBlob, bls.SecretKey, bls.PublicKey) {
@@ -20,6 +19,18 @@ func testSignedBlockBlobKeys(t *testing.T, valRoot []byte, slot primitives.Slot,
 	require.NoError(t, err)
 	block, blobs := util.GenerateTestDenebBlockWithSidecar(t, [32]byte{}, slot, nblobs, util.WithProposerSigning(0, sks[0], valRoot))
 	return block, blobs, sks[0], pks[0]
+}
+
+func TestSignatureDataString(t *testing.T) {
+	const expected = "\x01\x02\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+	sigData := signatureData{
+		Root:      [32]byte{1, 2, 3},
+		Signature: [96]byte{4, 5, 6},
+	}
+
+	actual := sigData.concat()
+	require.Equal(t, expected, actual)
 }
 
 func TestVerifySignature(t *testing.T) {
@@ -90,15 +101,15 @@ type mockValidatorAtIndexer struct {
 	cb func(idx primitives.ValidatorIndex) (*eth.Validator, error)
 }
 
-// ValidatorAtIndex implements ValidatorAtIndexer.
+// ValidatorAtIndex implements validatorAtIndexer.
 func (m *mockValidatorAtIndexer) ValidatorAtIndex(idx primitives.ValidatorIndex) (*eth.Validator, error) {
 	return m.cb(idx)
 }
 
-var _ ValidatorAtIndexer = &mockValidatorAtIndexer{}
+var _ validatorAtIndexer = &mockValidatorAtIndexer{}
 
 func TestProposerCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	// 3 validators because that was the first number that produced a non-zero proposer index by default
 	st, _ := util.DeterministicGenesisStateDeneb(t, 3)
 

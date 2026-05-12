@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/api"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/io/file"
 	"github.com/urfave/cli/v2"
 )
 
@@ -19,6 +19,8 @@ const (
 	WalletDefaultDirName = "prysm-wallet-v2"
 	// DefaultHTTPServerHost for the validator client.
 	DefaultHTTPServerHost = "127.0.0.1"
+
+	DefaultMaxHealthChecks = 0
 )
 
 var (
@@ -31,8 +33,9 @@ var (
 	}
 	// BeaconRPCProviderFlag defines a beacon node RPC endpoint.
 	BeaconRPCProviderFlag = &cli.StringFlag{
-		Name:  "beacon-rpc-provider",
-		Usage: "Beacon node RPC provider endpoint.",
+		Name: "beacon-rpc-provider",
+		Usage: `WARNING: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API..
+		Beacon node RPC provider endpoint.`,
 		Value: "127.0.0.1:4000",
 	}
 
@@ -41,6 +44,13 @@ var (
 		Name:  "beacon-rest-api-provider",
 		Usage: "Beacon node REST API provider endpoint.",
 		Value: "http://127.0.0.1:3500",
+	}
+	// BeaconRESTApiHeaders defines a list of headers to send with all HTTP requests to the beacon node.
+	BeaconRESTApiHeaders = &cli.StringFlag{
+		Name: "beacon-rest-api-headers",
+		Usage: `Comma-separated list of key value pairs to pass as headers for all HTTP calls to the beacon node. 
+		To provide multiple values for the same key, specify the same key for each value. 
+		Example: --grpc-headers=key1=value1,key1=value2,key2=value3`,
 	}
 	// CertFlag defines a flag for the node's TLS certificate.
 	CertFlag = &cli.StringFlag{
@@ -88,20 +98,23 @@ var (
 	}
 	// GRPCRetriesFlag defines the number of times to retry a failed gRPC request.
 	GRPCRetriesFlag = &cli.UintFlag{
-		Name:  "grpc-retries",
-		Usage: "Number of attempts to retry gRPC requests.",
+		Name: "grpc-retries",
+		Usage: `WARNING: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API..
+		Number of attempts to retry gRPC requests.`,
 		Value: 5,
 	}
 	// GRPCRetryDelayFlag defines the interval to retry a failed gRPC request.
 	GRPCRetryDelayFlag = &cli.DurationFlag{
-		Name:  "grpc-retry-delay",
-		Usage: "Amount of time between gRPC retry requests.",
+		Name: "grpc-retry-delay",
+		Usage: `WARNING: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API..
+		Amount of time between gRPC retry requests.`,
 		Value: 1 * time.Second,
 	}
 	// GRPCHeadersFlag defines a list of headers to send with all gRPC requests.
 	GRPCHeadersFlag = &cli.StringFlag{
 		Name: "grpc-headers",
-		Usage: `Comma separated list of key value pairs to pass as gRPC headers for all gRPC calls.
+		Usage: `WARNING: The gRPC API will remain the default and fully supported through v8 (expected in 2026) but will be eventually removed in favor of REST API..
+		Comma separated list of key value pairs to pass as gRPC headers for all gRPC calls.
 		Example: --grpc-headers=key=value`,
 	}
 	// HTTPServerHost specifies a HTTP server host for the validator client.
@@ -321,12 +334,7 @@ var (
 		Usage: "Skips the y/n confirmation userprompt for sending a deposit to the deposit contract.",
 		Value: false,
 	}
-	// EnableWebFlag enables controlling the validator client via the Prysm web ui. This is a work in progress.
-	EnableWebFlag = &cli.BoolFlag{
-		Name:  "web",
-		Usage: "(Work in progress): Enables the web portal for the validator client.",
-		Value: false,
-	}
+
 	// SlashingProtectionExportDirFlag allows specifying the output directory
 	// for a validator's slashing protection history.
 	SlashingProtectionExportDirFlag = &cli.StringFlag{
@@ -381,12 +389,38 @@ var (
 	ValidatorsRegistrationBatchSizeFlag = &cli.IntFlag{
 		Name:  "validators-registration-batch-size",
 		Usage: "Sets the maximum size for one batch of validator registrations. Use a non-positive value to disable batching.",
-		Value: 0,
+		Value: 200,
 	}
 	// EnableDistributed enables the usage of prysm validator client in a Distributed Validator Cluster.
 	EnableDistributed = &cli.BoolFlag{
 		Name:  "distributed",
 		Usage: "To enable the use of prysm validator client in Distributed Validator Cluster",
+		Value: false,
+	}
+	// EnableStatelessFlag enables the stateless block production path for Gloas: the validator requests the
+	// block and execution payload envelope in a single v4 call instead of fetching them in two separate calls.
+	EnableStatelessFlag = &cli.BoolFlag{
+		Name:  "stateless",
+		Usage: fmt.Sprintf("Enables stateless block production for Gloas. The validator requests block and execution payload envelope in a single /eth/v4/validator/blocks call. Only works with `--%s`", BeaconRESTApiProviderFlag.Name),
+		Value: false,
+	}
+	// DisableDutiesPolling disables the polling of duties on dependent root changes.
+	DisableDutiesPolling = &cli.BoolFlag{
+		Name:  "disable-duties-polling",
+		Usage: "Disables polling of duties on dependent root changes.",
+		Value: false,
+	}
+
+	// MaxHealthChecksFlag sets a maximum amount of times to check for beacon node health before validator client times out and shuts down
+	MaxHealthChecksFlag = &cli.IntFlag{
+		Name:  "max-health-checks",
+		Usage: "Maximum number of health checks to perform before exiting if not healthy. Set to 0 or a negative number for indefinite checks.",
+		Value: DefaultMaxHealthChecks,
+	}
+	// DisableEphemeralLogFile disables the 24 hour debug log file.
+	DisableEphemeralLogFile = &cli.BoolFlag{
+		Name:  "disable-ephemeral-log-file",
+		Usage: "Disables the creation of a debug log file that keeps 24 hours of logs.",
 		Value: false,
 	}
 )

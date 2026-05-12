@@ -10,14 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/genesis"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	e2e "github.com/OffchainLabs/prysm/v7/testing/endtoend/params"
+	"github.com/OffchainLabs/prysm/v7/testing/endtoend/policies"
+	"github.com/OffchainLabs/prysm/v7/testing/endtoend/types"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/network/forks"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	e2e "github.com/prysmaticlabs/prysm/v5/testing/endtoend/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/endtoend/policies"
-	"github.com/prysmaticlabs/prysm/v5/testing/endtoend/types"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -86,15 +87,10 @@ var metricComparisonTests = []comparisonTest{
 }
 
 func metricsTest(_ *types.EvaluationContext, conns ...*grpc.ClientConn) error {
-	genesis, err := eth.NewNodeClient(conns[0]).GetGenesis(context.Background(), &emptypb.Empty{})
-	if err != nil {
-		return err
-	}
-	forkDigest, err := forks.CreateForkDigest(time.Unix(genesis.GenesisTime.Seconds, 0), genesis.GenesisValidatorsRoot)
-	if err != nil {
-		return err
-	}
-	for i := 0; i < len(conns); i++ {
+	currentSlot := slots.CurrentSlot(genesis.Time())
+	currentEpoch := slots.ToEpoch(currentSlot)
+	forkDigest := params.ForkDigest(currentEpoch)
+	for i := range conns {
 		response, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", e2e.TestParams.Ports.PrysmBeaconNodeMetricsPort+i))
 		if err != nil {
 			// Continue if the connection fails, regular flake.
@@ -120,8 +116,11 @@ func metricsTest(_ *types.EvaluationContext, conns ...*grpc.ClientConn) error {
 		if err != nil {
 			return err
 		}
-		timeSlot := slots.SinceGenesis(genesisResp.GenesisTime.AsTime())
-		if uint64(chainHead.HeadSlot) != uint64(timeSlot) {
+		timeSlot := slots.CurrentSlot(genesisResp.GenesisTime.AsTime())
+		// Allow 1 slot tolerance due to race between calculating current slot
+		// and fetching chain head - a slot boundary may occur between these calls.
+		// Check: chainHead.HeadSlot <= timeSlot <= chainHead.HeadSlot + 1
+		if uint64(chainHead.HeadSlot) > uint64(timeSlot) || uint64(timeSlot) > uint64(chainHead.HeadSlot)+1 {
 			return fmt.Errorf("expected metrics slot to equal chain head slot, expected %d, received %d", timeSlot, chainHead.HeadSlot)
 		}
 

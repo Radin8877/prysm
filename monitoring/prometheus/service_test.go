@@ -2,16 +2,18 @@ package prometheus
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/runtime"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	"github.com/OffchainLabs/prysm/v7/runtime"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,23 +23,47 @@ func init() {
 }
 
 func TestLifecycle(t *testing.T) {
-	prometheusService := NewService(":2112", nil)
+	port := 1000 + rand.Intn(1000)
+	prometheusService := NewService(t.Context(), fmt.Sprintf(":%d", port), nil)
 	prometheusService.Start()
-	// Give service time to start.
-	time.Sleep(time.Second)
+	// Actively wait until the service responds on /metrics (faster and less flaky than a fixed sleep)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("metrics endpoint not ready within timeout")
+		}
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	// Query the service to ensure it really started.
-	resp, err := http.Get("http://localhost:2112/metrics")
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
 	require.NoError(t, err)
 	assert.NotEqual(t, uint64(0), resp.ContentLength, "Unexpected content length 0")
 
 	err = prometheusService.Stop()
 	require.NoError(t, err)
-	// Give service time to stop.
-	time.Sleep(time.Second)
+	// Actively wait until the service stops responding on /metrics
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("metrics endpoint still reachable after timeout")
+		}
+		_, err = http.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+		if err != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	// Query the service to ensure it really stopped.
-	_, err = http.Get("http://localhost:2112/metrics")
+	_, err = http.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
 	assert.NotNil(t, err, "Service still running after Stop()")
 }
 
@@ -60,7 +86,7 @@ func TestHealthz(t *testing.T) {
 	registry := runtime.NewServiceRegistry()
 	m := &mockService{}
 	require.NoError(t, registry.RegisterService(m), "Failed to register service")
-	s := NewService("" /*addr*/, registry)
+	s := NewService(t.Context(), "" /*addr*/, registry)
 
 	req, err := http.NewRequest("GET", "/healthz", nil /*reader*/)
 	require.NoError(t, err)
@@ -112,7 +138,7 @@ func TestContentNegotiation(t *testing.T) {
 		registry := runtime.NewServiceRegistry()
 		m := &mockService{}
 		require.NoError(t, registry.RegisterService(m), "Failed to register service")
-		s := NewService("", registry)
+		s := NewService(t.Context(), "", registry)
 
 		req, err := http.NewRequest("GET", "/healthz", nil /* body */)
 		require.NoError(t, err)
@@ -143,7 +169,7 @@ func TestContentNegotiation(t *testing.T) {
 		m := &mockService{}
 		m.status = errors.New("something is wrong")
 		require.NoError(t, registry.RegisterService(m), "Failed to register service")
-		s := NewService("", registry)
+		s := NewService(t.Context(), "", registry)
 
 		req, err := http.NewRequest("GET", "/healthz", nil /* body */)
 		require.NoError(t, err)

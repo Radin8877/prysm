@@ -4,20 +4,20 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/attestation"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/attestation"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
 )
 
 // ProcessAttestationsNoVerifySignature applies processing operations to a block's inner attestation
@@ -27,10 +27,16 @@ func ProcessAttestationsNoVerifySignature(
 	beaconState state.BeaconState,
 	b interfaces.ReadOnlyBeaconBlock,
 ) (state.BeaconState, error) {
+	ctx, span := trace.StartSpan(ctx, "blocks.ProcessAttestationsNoVerifySignature")
+	defer span.End()
+
 	if b == nil || b.IsNil() {
 		return nil, blocks.ErrNilBeaconBlock
 	}
+
 	body := b.Body()
+	span.SetAttributes(trace.Int64Attribute("count", int64(len(body.Attestations()))))
+
 	var err error
 	for idx, att := range body.Attestations() {
 		beaconState, err = ProcessAttestationNoVerifySignature(ctx, beaconState, att)
@@ -106,22 +112,34 @@ func VerifyAttestationNoVerifySignature(
 	if err != nil {
 		return err
 	}
-	c := helpers.SlotCommitteeCount(activeValidatorCount)
+	committeeCount := helpers.SlotCommitteeCount(activeValidatorCount)
 
 	var indexedAtt ethpb.IndexedAtt
 
 	if att.Version() >= version.Electra {
-		if att.GetData().CommitteeIndex != 0 {
-			return errors.New("committee index must be 0 post-Electra")
+		ci := att.GetData().CommitteeIndex
+		// Spec v1.7.0-alpha pseudocode:
+		//
+		//	# [Modified in Gloas:EIP7732]
+		//	assert data.index < 2
+		//
+		if beaconState.Version() >= version.Gloas {
+			if ci >= 2 {
+				return fmt.Errorf("incorrect committee index %d", ci)
+			}
+		} else {
+			if ci != 0 {
+				return errors.New("committee index must be 0 between Electra and Gloas forks")
+			}
 		}
-
+		aggBits := att.GetAggregationBits()
 		committeeIndices := att.CommitteeBitsVal().BitIndices()
 		committees := make([][]primitives.ValidatorIndex, len(committeeIndices))
 		participantsCount := 0
 		var err error
 		for i, ci := range committeeIndices {
-			if uint64(ci) >= c {
-				return fmt.Errorf("committee index %d >= committee count %d", ci, c)
+			if uint64(ci) >= committeeCount {
+				return fmt.Errorf("committee index %d >= committee count %d", ci, committeeCount)
 			}
 			committees[i], err = helpers.BeaconCommitteeFromState(ctx, beaconState, att.GetData().Slot, primitives.CommitteeIndex(ci))
 			if err != nil {
@@ -129,16 +147,32 @@ func VerifyAttestationNoVerifySignature(
 			}
 			participantsCount += len(committees[i])
 		}
-		if att.GetAggregationBits().Len() != uint64(participantsCount) {
+		if aggBits.Len() != uint64(participantsCount) {
 			return fmt.Errorf("aggregation bits count %d is different than participant count %d", att.GetAggregationBits().Len(), participantsCount)
 		}
+
+		committeeOffset := 0
+		for ci, c := range committees {
+			attesterFound := false
+			for i := range c {
+				if aggBits.BitAt(uint64(committeeOffset + i)) {
+					attesterFound = true
+					break
+				}
+			}
+			if !attesterFound {
+				return fmt.Errorf("no attesting indices found for committee index %d", ci)
+			}
+			committeeOffset += len(c)
+		}
+
 		indexedAtt, err = attestation.ConvertToIndexed(ctx, att, committees...)
 		if err != nil {
 			return err
 		}
 	} else {
-		if uint64(att.GetData().CommitteeIndex) >= c {
-			return fmt.Errorf("committee index %d >= committee count %d", att.GetData().CommitteeIndex, c)
+		if uint64(att.GetData().CommitteeIndex) >= committeeCount {
+			return fmt.Errorf("committee index %d >= committee count %d", att.GetData().CommitteeIndex, committeeCount)
 		}
 
 		// Verify attesting indices are correct.
@@ -161,7 +195,7 @@ func VerifyAttestationNoVerifySignature(
 		}
 	}
 
-	return attestation.IsValidAttestationIndices(ctx, indexedAtt)
+	return attestation.IsValidAttestationIndices(ctx, indexedAtt, params.BeaconConfig().MaxValidatorsPerCommittee, params.BeaconConfig().MaxCommitteesPerSlot)
 }
 
 // ProcessAttestationNoVerifySignature processes the attestation without verifying the attestation signature. This
@@ -226,7 +260,7 @@ func VerifyIndexedAttestation(ctx context.Context, beaconState state.ReadOnlyBea
 	ctx, span := trace.StartSpan(ctx, "core.VerifyIndexedAttestation")
 	defer span.End()
 
-	if err := attestation.IsValidAttestationIndices(ctx, indexedAtt); err != nil {
+	if err := attestation.IsValidAttestationIndices(ctx, indexedAtt, params.BeaconConfig().MaxValidatorsPerCommittee, params.BeaconConfig().MaxCommitteesPerSlot); err != nil {
 		return err
 	}
 	domain, err := signing.Domain(
@@ -240,7 +274,7 @@ func VerifyIndexedAttestation(ctx context.Context, beaconState state.ReadOnlyBea
 	}
 	indices := indexedAtt.GetAttestingIndices()
 	var pubkeys []bls.PublicKey
-	for i := 0; i < len(indices); i++ {
+	for i := range indices {
 		pubkeyAtIdx := beaconState.PubkeyAtIndex(primitives.ValidatorIndex(indices[i]))
 		pk, err := bls.PublicKeyFromBytes(pubkeyAtIdx[:])
 		if err != nil {

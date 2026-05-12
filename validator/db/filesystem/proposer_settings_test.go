@@ -1,14 +1,13 @@
 package filesystem
 
 import (
-	"context"
 	"testing"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/proposer"
+	validatorpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1/validator-client"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/proposer"
-	validatorpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1/validator-client"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func getPubkeyFromString(t *testing.T, pubkeyString string) [fieldparams.BLSPubkeyLength]byte {
@@ -28,7 +27,7 @@ func getFeeRecipientFromString(t *testing.T, feeRecipientString string) [fieldpa
 }
 
 func TestStore_ProposerSettings(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pubkeyString := "0xb3533c600c6c22aa5177f295667deacffde243980d3c04da4057ab0941dcca1dff83ae8e6534bedd2d23d83446e604d6"
 	customFeeRecipientString := "0xd4E96eF8eee8678dBFf4d535E033Ed1a4F7605b7"
@@ -110,7 +109,7 @@ func TestStore_ProposerSettings(t *testing.T) {
 }
 
 func TestStore_ProposerSettingsExists(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name          string
@@ -151,7 +150,7 @@ func TestStore_ProposerSettingsExists(t *testing.T) {
 }
 
 func TestStore_SaveProposerSettings(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	preExistingFeeRecipientString := "0xD871172AE08B5FC37B3AC3D445225928DE883876"
 	incomingFeeRecipientString := "0xC771172AE08B5FC37B3AC3D445225928DE883876"

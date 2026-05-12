@@ -2,17 +2,16 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -42,10 +41,10 @@ func TestSubmitSignedContributionAndProof_Valid(t *testing.T) {
 	marshalledContributionAndProofs, err := json.Marshal(jsonContributionAndProofs)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Post(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Post(
 		gomock.Any(),
 		submitSignedContributionAndProofTestEndpoint,
 		nil,
@@ -70,7 +69,7 @@ func TestSubmitSignedContributionAndProof_Valid(t *testing.T) {
 		Signature: []byte{8},
 	}
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+	validatorClient := &beaconApiValidatorClient{handler: handler}
 	err = validatorClient.submitSignedContributionAndProof(ctx, contributionAndProof)
 	require.NoError(t, err)
 }
@@ -116,11 +115,11 @@ func TestSubmitSignedContributionAndProof_Error(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			ctx := context.Background()
+			ctx := t.Context()
 
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+			handler := mock.NewMockJsonRestHandler(ctrl)
 			if testCase.httpRequestExpected {
-				jsonRestHandler.EXPECT().Post(
+				handler.EXPECT().Post(
 					gomock.Any(),
 					submitSignedContributionAndProofTestEndpoint,
 					gomock.Any(),
@@ -131,7 +130,7 @@ func TestSubmitSignedContributionAndProof_Error(t *testing.T) {
 				).Times(1)
 			}
 
-			validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
+			validatorClient := &beaconApiValidatorClient{handler: handler}
 			err := validatorClient.submitSignedContributionAndProof(ctx, testCase.data)
 			assert.ErrorContains(t, testCase.expectedErrorMessage, err)
 		})

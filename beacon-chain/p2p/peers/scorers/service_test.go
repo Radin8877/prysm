@@ -5,17 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/peers/scorers"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/peers/scorers"
-	"github.com/prysmaticlabs/prysm/v5/cmd/beacon-chain/flags"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
 )
 
 func TestScorers_Service_Init(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	batchSize := uint64(flags.Get().BlockBatchLimit)
 
@@ -79,7 +78,7 @@ func TestScorers_Service_Init(t *testing.T) {
 }
 
 func TestScorers_Service_Score(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	batchSize := uint64(flags.Get().BlockBatchLimit)
@@ -213,7 +212,7 @@ func TestScorers_Service_Score(t *testing.T) {
 }
 
 func TestScorers_Service_loop(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	peerStatuses := peers.NewStatus(ctx, &peers.StatusConfig{
@@ -268,7 +267,7 @@ func TestScorers_Service_loop(t *testing.T) {
 }
 
 func TestScorers_Service_IsBadPeer(t *testing.T) {
-	peerStatuses := peers.NewStatus(context.Background(), &peers.StatusConfig{
+	peerStatuses := peers.NewStatus(t.Context(), &peers.StatusConfig{
 		PeerLimit: 30,
 		ScorerParams: &scorers.Config{
 			BadResponsesScorerConfig: &scorers.BadResponsesScorerConfig{
@@ -285,7 +284,7 @@ func TestScorers_Service_IsBadPeer(t *testing.T) {
 }
 
 func TestScorers_Service_BadPeers(t *testing.T) {
-	peerStatuses := peers.NewStatus(context.Background(), &peers.StatusConfig{
+	peerStatuses := peers.NewStatus(t.Context(), &peers.StatusConfig{
 		PeerLimit: 30,
 		ScorerParams: &scorers.Config{
 			BadResponsesScorerConfig: &scorers.BadResponsesScorerConfig{

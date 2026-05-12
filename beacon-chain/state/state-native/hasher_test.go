@@ -1,25 +1,25 @@
 package state_native_test
 
 import (
-	"context"
 	"testing"
+	"time"
 
-	"github.com/prysmaticlabs/go-bitfield"
-	statenative "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/go-bitfield"
+	statenative "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 )
 
 func TestComputeFieldRootsWithHasher_Phase0(t *testing.T) {
 	beaconState, err := util.NewBeaconState(util.FillRootsNaturalOpt)
 	require.NoError(t, err)
-	require.NoError(t, beaconState.SetGenesisTime(123))
+	require.NoError(t, beaconState.SetGenesisTime(time.Unix(123, 0)))
 	require.NoError(t, beaconState.SetGenesisValidatorsRoot(genesisValidatorsRoot()))
 	require.NoError(t, beaconState.SetSlot(123))
 	require.NoError(t, beaconState.SetFork(fork()))
@@ -52,7 +52,7 @@ func TestComputeFieldRootsWithHasher_Phase0(t *testing.T) {
 	require.NoError(t, err)
 	s, ok := initState.(*statenative.BeaconState)
 	require.Equal(t, true, ok)
-	root, err := statenative.ComputeFieldRootsWithHasher(context.Background(), s)
+	root, err := statenative.ComputeFieldRootsWithHasher(t.Context(), s)
 	require.NoError(t, err)
 	expected := [][]byte{
 		{0x7b, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
@@ -83,7 +83,7 @@ func TestComputeFieldRootsWithHasher_Phase0(t *testing.T) {
 func TestComputeFieldRootsWithHasher_Altair(t *testing.T) {
 	beaconState, err := util.NewBeaconStateAltair(util.FillRootsNaturalOptAltair)
 	require.NoError(t, err)
-	require.NoError(t, beaconState.SetGenesisTime(123))
+	require.NoError(t, beaconState.SetGenesisTime(time.Unix(123, 0)))
 	require.NoError(t, beaconState.SetGenesisValidatorsRoot(genesisValidatorsRoot()))
 	require.NoError(t, beaconState.SetSlot(123))
 	require.NoError(t, beaconState.SetFork(fork()))
@@ -119,7 +119,7 @@ func TestComputeFieldRootsWithHasher_Altair(t *testing.T) {
 	s, ok := initState.(*statenative.BeaconState)
 	require.Equal(t, true, ok)
 
-	root, err := statenative.ComputeFieldRootsWithHasher(context.Background(), s)
+	root, err := statenative.ComputeFieldRootsWithHasher(t.Context(), s)
 	require.NoError(t, err)
 	expected := [][]byte{
 		{0x7b, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
@@ -153,7 +153,7 @@ func TestComputeFieldRootsWithHasher_Altair(t *testing.T) {
 func TestComputeFieldRootsWithHasher_Bellatrix(t *testing.T) {
 	beaconState, err := util.NewBeaconStateBellatrix(util.FillRootsNaturalOptBellatrix)
 	require.NoError(t, err)
-	require.NoError(t, beaconState.SetGenesisTime(123))
+	require.NoError(t, beaconState.SetGenesisTime(time.Unix(123, 0)))
 	require.NoError(t, beaconState.SetGenesisValidatorsRoot(genesisValidatorsRoot()))
 	require.NoError(t, beaconState.SetSlot(123))
 	require.NoError(t, beaconState.SetFork(fork()))
@@ -192,7 +192,7 @@ func TestComputeFieldRootsWithHasher_Bellatrix(t *testing.T) {
 	s, ok := initState.(*statenative.BeaconState)
 	require.Equal(t, true, ok)
 
-	root, err := statenative.ComputeFieldRootsWithHasher(context.Background(), s)
+	root, err := statenative.ComputeFieldRootsWithHasher(t.Context(), s)
 	require.NoError(t, err)
 	expected := [][]byte{
 		{0x7b, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
@@ -227,7 +227,7 @@ func TestComputeFieldRootsWithHasher_Bellatrix(t *testing.T) {
 func TestComputeFieldRootsWithHasher_Capella(t *testing.T) {
 	beaconState, err := util.NewBeaconStateCapella(util.FillRootsNaturalOptCapella)
 	require.NoError(t, err)
-	require.NoError(t, beaconState.SetGenesisTime(123))
+	require.NoError(t, beaconState.SetGenesisTime(time.Unix(123, 0)))
 	require.NoError(t, beaconState.SetGenesisValidatorsRoot(genesisValidatorsRoot()))
 	require.NoError(t, beaconState.SetSlot(123))
 	require.NoError(t, beaconState.SetFork(fork()))
@@ -272,7 +272,7 @@ func TestComputeFieldRootsWithHasher_Capella(t *testing.T) {
 	s, ok := initState.(*statenative.BeaconState)
 	require.Equal(t, true, ok)
 
-	root, err := statenative.ComputeFieldRootsWithHasher(context.Background(), s)
+	root, err := statenative.ComputeFieldRootsWithHasher(t.Context(), s)
 	require.NoError(t, err)
 	expected := [][]byte{
 		{0x7b, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},

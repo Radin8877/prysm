@@ -1,10 +1,10 @@
 package interfaces
 
 import (
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	pb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	ssz "github.com/prysmaticlabs/fastssz"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -56,6 +56,7 @@ type LightClientUpdate interface {
 	SetSyncAggregate(sa *pb.SyncAggregate)
 	SignatureSlot() primitives.Slot
 	SetSignatureSlot(slot primitives.Slot)
+	IsNil() bool
 }
 
 type LightClientFinalityUpdate interface {
@@ -69,6 +70,7 @@ type LightClientFinalityUpdate interface {
 	FinalityBranchElectra() (LightClientFinalityBranchElectra, error)
 	SyncAggregate() *pb.SyncAggregate
 	SignatureSlot() primitives.Slot
+	IsNil() bool
 }
 
 type LightClientOptimisticUpdate interface {
@@ -79,4 +81,5 @@ type LightClientOptimisticUpdate interface {
 	AttestedHeader() LightClientHeader
 	SyncAggregate() *pb.SyncAggregate
 	SignatureSlot() primitives.Slot
+	IsNil() bool
 }

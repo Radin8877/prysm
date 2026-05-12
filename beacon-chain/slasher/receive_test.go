@@ -4,24 +4,24 @@ import (
 	"context"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	slashertypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/slasher/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	params2 "github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	slashertypes "github.com/OffchainLabs/prysm/v7/beacon-chain/slasher/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	params2 "github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	logTest "github.com/sirupsen/logrus/hooks/test"
 )
 
 func TestSlasher_receiveAttestations_OK(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	s := &Service{
 		serviceCfg: &ServiceConfig{
 			IndexedAttestationsFeed: new(event.Feed),
@@ -55,7 +55,7 @@ func TestSlasher_receiveAttestations_OK(t *testing.T) {
 }
 
 func TestService_pruneSlasherDataWithinSlidingWindow_AttestationsPruned(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	params := DefaultParams()
 	params.historyLength = 4 // 4 epochs worth of history.
 	slasherDB := dbtest.SetupSlasherDB(t)
@@ -127,7 +127,7 @@ func TestService_pruneSlasherDataWithinSlidingWindow_AttestationsPruned(t *testi
 }
 
 func TestService_pruneSlasherDataWithinSlidingWindow_ProposalsPruned(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Override beacon config to 1 slot per epoch for easier testing.
 	params2.SetupTestConfigCleanup(t)
@@ -206,7 +206,7 @@ func TestService_pruneSlasherDataWithinSlidingWindow_ProposalsPruned(t *testing.
 }
 
 func TestSlasher_receiveAttestations_OnlyValidAttestations(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	s := &Service{
 		serviceCfg: &ServiceConfig{
 			IndexedAttestationsFeed: new(event.Feed),
@@ -246,7 +246,7 @@ func TestSlasher_receiveAttestations_OnlyValidAttestations(t *testing.T) {
 }
 
 func TestSlasher_receiveBlocks_OK(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	s := &Service{
 		serviceCfg: &ServiceConfig{
 			BeaconBlockHeadersFeed: new(event.Feed),
@@ -301,7 +301,7 @@ func TestService_processQueuedBlocks(t *testing.T) {
 	s.blksQueue.extend([]*slashertypes.SignedBlockHeaderWrapper{
 		createProposalWrapper(t, 0, 1, nil),
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	tickerChan := make(chan primitives.Slot)
 	s.wg.Add(1)
 	go func() {

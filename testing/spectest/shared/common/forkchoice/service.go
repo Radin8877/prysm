@@ -5,31 +5,33 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/kzg"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache/depositsnapshot"
+	coreTime "github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filesystem"
+	testDB "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/attestations"
+	p2pTesting "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	payloadattribute "github.com/OffchainLabs/prysm/v7/consensus-types/payload-attribute"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	pb "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/kzg"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
-	coreTime "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filesystem"
-	testDB "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/attestations"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/interfaces"
-	payloadattribute "github.com/prysmaticlabs/prysm/v5/consensus-types/payload-attribute"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	pb "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func startChainService(t testing.TB,
@@ -60,7 +62,10 @@ func startChainService(t testing.TB,
 	depositCache, err := depositsnapshot.New()
 	require.NoError(t, err)
 
+	genesis := st.GenesisTime()
+
 	fc := doublylinkedtree.New()
+	fc.SetGenesisTime(genesis)
 	sg := stategen.New(db, fc)
 	opts := append([]blockchain.Option{},
 		blockchain.WithExecutionEngineCaller(engineMock),
@@ -76,10 +81,12 @@ func startChainService(t testing.TB,
 		blockchain.WithPayloadIDCache(cache.NewPayloadIDCache()),
 		blockchain.WithClockSynchronizer(clockSync),
 		blockchain.WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)),
+		blockchain.WithDataColumnStorage(filesystem.NewEphemeralDataColumnStorage(t)),
 		blockchain.WithSyncChecker(mock.MockChecker{}),
-		blockchain.WithBlobStorage(filesystem.NewEphemeralBlobStorage(t)),
+		blockchain.WithGenesisTime(genesis),
+		blockchain.WithP2PBroadcaster(&p2pTesting.TestP2P{}),
 	)
-	service, err := blockchain.NewService(context.Background(), opts...)
+	service, err := blockchain.NewService(t.Context(), opts...)
 	require.NoError(t, err)
 	// force start kzg context here until Deneb fork epoch is decided
 	require.NoError(t, kzg.Start())
@@ -134,4 +141,8 @@ func (m *engineMock) ExecutionBlockByHash(_ context.Context, hash common.Hash, _
 
 func (m *engineMock) GetTerminalBlockHash(context.Context, uint64) ([]byte, bool, error) {
 	return nil, false, nil
+}
+
+func (m *engineMock) GetClientVersionV1(context.Context) ([]*structs.ClientVersionV1, error) {
+	return nil, nil
 }

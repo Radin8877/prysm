@@ -1,31 +1,30 @@
 package validator
 
 import (
-	"context"
 	"testing"
 
-	mockChain "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache/depositsnapshot"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	mockExecution "github.com/prysmaticlabs/prysm/v5/beacon-chain/execution/testing"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/container/trie"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/mock"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mockChain "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache/depositsnapshot"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	mockExecution "github.com/OffchainLabs/prysm/v7/beacon-chain/execution/testing"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/container/trie"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/mock"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"go.uber.org/mock/gomock"
 )
 
 func TestWaitForActivation_ValidatorOriginallyExists(t *testing.T) {
 	// This test breaks if it doesn't use mainnet config
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
-	ctx := context.Background()
+	params.OverrideBeaconConfig(params.MainnetConfig())
+	ctx := t.Context()
 
 	priv1, err := bls.RandKey()
 	require.NoError(t, err)
@@ -74,7 +73,7 @@ func TestWaitForActivation_ValidatorOriginallyExists(t *testing.T) {
 	s, err := state_native.InitializeFromProtoUnsafePhase0(beaconState)
 	require.NoError(t, err)
 	vs := &Server{
-		Ctx:               context.Background(),
+		Ctx:               t.Context(),
 		ChainStartFetcher: &mockExecution.Chain{},
 		BlockFetcher:      &mockExecution.Chain{},
 		Eth1InfoFetcher:   &mockExecution.Chain{},
@@ -88,7 +87,7 @@ func TestWaitForActivation_ValidatorOriginallyExists(t *testing.T) {
 
 	defer ctrl.Finish()
 	mockChainStream := mock.NewMockBeaconNodeValidator_WaitForActivationServer(ctrl)
-	mockChainStream.EXPECT().Context().Return(context.Background())
+	mockChainStream.EXPECT().Context().Return(t.Context())
 	mockChainStream.EXPECT().Send(
 		&ethpb.ValidatorActivationResponse{
 			Statuses: []*ethpb.ValidatorActivationResponse_Status{

@@ -9,9 +9,10 @@ go_library(
         "exit.go",
         "import.go",
         "list.go",
+        "log.go",
         "wallet_utils.go",
     ],
-    importpath = "github.com/prysmaticlabs/prysm/v5/cmd/validator/accounts",
+    importpath = "github.com/OffchainLabs/prysm/v7/cmd/validator/accounts",
     visibility = ["//visibility:public"],
     deps = [
         "//api/grpc:go_default_library",

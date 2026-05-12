@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
 	"github.com/sirupsen/logrus"
 )
-
-var log = logrus.WithField("prefix", "slotutil")
 
 // CountdownToGenesis starts a ticker at the specified duration
 // logging the remaining minutes until the genesis chainstart event

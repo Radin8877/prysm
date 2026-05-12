@@ -3,8 +3,8 @@ package mock
 import (
 	"context"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 )
 
 // PoolMock is a fake implementation of PoolManager.
@@ -35,12 +35,15 @@ func (m *PoolMock) InsertProposerSlashing(_ context.Context, _ state.ReadOnlyBea
 	return nil
 }
 
+// ConvertToElectra --
+func (*PoolMock) ConvertToElectra() {}
+
 // MarkIncludedAttesterSlashing --
 func (*PoolMock) MarkIncludedAttesterSlashing(_ ethpb.AttSlashing) {
-	panic("implement me")
+	panic("implement me") // lint:nopanic -- Test / mock code.
 }
 
 // MarkIncludedProposerSlashing --
 func (*PoolMock) MarkIncludedProposerSlashing(_ *ethpb.ProposerSlashing) {
-	panic("implement me")
+	panic("implement me") // lint:nopanic -- Test / mock code.
 }

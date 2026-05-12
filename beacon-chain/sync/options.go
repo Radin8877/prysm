@@ -1,24 +1,27 @@
 package sync
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/async/event"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	blockfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/block"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/filesystem"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/attestations"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/blstoexec"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/slashings"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/synccommittee"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/voluntaryexits"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/backfill/coverage"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/verification"
+	"github.com/OffchainLabs/prysm/v7/async/event"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	blockfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/block"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/filesystem"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/execution"
+	lightClient "github.com/OffchainLabs/prysm/v7/beacon-chain/light-client"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/attestations"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/blstoexec"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/payloadattestation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/slashings"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/synccommittee"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/voluntaryexits"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/sync/backfill/coverage"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/verification"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
 )
 
 type Option func(s *Service) error
@@ -172,6 +175,14 @@ func WithBlobStorage(b *filesystem.BlobStorage) Option {
 	}
 }
 
+// WithDataColumnStorage gives the sync package direct access to DataColumnStorage.
+func WithDataColumnStorage(b *filesystem.DataColumnStorage) Option {
+	return func(s *Service) error {
+		s.cfg.dataColumnStorage = b
+		return nil
+	}
+}
+
 // WithVerifierWaiter gives the sync package direct access to the verifier waiter.
 func WithVerifierWaiter(v *verification.InitializerWaiter) Option {
 	return func(s *Service) error {
@@ -185,6 +196,67 @@ func WithVerifierWaiter(v *verification.InitializerWaiter) Option {
 func WithAvailableBlocker(avb coverage.AvailableBlocker) Option {
 	return func(s *Service) error {
 		s.availableBlocker = avb
+		return nil
+	}
+}
+
+// WithTrackedValidatorsCache for tracked validators cache.
+func WithTrackedValidatorsCache(c *cache.TrackedValidatorsCache) Option {
+	return func(s *Service) error {
+		s.trackedValidatorsCache = c
+		return nil
+	}
+}
+
+func WithPayloadAttestationCache(c *cache.PayloadAttestationCache) Option {
+	return func(s *Service) error {
+		s.payloadAttestationCache = c
+		return nil
+	}
+}
+
+func WithProposerPreferencesCache(c *cache.ProposerPreferencesCache) Option {
+	return func(s *Service) error {
+		s.proposerPreferencesCache = c
+		return nil
+	}
+}
+
+func WithPayloadAttestationPool(pool payloadattestation.PoolManager) Option {
+	return func(s *Service) error {
+		s.cfg.payloadAttestationPool = pool
+		return nil
+	}
+}
+
+// WithSlasherEnabled configures the sync package to support slashing detection.
+func WithSlasherEnabled(enabled bool) Option {
+	return func(s *Service) error {
+		s.slasherEnabled = enabled
+		return nil
+	}
+}
+
+// WithLightClientStore allows the sync package to access light client data.
+func WithLightClientStore(lcs *lightClient.Store) Option {
+	return func(s *Service) error {
+		s.lcStore = lcs
+		return nil
+	}
+}
+
+// WithBatchVerifierLimit sets the maximum number of signatures to batch verify at once.
+func WithBatchVerifierLimit(limit int) Option {
+	return func(s *Service) error {
+		s.cfg.batchVerifierLimit = limit
+		return nil
+	}
+}
+
+// WithReconstructionRandGen sets the random generator for reconstruction delays.
+func WithReconstructionRandGen(rg *rand.Rand) Option {
+	return func(s *Service) error {
+		s.reconstructionRandGen = rg
 		return nil
 	}
 }

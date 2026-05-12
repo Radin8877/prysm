@@ -5,12 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	enginev1 "github.com/OffchainLabs/prysm/v7/proto/engine/v1"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	common "github.com/OffchainLabs/prysm/v7/testing/spectest/shared/common/ssz_static"
 	fssz "github.com/prysmaticlabs/fastssz"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	enginev1 "github.com/prysmaticlabs/prysm/v5/proto/engine/v1"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	common "github.com/prysmaticlabs/prysm/v5/testing/spectest/shared/common/ssz_static"
 )
 
 // RunSSZStaticTests executes "ssz_static" tests.
@@ -18,11 +18,11 @@ func RunSSZStaticTests(t *testing.T, config string) {
 	common.RunSSZStaticTests(t, config, "bellatrix", unmarshalledSSZ, customHtr)
 }
 
-func customHtr(t *testing.T, htrs []common.HTR, object interface{}) []common.HTR {
+func customHtr(t *testing.T, htrs []common.HTR, object any) []common.HTR {
 	switch object.(type) {
 	case *ethpb.BeaconStateBellatrix:
-		htrs = append(htrs, func(s interface{}) ([32]byte, error) {
-			beaconState, err := state_native.InitializeFromProtoBellatrix(s.(*ethpb.BeaconStateBellatrix))
+		htrs = append(htrs, func(s any) ([32]byte, error) {
+			beaconState, err := state_native.InitializeFromProtoUnsafeBellatrix(s.(*ethpb.BeaconStateBellatrix))
 			require.NoError(t, err)
 			return beaconState.HashTreeRoot(context.Background())
 		})
@@ -31,8 +31,8 @@ func customHtr(t *testing.T, htrs []common.HTR, object interface{}) []common.HTR
 }
 
 // unmarshalledSSZ unmarshalls serialized input.
-func unmarshalledSSZ(t *testing.T, serializedBytes []byte, folderName string) (interface{}, error) {
-	var obj interface{}
+func unmarshalledSSZ(t *testing.T, serializedBytes []byte, folderName string) (any, error) {
+	var obj any
 	switch folderName {
 	case "ExecutionPayload":
 		obj = &enginev1.ExecutionPayload{}
@@ -76,8 +76,7 @@ func unmarshalledSSZ(t *testing.T, serializedBytes []byte, folderName string) (i
 	case "IndexedAttestation":
 		obj = &ethpb.IndexedAttestation{}
 	case "LightClientHeader":
-		t.Skip("not a beacon node type, this is a light node type")
-		return nil, nil
+		obj = &ethpb.LightClientHeaderAltair{}
 	case "PendingAttestation":
 		obj = &ethpb.PendingAttestation{}
 	case "ProposerSlashing":
@@ -111,20 +110,13 @@ func unmarshalledSSZ(t *testing.T, serializedBytes []byte, folderName string) (i
 	case "SyncCommittee":
 		obj = &ethpb.SyncCommittee{}
 	case "LightClientOptimisticUpdate":
-		t.Skip("not a beacon node type, this is a light node type")
-		return nil, nil
+		obj = &ethpb.LightClientOptimisticUpdateAltair{}
 	case "LightClientFinalityUpdate":
-		t.Skip("not a beacon node type, this is a light node type")
-		return nil, nil
+		obj = &ethpb.LightClientFinalityUpdateAltair{}
 	case "LightClientBootstrap":
-		t.Skip("not a beacon node type, this is a light node type")
-		return nil, nil
-	case "LightClientSnapshot":
-		t.Skip("not a beacon node type, this is a light node type")
-		return nil, nil
+		obj = &ethpb.LightClientBootstrapAltair{}
 	case "LightClientUpdate":
-		t.Skip("not a beacon node type, this is a light node type")
-		return nil, nil
+		obj = &ethpb.LightClientUpdateAltair{}
 	case "PowBlock":
 		obj = &ethpb.PowBlock{}
 	default:

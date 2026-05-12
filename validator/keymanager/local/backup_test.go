@@ -1,28 +1,27 @@
 package local
 
 import (
-	"context"
 	"encoding/hex"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestLocalKeymanager_ExtractKeystores(t *testing.T) {
 	secretKeysCache = make(map[[fieldparams.BLSPubkeyLength]byte]bls.SecretKey)
 	dr := &Keymanager{}
 	validatingKeys := make([]bls.SecretKey, 10)
-	for i := 0; i < len(validatingKeys); i++ {
+	for i := range validatingKeys {
 		secretKey, err := bls.RandKey()
 		require.NoError(t, err)
 		validatingKeys[i] = secretKey
 		secretKeysCache[bytesutil.ToBytes48(secretKey.PublicKey().Marshal())] = secretKey
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	password := "password"
 
 	// Extracting 0 public keys should return 0 keystores.

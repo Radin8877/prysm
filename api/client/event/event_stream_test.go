@@ -1,15 +1,13 @@
 package event
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	log "github.com/sirupsen/logrus"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestNewEventStream(t *testing.T) {
@@ -30,7 +28,7 @@ func TestNewEventStream(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewEventStream(context.Background(), &http.Client{}, tt.host, tt.topics)
+			_, err := NewEventStream(t.Context(), &http.Client{}, tt.host, tt.topics)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewEventStream() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -56,7 +54,7 @@ func TestEventStream(t *testing.T) {
 
 	topics := []string{"head"}
 	eventsChannel := make(chan *Event, 1)
-	stream, err := NewEventStream(context.Background(), http.DefaultClient, server.URL, topics)
+	stream, err := NewEventStream(t.Context(), http.DefaultClient, server.URL, topics)
 	require.NoError(t, err)
 	go stream.Subscribe(eventsChannel)
 
@@ -83,8 +81,7 @@ func TestEventStream(t *testing.T) {
 func TestEventStreamRequestError(t *testing.T) {
 	topics := []string{"head"}
 	eventsChannel := make(chan *Event, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// use valid url that will result in failed request with nil body
 	stream, err := NewEventStream(ctx, http.DefaultClient, "http://badhost:1234", topics)

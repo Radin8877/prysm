@@ -3,16 +3,17 @@ package altair
 import (
 	"context"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/signing"
+	p2pType "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	p2pType "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 )
 
 // ProcessSyncAggregate verifies sync committee aggregate signature signing over the previous slot block root.
@@ -45,13 +46,25 @@ import (
 //	    else:
 //	        decrease_balance(state, participant_index, participant_reward)
 func ProcessSyncAggregate(ctx context.Context, s state.BeaconState, sync *ethpb.SyncAggregate) (state.BeaconState, uint64, error) {
+	ctx, span := trace.StartSpan(ctx, "altair.ProcessSyncAggregate")
+	defer span.End()
+
 	s, votedKeys, reward, err := processSyncAggregate(ctx, s, sync)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "could not filter sync committee votes")
 	}
-
 	if err := VerifySyncCommitteeSig(s, votedKeys, sync.SyncCommitteeSignature); err != nil {
 		return nil, 0, errors.Wrap(err, "could not verify sync committee signature")
+	}
+	return s, reward, nil
+}
+
+// ProcessSyncAggregateNoVerifySig processes the sync aggregate without verifying the sync committee signature.
+// This is useful in scenarios such as block reward calculation, where we can assume the data in the block is valid.
+func ProcessSyncAggregateNoVerifySig(ctx context.Context, s state.BeaconState, sync *ethpb.SyncAggregate) (state.BeaconState, uint64, error) {
+	s, _, reward, err := processSyncAggregate(ctx, s, sync)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "could not filter sync committee votes")
 	}
 	return s, reward, nil
 }
@@ -78,7 +91,7 @@ func processSyncAggregate(ctx context.Context, s state.BeaconState, sync *ethpb.
 	}
 	votedKeys := make([]bls.PublicKey, 0, len(committeeKeys))
 
-	activeBalance, err := helpers.TotalActiveBalance(s)
+	activeBalance, err := helpers.TotalActiveBalance(ctx, s)
 	if err != nil {
 		return nil, nil, 0, err
 	}

@@ -7,18 +7,23 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"time"
 
-	"github.com/dgraph-io/ristretto"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db/iface"
+	"github.com/OffchainLabs/prysm/v7/cmd/beacon-chain/flags"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/interfaces"
+	"github.com/OffchainLabs/prysm/v7/io/file"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	prombolt "github.com/prysmaticlabs/prombbolt"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db/iface"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/io/file"
+	logrus "github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -86,9 +91,10 @@ var blockedBuckets = [][]byte{
 type Store struct {
 	db                  *bolt.DB
 	databasePath        string
-	blockCache          *ristretto.Cache
-	validatorEntryCache *ristretto.Cache
+	blockCache          *ristretto.Cache[string, interfaces.ReadOnlySignedBeaconBlock]
+	validatorEntryCache *ristretto.Cache[[]byte, *ethpb.Validator]
 	stateSummaryCache   *stateSummaryCache
+	stateDiffCache      *stateDiffCache
 	ctx                 context.Context
 }
 
@@ -110,6 +116,7 @@ var Buckets = [][]byte{
 	lightClientUpdatesBucket,
 	lightClientBootstrapBucket,
 	lightClientSyncCommitteeBucket,
+	stateDiffBucket,
 	// Indices buckets.
 	blockSlotIndicesBucket,
 	stateSlotIndicesBucket,
@@ -121,6 +128,9 @@ var Buckets = [][]byte{
 
 	feeRecipientBucket,
 	registrationBucket,
+	custodyBucket,
+	executionPayloadEnvelopesBucket,
+	executionPayloadEnvelopeBlockHashBucket,
 }
 
 // KVStoreOption is a functional option that modifies a kv.Store.
@@ -156,7 +166,7 @@ func NewKVStore(ctx context.Context, dirPath string, opts ...KVStoreOption) (*St
 		return nil, err
 	}
 	boltDB.AllocSize = boltAllocSize
-	blockCache, err := ristretto.NewCache(&ristretto.Config{
+	blockCache, err := ristretto.NewCache(&ristretto.Config[string, interfaces.ReadOnlySignedBeaconBlock]{
 		NumCounters: 1000,           // number of keys to track frequency of (1000).
 		MaxCost:     BlockCacheSize, // maximum cost of cache (1000 Blocks).
 		BufferItems: 64,             // number of keys per Get buffer.
@@ -165,7 +175,7 @@ func NewKVStore(ctx context.Context, dirPath string, opts ...KVStoreOption) (*St
 		return nil, err
 	}
 
-	validatorCache, err := ristretto.NewCache(&ristretto.Config{
+	validatorCache, err := ristretto.NewCache(&ristretto.Config[[]byte, *ethpb.Validator]{
 		NumCounters: NumOfValidatorEntries, // number of entries in cache (2 Million).
 		MaxCost:     ValidatorEntryMaxCost, // maximum size of the cache (64Mb)
 		BufferItems: 64,                    // number of keys per Get buffer.
@@ -198,7 +208,82 @@ func NewKVStore(ctx context.Context, dirPath string, opts ...KVStoreOption) (*St
 		return nil, err
 	}
 
+	if err := kv.startStateDiff(ctx); err != nil {
+		if errors.Is(err, ErrStateDiffIncompatible) {
+			return kv, err
+		}
+		return nil, err
+	}
 	return kv, nil
+}
+
+func (kv *Store) startStateDiff(ctx context.Context) error {
+	if !features.Get().EnableStateDiff {
+		return nil
+	}
+	// Check if offset already exists (existing state-diff database).
+	hasOffset, err := kv.hasStateDiffOffset()
+	if err != nil {
+		return err
+	}
+
+	if hasOffset {
+		storedExponents, err := kv.loadStateDiffExponents()
+		if err != nil {
+			if errors.Is(err, errExponentsMetadataMissing) {
+				return fmt.Errorf("%w: database has state-diff offset but no exponents metadata. "+
+					"This may indicate the database was created by an older software version that predates exponent storage. "+
+					"Delete database and re-sync from genesis/checkpoint", ErrStateDiffCorrupted)
+			}
+			return fmt.Errorf("%w: state-diff exponents metadata corrupted: %v", ErrStateDiffCorrupted, err)
+		}
+		currentExponents := flags.Get().StateDiffExponents
+		if !slices.Equal(storedExponents, currentExponents) {
+			return errors.Wrapf(
+				ErrStateDiffExponentMismatch,
+				"state-diff exponents changed; database incompatible. "+
+					"Database was initialized with: %v. "+
+					"Current configuration: %v. "+
+					"Options: use original exponents (--state-diff-exponents=%s) or delete database and re-sync from genesis/checkpoint.",
+				storedExponents,
+				currentExponents,
+				formatStateDiffExponents(storedExponents),
+			)
+		}
+		offset, err := kv.loadOffset()
+		if err != nil {
+			return err
+		}
+		cache, err := populateStateDiffCacheFromDB(kv, offset)
+		if err != nil {
+			return err
+		}
+		kv.stateDiffCache = cache
+		if err := validateStateDiffCache(ctx, kv, cache); err != nil {
+			return err
+		}
+		log.WithFields(logrus.Fields{
+			"offset":    offset,
+			"exponents": storedExponents,
+		}).Info("State-diff cache initialized from existing database")
+		return nil
+	}
+
+	// Check if this is a new database (no head block).
+	headBlock, err := kv.HeadBlock(ctx)
+	if err != nil {
+		return errors.Wrap(err, "could not get head block")
+	}
+
+	if headBlock == nil {
+		// New database - will be initialized later during checkpoint/genesis sync.
+		// stateDiffCache stays nil until SaveOrigin or SaveGenesisData initializes it.
+		log.Info("State-diff enabled: will be initialized during checkpoint or genesis sync")
+	} else {
+		// Existing database without state-diff - return store with error for caller to handle.
+		return ErrStateDiffIncompatible
+	}
+	return nil
 }
 
 // ClearDB removes the previously stored database in the data directory.
@@ -219,6 +304,15 @@ func (s *Store) ClearDB() error {
 // Close closes the underlying BoltDB database.
 func (s *Store) Close() error {
 	prometheus.Unregister(createBoltCollector(s.db))
+	// Clear cache references after close so shutdown releases memory promptly.
+	if s.blockCache != nil {
+		s.blockCache.Close()
+		s.blockCache = nil
+	}
+	if s.validatorEntryCache != nil {
+		s.validatorEntryCache.Close()
+		s.validatorEntryCache = nil
+	}
 
 	// Before DB closes, we should dump the cached state summary objects to DB.
 	if err := s.saveCachedStateSummariesDB(s.ctx); err != nil {

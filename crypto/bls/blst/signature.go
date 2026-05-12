@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"sync"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls/common"
+	"github.com/OffchainLabs/prysm/v7/crypto/rand"
 	"github.com/pkg/errors"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls/common"
-	"github.com/prysmaticlabs/prysm/v5/crypto/rand"
 	blst "github.com/supranational/blst/bindings/go"
 )
 
@@ -74,7 +74,7 @@ func AggregateCompressedSignatures(multiSigs [][]byte) (common.Signature, error)
 // MultipleSignaturesFromBytes creates a group of BLS signatures from a LittleEndian 2d-byte slice.
 func MultipleSignaturesFromBytes(multiSigs [][]byte) ([]common.Signature, error) {
 	if len(multiSigs) == 0 {
-		return nil, fmt.Errorf("0 signatures provided to the method")
+		return nil, errors.New("0 signatures provided to the method")
 	}
 	for _, s := range multiSigs {
 		if len(s) != fieldparams.BLSSignatureLength {
@@ -144,7 +144,7 @@ func (s *Signature) AggregateVerify(pubKeys []common.PublicKey, msgs [][32]byte)
 	}
 	msgSlices := make([][]byte, len(msgs))
 	rawKeys := make([]*blstPublicKey, len(msgs))
-	for i := 0; i < size; i++ {
+	for i := range size {
 		msgSlices[i] = msgs[i][:]
 		rawKeys[i] = pubKeys[i].(*PublicKey).p
 	}
@@ -168,7 +168,7 @@ func (s *Signature) FastAggregateVerify(pubKeys []common.PublicKey, msg [32]byte
 		return false
 	}
 	rawKeys := make([]*blstPublicKey, len(pubKeys))
-	for i := 0; i < len(pubKeys); i++ {
+	for i := range pubKeys {
 		rawKeys[i] = pubKeys[i].(*PublicKey).p
 	}
 	return s.s.FastAggregateVerify(true, rawKeys, msg[:], dst)
@@ -206,7 +206,7 @@ func AggregateSignatures(sigs []common.Signature) common.Signature {
 	}
 
 	rawSigs := make([]*blstSignature, len(sigs))
-	for i := 0; i < len(sigs); i++ {
+	for i := range sigs {
 		rawSigs[i] = sigs[i].(*Signature).s
 	}
 
@@ -246,7 +246,7 @@ func VerifyMultipleSignatures(sigs [][]byte, msgs [][32]byte, pubKeys []common.P
 	mulP1Aff := make([]*blstPublicKey, length)
 	rawMsgs := make([]blst.Message, length)
 
-	for i := 0; i < length; i++ {
+	for i := range length {
 		mulP1Aff[i] = pubKeys[i].(*PublicKey).p
 		rawMsgs[i] = msgs[i][:]
 	}

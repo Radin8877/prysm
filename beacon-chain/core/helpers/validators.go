@@ -5,23 +5,22 @@ import (
 	"context"
 	"encoding/binary"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/time"
+	forkchoicetypes "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/hash"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	"github.com/OffchainLabs/prysm/v7/monitoring/tracing/trace"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/version"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/time"
-	forkchoicetypes "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/hash"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	"github.com/prysmaticlabs/prysm/v5/monitoring/tracing/trace"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/version"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -102,6 +101,9 @@ func checkValidatorSlashable(activationEpoch, withdrawableEpoch primitives.Epoch
 //	  """
 //	  return [ValidatorIndex(i) for i, v in enumerate(state.validators) if is_active_validator(v, epoch)]
 func ActiveValidatorIndices(ctx context.Context, s state.ReadOnlyBeaconState, epoch primitives.Epoch) ([]primitives.ValidatorIndex, error) {
+	ctx, span := trace.StartSpan(ctx, "helpers.ActiveValidatorIndices")
+	defer span.End()
+
 	seed, err := Seed(s, epoch, params.BeaconConfig().DomainBeaconAttester)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get seed")
@@ -149,7 +151,7 @@ func ActiveValidatorIndices(ctx context.Context, s state.ReadOnlyBeaconState, ep
 	}
 
 	if err := UpdateCommitteeCache(ctx, s, epoch); err != nil {
-		return nil, errors.Wrap(err, "could not update committee cache")
+		log.WithError(err).Error("Could not update committee cache")
 	}
 
 	return indices, nil
@@ -296,13 +298,39 @@ func ProposerIndexAtSlotFromCheckpoint(c *forkchoicetypes.Checkpoint, slot primi
 	return proposerIndices[slot%params.BeaconConfig().SlotsPerEpoch], nil
 }
 
+func beaconProposerIndexAtSlotFulu(state state.ReadOnlyBeaconState, slot primitives.Slot) (primitives.ValidatorIndex, error) {
+	e := slots.ToEpoch(slot)
+	stateEpoch := slots.ToEpoch(state.Slot())
+	if e < stateEpoch || e > stateEpoch+1 {
+		return 0, errors.Errorf("slot %d is not in the current epoch %d or the next epoch", slot, stateEpoch)
+	}
+	lookAhead, err := state.ProposerLookahead()
+	if err != nil {
+		return 0, errors.Wrap(err, "could not get proposer lookahead")
+	}
+	spe := params.BeaconConfig().SlotsPerEpoch
+	if e == stateEpoch {
+		return lookAhead[slot%spe], nil
+	}
+	// The caller is requesting the proposer for the next epoch
+	return lookAhead[spe+slot%spe], nil
+}
+
 // BeaconProposerIndexAtSlot returns proposer index at the given slot from the
 // point of view of the given state as head state
 func BeaconProposerIndexAtSlot(ctx context.Context, state state.ReadOnlyBeaconState, slot primitives.Slot) (primitives.ValidatorIndex, error) {
 	e := slots.ToEpoch(slot)
+	stateEpoch := slots.ToEpoch(state.Slot())
+	// Even if the state is post Fulu, we may request a past proposer index.
+	if state.Version() >= version.Fulu && e >= params.BeaconConfig().FuluForkEpoch {
+		// We can use the cached lookahead only for the current and the next epoch.
+		if e == stateEpoch || e == stateEpoch+1 {
+			return beaconProposerIndexAtSlotFulu(state, slot)
+		}
+	}
 	// The cache uses the state root of the previous epoch - minimum_seed_lookahead last slot as key. (e.g. Starting epoch 1, slot 32, the key would be block root at slot 31)
-	// For simplicity, the node will skip caching of genesis epoch.
-	if e > params.BeaconConfig().GenesisEpoch+params.BeaconConfig().MinSeedLookahead {
+	// For simplicity, the node will skip caching of genesis epoch. If the passed state has not yet reached this slot then we do not check the cache.
+	if e <= stateEpoch && e > params.BeaconConfig().GenesisEpoch+params.BeaconConfig().MinSeedLookahead {
 		s, err := slots.EpochEnd(e - 1)
 		if err != nil {
 			return 0, err
@@ -372,7 +400,7 @@ func ComputeProposerIndex(bState state.ReadOnlyBeaconState, activeIndices []prim
 		return 0, errors.New("empty active indices list")
 	}
 	hashFunc := hash.CustomSHA256Hasher()
-	beaconConfig := params.BeaconConfig()
+	cfg := params.BeaconConfig()
 	seedBuffer := make([]byte, len(seed)+8)
 	copy(seedBuffer, seed[:])
 
@@ -393,18 +421,18 @@ func ComputeProposerIndex(bState state.ReadOnlyBeaconState, activeIndices []prim
 		effectiveBal := v.EffectiveBalance()
 		if bState.Version() >= version.Electra {
 			binary.LittleEndian.PutUint64(seedBuffer[len(seed):], i/16)
-			randomByte := hashFunc(seedBuffer)
+			randomBytes := hashFunc(seedBuffer)
 			offset := (i % 16) * 2
-			randomValue := uint64(randomByte[offset]) | uint64(randomByte[offset+1])<<8
+			randomValue := uint64(randomBytes[offset]) | uint64(randomBytes[offset+1])<<8
 
-			if effectiveBal*fieldparams.MaxRandomValueElectra >= beaconConfig.MaxEffectiveBalanceElectra*randomValue {
+			if effectiveBal*fieldparams.MaxRandomValueElectra >= cfg.MaxEffectiveBalanceElectra*randomValue {
 				return candidateIndex, nil
 			}
 		} else {
 			binary.LittleEndian.PutUint64(seedBuffer[len(seed):], i/32)
 			randomByte := hashFunc(seedBuffer)[i%32]
 
-			if effectiveBal*fieldparams.MaxRandomByte >= beaconConfig.MaxEffectiveBalance*uint64(randomByte) {
+			if effectiveBal*fieldparams.MaxRandomByte >= cfg.MaxEffectiveBalance*uint64(randomByte) {
 				return candidateIndex, nil
 			}
 		}
@@ -579,7 +607,7 @@ func IsPartiallyWithdrawableValidator(val state.ReadOnlyValidator, balance uint6
 //	"""
 //	Check if ``validator`` is partially withdrawable.
 //	"""
-//	max_effective_balance = get_validator_max_effective_balance(validator)
+//	max_effective_balance = get_max_effective_balance(validator)
 //	has_max_effective_balance = validator.effective_balance == max_effective_balance  # [Modified in Electra:EIP7251]
 //	has_excess_balance = balance > max_effective_balance  # [Modified in Electra:EIP7251]
 //	return (
@@ -619,7 +647,7 @@ func isPartiallyWithdrawableValidatorCapella(val state.ReadOnlyValidator, balanc
 //
 // Spec definition:
 //
-//	def get_validator_max_effective_balance(validator: Validator) -> Gwei:
+//	def get_max_effective_balance(validator: Validator) -> Gwei:
 //	    """
 //	    Get max effective balance for ``validator``.
 //	    """

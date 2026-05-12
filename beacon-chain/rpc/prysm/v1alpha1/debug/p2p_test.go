@@ -1,14 +1,13 @@
 package debug
 
 import (
-	"context"
 	"testing"
 
+	mockP2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 	"github.com/golang/protobuf/ptypes/empty"
-	mockP2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
 )
 
 func TestDebugServer_GetPeer(t *testing.T) {
@@ -20,7 +19,7 @@ func TestDebugServer_GetPeer(t *testing.T) {
 	}
 	firstPeer := peersProvider.Peers().All()[0]
 
-	res, err := ds.GetPeer(context.Background(), &ethpb.PeerRequest{PeerId: firstPeer.String()})
+	res, err := ds.GetPeer(t.Context(), &ethpb.PeerRequest{PeerId: firstPeer.String()})
 	require.NoError(t, err)
 	require.Equal(t, firstPeer.String(), res.PeerId, "Unexpected peer ID")
 
@@ -36,7 +35,7 @@ func TestDebugServer_ListPeers(t *testing.T) {
 		PeerManager:  &mockP2p.MockPeerManager{BHost: mP2P.BHost},
 	}
 
-	res, err := ds.ListPeers(context.Background(), &empty.Empty{})
+	res, err := ds.ListPeers(t.Context(), &empty.Empty{})
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(res.Responses))
 

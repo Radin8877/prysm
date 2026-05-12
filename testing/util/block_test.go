@@ -1,20 +1,19 @@
 package util
 
 import (
-	"context"
 	"testing"
 
-	coreBlock "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/blocks"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition/stateutils"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpbv1 "github.com/prysmaticlabs/prysm/v5/proto/eth/v1"
-	ethpbalpha "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	coreBlock "github.com/OffchainLabs/prysm/v7/beacon-chain/core/blocks"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition/stateutils"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpbv1 "github.com/OffchainLabs/prysm/v7/proto/eth/v1"
+	ethpbalpha "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestGenerateFullBlock_PassesStateTransition(t *testing.T) {
@@ -26,13 +25,13 @@ func TestGenerateFullBlock_PassesStateTransition(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	_, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	_, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 }
 
 func TestGenerateFullBlock_ThousandValidators(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
+	params.OverrideBeaconConfig(params.MainnetConfig())
 	beaconState, privs := DeterministicGenesisState(t, 1024)
 	conf := &BlockGenConfig{
 		NumAttestations: 4,
@@ -41,13 +40,13 @@ func TestGenerateFullBlock_ThousandValidators(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	_, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	_, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 }
 
 func TestGenerateFullBlock_Passes4Epochs(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
+	params.OverrideBeaconConfig(params.MainnetConfig())
 	beaconState, privs := DeterministicGenesisState(t, 64)
 
 	conf := &BlockGenConfig{
@@ -60,7 +59,7 @@ func TestGenerateFullBlock_Passes4Epochs(t *testing.T) {
 		require.NoError(t, err)
 		wsb, err := blocks.NewSignedBeaconBlock(block)
 		require.NoError(t, err)
-		beaconState, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+		beaconState, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 		require.NoError(t, err)
 	}
 
@@ -78,7 +77,7 @@ func TestGenerateFullBlock_Passes4Epochs(t *testing.T) {
 
 func TestGenerateFullBlock_ValidProposerSlashings(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
+	params.OverrideBeaconConfig(params.MainnetConfig())
 	beaconState, privs := DeterministicGenesisState(t, 32)
 	conf := &BlockGenConfig{
 		NumProposerSlashings: 1,
@@ -87,7 +86,7 @@ func TestGenerateFullBlock_ValidProposerSlashings(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	beaconState, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	beaconState, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 
 	slashableIndice := block.Block.Body.ProposerSlashings[0].Header_1.Header.ProposerIndex
@@ -99,7 +98,7 @@ func TestGenerateFullBlock_ValidProposerSlashings(t *testing.T) {
 
 func TestGenerateFullBlock_ValidAttesterSlashings(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
+	params.OverrideBeaconConfig(params.MainnetConfig())
 	beaconState, privs := DeterministicGenesisState(t, 256)
 	conf := &BlockGenConfig{
 		NumAttesterSlashings: 1,
@@ -108,7 +107,7 @@ func TestGenerateFullBlock_ValidAttesterSlashings(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	beaconState, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	beaconState, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 
 	slashableIndices := block.Block.Body.AttesterSlashings[0].Attestation_1.AttestingIndices
@@ -120,7 +119,7 @@ func TestGenerateFullBlock_ValidAttesterSlashings(t *testing.T) {
 
 func TestGenerateFullBlock_ValidAttestations(t *testing.T) {
 	params.SetupTestConfigCleanup(t)
-	params.OverrideBeaconConfig(params.MainnetConfig().Copy())
+	params.OverrideBeaconConfig(params.MainnetConfig())
 
 	beaconState, privs := DeterministicGenesisState(t, 256)
 	conf := &BlockGenConfig{
@@ -130,7 +129,7 @@ func TestGenerateFullBlock_ValidAttestations(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	beaconState, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	beaconState, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 	atts, err := beaconState.CurrentEpochAttestations()
 	require.NoError(t, err)
@@ -153,7 +152,7 @@ func TestGenerateFullBlock_ValidDeposits(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	beaconState, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	beaconState, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 
 	depositedPubkey := block.Block.Body.Deposits[0].Data.PublicKey
@@ -181,7 +180,7 @@ func TestGenerateFullBlock_ValidVoluntaryExits(t *testing.T) {
 	require.NoError(t, err)
 	wsb, err := blocks.NewSignedBeaconBlock(block)
 	require.NoError(t, err)
-	beaconState, err = transition.ExecuteStateTransition(context.Background(), beaconState, wsb)
+	beaconState, err = transition.ExecuteStateTransition(t.Context(), beaconState, wsb)
 	require.NoError(t, err)
 
 	exitedIndex := block.Block.Body.VoluntaryExits[0].Exit.ValidatorIndex
@@ -348,4 +347,84 @@ func Test_PostDenebPbGenericBlock_ErrorsForPlainBlock(t *testing.T) {
 		_, err = b.PbGenericBlock()
 		require.ErrorContains(t, "PbGenericBlock() only supports block content type but got", err)
 	})
+}
+
+func TestHydrateSignedBeaconBlockGloas_NoError(t *testing.T) {
+	b := &ethpbalpha.SignedBeaconBlockGloas{}
+	b = HydrateSignedBeaconBlockGloas(b)
+	_, err := b.HashTreeRoot()
+	require.NoError(t, err)
+	_, err = b.Block.HashTreeRoot()
+	require.NoError(t, err)
+	_, err = b.Block.Body.HashTreeRoot()
+	require.NoError(t, err)
+}
+
+func TestHydratePayloadAttestation_NoError(t *testing.T) {
+	p := &ethpbalpha.PayloadAttestation{}
+	p = HydratePayloadAttestation(p)
+	_, err := p.HashTreeRoot()
+	require.NoError(t, err)
+	_, err = p.Data.HashTreeRoot()
+	require.NoError(t, err)
+}
+
+func TestGenerateTestPayloadAttestations(t *testing.T) {
+	slot := primitives.Slot(123)
+	attestations := GenerateTestPayloadAttestations(3, slot)
+
+	require.Equal(t, 3, len(attestations))
+	for i, att := range attestations {
+		// Verify non-nil fields
+		require.NotNil(t, att.AggregationBits)
+		require.NotNil(t, att.Signature)
+		require.NotNil(t, att.Data)
+		require.NotNil(t, att.Data.BeaconBlockRoot)
+
+		// Verify slot is set correctly
+		require.Equal(t, slot, att.Data.Slot)
+
+		// Verify PayloadPresent and BlobDataAvailable are set
+		require.Equal(t, true, att.Data.PayloadPresent)
+		require.Equal(t, true, att.Data.BlobDataAvailable)
+
+		// Verify unique values
+		require.Equal(t, byte(i+1), att.Signature[0])
+		require.Equal(t, byte(i+1), att.Data.BeaconBlockRoot[0])
+
+		// Verify HashTreeRoot works
+		_, err := att.HashTreeRoot()
+		require.NoError(t, err)
+	}
+}
+
+func TestGenerateTestSignedExecutionPayloadBid(t *testing.T) {
+	slot := primitives.Slot(456)
+	bid := GenerateTestSignedExecutionPayloadBid(slot)
+
+	require.NotNil(t, bid)
+	require.NotNil(t, bid.Message)
+	require.NotNil(t, bid.Signature)
+
+	// Verify slot is set correctly
+	require.Equal(t, slot, bid.Message.Slot)
+
+	// Verify non-zero test values
+	require.Equal(t, primitives.BuilderIndex(1), bid.Message.BuilderIndex)
+	require.Equal(t, uint64(30000000), bid.Message.GasLimit)
+	require.Equal(t, primitives.Gwei(1000000), bid.Message.Value)
+	require.Equal(t, primitives.Gwei(2000000), bid.Message.ExecutionPayment)
+
+	// Verify fields are populated
+	require.NotNil(t, bid.Message.ParentBlockHash)
+	require.NotNil(t, bid.Message.ParentBlockRoot)
+	require.NotNil(t, bid.Message.BlockHash)
+	require.NotNil(t, bid.Message.PrevRandao)
+	require.NotNil(t, bid.Message.FeeRecipient)
+	require.NotNil(t, bid.Message.BlobKzgCommitments)
+	require.Equal(t, 1, len(bid.Message.BlobKzgCommitments))
+
+	// Verify HashTreeRoot works
+	_, err := bid.HashTreeRoot()
+	require.NoError(t, err)
 }

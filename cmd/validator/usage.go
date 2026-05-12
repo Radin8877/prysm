@@ -5,10 +5,10 @@ import (
 	"io"
 	"sort"
 
-	"github.com/prysmaticlabs/prysm/v5/cmd"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/features"
-	"github.com/prysmaticlabs/prysm/v5/runtime/debug"
+	"github.com/OffchainLabs/prysm/v7/cmd"
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	"github.com/OffchainLabs/prysm/v7/config/features"
+	"github.com/OffchainLabs/prysm/v7/runtime/debug"
 	"github.com/urfave/cli/v2"
 )
 
@@ -61,7 +61,6 @@ var appHelpFlagGroups = []flagGroup{
 			cmd.ClearDB,
 			cmd.ForceClearDB,
 			cmd.EnableBackupWebhookFlag,
-			cmd.BackupWebhookOutputDir,
 			cmd.EnableTracingFlag,
 			cmd.TracingProcessNameFlag,
 			cmd.TracingEndpointFlag,
@@ -69,6 +68,7 @@ var appHelpFlagGroups = []flagGroup{
 			cmd.MonitoringHostFlag,
 			flags.MonitoringPortFlag,
 			cmd.DisableMonitoringFlag,
+			cmd.DisableLogColor,
 			cmd.LogFormat,
 			cmd.LogFileName,
 			cmd.ConfigFileFlag,
@@ -76,6 +76,8 @@ var appHelpFlagGroups = []flagGroup{
 			cmd.GrpcMaxCallRecvMsgSizeFlag,
 			cmd.AcceptTosFlag,
 			cmd.ApiTimeoutFlag,
+			flags.DisableEphemeralLogFile,
+			cmd.LogVModuleFlag,
 		},
 	},
 	{
@@ -85,8 +87,6 @@ var appHelpFlagGroups = []flagGroup{
 			debug.PProfAddrFlag,
 			debug.PProfPortFlag,
 			debug.MemProfileRateFlag,
-			debug.CPUProfileFlag,
-			debug.TraceFlag,
 			debug.BlockProfileRateFlag,
 			debug.MutexProfileFractionFlag,
 		},
@@ -96,6 +96,7 @@ var appHelpFlagGroups = []flagGroup{
 		Flags: []cli.Flag{
 			flags.CertFlag,
 			flags.BeaconRPCProviderFlag,
+			flags.BeaconRESTApiHeaders,
 			flags.EnableRPCFlag,
 			flags.RPCHost,
 			flags.RPCPort,
@@ -117,6 +118,7 @@ var appHelpFlagGroups = []flagGroup{
 			flags.EnableBuilderFlag,
 			flags.BuilderGasLimitFlag,
 			flags.ValidatorsRegistrationBatchSizeFlag,
+			flags.EnableStatelessFlag,
 			flags.GraffitiFlag,
 			flags.GraffitiFileFlag,
 		},
@@ -139,11 +141,12 @@ var appHelpFlagGroups = []flagGroup{
 	{
 		Name: "misc",
 		Flags: []cli.Flag{
-			flags.EnableWebFlag,
 			flags.DisablePenaltyRewardLogFlag,
 			flags.DisableAccountMetricsFlag,
 			flags.EnableDistributed,
 			flags.AuthTokenPathFlag,
+			flags.DisableDutiesPolling,
+			flags.MaxHealthChecksFlag,
 		},
 	},
 	{
@@ -157,18 +160,22 @@ var appHelpFlagGroups = []flagGroup{
 			flags.InteropStartIndex,
 		},
 	},
+	{
+		Name:  "deprecated",
+		Flags: []cli.Flag{},
+	},
 }
 
 func init() {
 	cli.AppHelpTemplate = appHelpTemplate
 
 	type helpData struct {
-		App        interface{}
+		App        any
 		FlagGroups []flagGroup
 	}
 
 	originalHelpPrinter := cli.HelpPrinter
-	cli.HelpPrinter = func(w io.Writer, tmpl string, data interface{}) {
+	cli.HelpPrinter = func(w io.Writer, tmpl string, data any) {
 		if tmpl == appHelpTemplate {
 			for _, group := range appHelpFlagGroups {
 				sort.Sort(cli.FlagsByName(group.Flags))

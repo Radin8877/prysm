@@ -1,18 +1,17 @@
 package electra_test
 
 import (
-	"context"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/electra"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	consensusblocks "github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/electra"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	consensusblocks "github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestVerifyOperationLengths_Electra(t *testing.T) {
@@ -78,7 +77,7 @@ func TestProcessEpoch_CanProcessElectra(t *testing.T) {
 			TargetIndex: 1,
 		},
 	}))
-	err := electra.ProcessEpoch(context.Background(), st)
+	err := electra.ProcessEpoch(t.Context(), st)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), st.Slashings()[2], "Unexpected slashed balance")
 

@@ -2,18 +2,17 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -66,8 +65,8 @@ func TestRegistration_Valid(t *testing.T) {
 	marshalledJsonRegistrations, err := json.Marshal(jsonRegistrations)
 	require.NoError(t, err)
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Post(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Post(
 		gomock.Any(),
 		"/eth/v1/validator/register_validator",
 		nil,
@@ -130,8 +129,8 @@ func TestRegistration_Valid(t *testing.T) {
 		},
 	}
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
-	res, err := validatorClient.SubmitValidatorRegistrations(context.Background(), &protoRegistrations)
+	validatorClient := &beaconApiValidatorClient{handler: handler}
+	res, err := validatorClient.SubmitValidatorRegistrations(t.Context(), &protoRegistrations)
 
 	assert.DeepEqual(t, new(empty.Empty), res)
 	require.NoError(t, err)
@@ -141,8 +140,8 @@ func TestRegistration_BadRequest(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
-	jsonRestHandler.EXPECT().Post(
+	handler := mock.NewMockJsonRestHandler(ctrl)
+	handler.EXPECT().Post(
 		gomock.Any(),
 		"/eth/v1/validator/register_validator",
 		nil,
@@ -152,7 +151,7 @@ func TestRegistration_BadRequest(t *testing.T) {
 		errors.New("foo error"),
 	).Times(1)
 
-	validatorClient := &beaconApiValidatorClient{jsonRestHandler: jsonRestHandler}
-	_, err := validatorClient.SubmitValidatorRegistrations(context.Background(), &ethpb.SignedValidatorRegistrationsV1{})
+	validatorClient := &beaconApiValidatorClient{handler: handler}
+	_, err := validatorClient.SubmitValidatorRegistrations(t.Context(), &ethpb.SignedValidatorRegistrationsV1{})
 	assert.ErrorContains(t, "foo error", err)
 }

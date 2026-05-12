@@ -2,17 +2,16 @@ package beacon_api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/api/server/structs"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/client/beacon-api/mock"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
-	"github.com/prysmaticlabs/prysm/v5/api/server/structs"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/client/beacon-api/mock"
 	"go.uber.org/mock/gomock"
 )
 
@@ -289,12 +288,12 @@ func TestCheckDoppelGanger_Nominal(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+			handler := mock.NewMockJsonRestHandler(ctrl)
 
 			if testCase.getSyncingOutput != nil {
 				syncingResponseJson := structs.SyncStatusResponse{}
 
-				jsonRestHandler.EXPECT().Get(
+				handler.EXPECT().Get(
 					gomock.Any(),
 					syncingEndpoint,
 					&syncingResponseJson,
@@ -309,7 +308,7 @@ func TestCheckDoppelGanger_Nominal(t *testing.T) {
 			if testCase.getForkOutput != nil {
 				stateForkResponseJson := structs.GetStateForkResponse{}
 
-				jsonRestHandler.EXPECT().Get(
+				handler.EXPECT().Get(
 					gomock.Any(),
 					forkEndpoint,
 					&stateForkResponseJson,
@@ -324,7 +323,7 @@ func TestCheckDoppelGanger_Nominal(t *testing.T) {
 			if testCase.getHeadersOutput != nil {
 				blockHeadersResponseJson := structs.GetBlockHeadersResponse{}
 
-				jsonRestHandler.EXPECT().Get(
+				handler.EXPECT().Get(
 					gomock.Any(),
 					headersEndpoint,
 					&blockHeadersResponseJson,
@@ -343,7 +342,7 @@ func TestCheckDoppelGanger_Nominal(t *testing.T) {
 					marshalledIndexes, err := json.Marshal(iface.inputStringIndexes)
 					require.NoError(t, err)
 
-					jsonRestHandler.EXPECT().Post(
+					handler.EXPECT().Post(
 						gomock.Any(),
 						iface.inputUrl,
 						nil,
@@ -373,12 +372,12 @@ func TestCheckDoppelGanger_Nominal(t *testing.T) {
 			}
 
 			validatorClient := beaconApiValidatorClient{
-				jsonRestHandler:         jsonRestHandler,
+				handler:                 handler,
 				stateValidatorsProvider: stateValidatorsProvider,
 			}
 
 			doppelGangerActualOutput, err := validatorClient.CheckDoppelGanger(
-				context.Background(),
+				t.Context(),
 				testCase.doppelGangerInput,
 			)
 
@@ -723,12 +722,12 @@ func TestCheckDoppelGanger_Errors(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			jsonRestHandler := mock.NewMockJsonRestHandler(ctrl)
+			handler := mock.NewMockJsonRestHandler(ctrl)
 
 			if testCase.getSyncingOutput != nil {
 				syncingResponseJson := structs.SyncStatusResponse{}
 
-				jsonRestHandler.EXPECT().Get(
+				handler.EXPECT().Get(
 					gomock.Any(),
 					syncingEndpoint,
 					&syncingResponseJson,
@@ -743,7 +742,7 @@ func TestCheckDoppelGanger_Errors(t *testing.T) {
 			if testCase.getForkOutput != nil {
 				stateForkResponseJson := structs.GetStateForkResponse{}
 
-				jsonRestHandler.EXPECT().Get(
+				handler.EXPECT().Get(
 					gomock.Any(),
 					forkEndpoint,
 					&stateForkResponseJson,
@@ -758,7 +757,7 @@ func TestCheckDoppelGanger_Errors(t *testing.T) {
 			if testCase.getHeadersOutput != nil {
 				blockHeadersResponseJson := structs.GetBlockHeadersResponse{}
 
-				jsonRestHandler.EXPECT().Get(
+				handler.EXPECT().Get(
 					gomock.Any(),
 					headersEndpoint,
 					&blockHeadersResponseJson,
@@ -791,7 +790,7 @@ func TestCheckDoppelGanger_Errors(t *testing.T) {
 					marshalledIndexes, err := json.Marshal(iface.inputStringIndexes)
 					require.NoError(t, err)
 
-					jsonRestHandler.EXPECT().Post(
+					handler.EXPECT().Post(
 						gomock.Any(),
 						iface.inputUrl,
 						nil,
@@ -807,12 +806,12 @@ func TestCheckDoppelGanger_Errors(t *testing.T) {
 			}
 
 			validatorClient := beaconApiValidatorClient{
-				jsonRestHandler:         jsonRestHandler,
+				handler:                 handler,
 				stateValidatorsProvider: stateValidatorsProvider,
 			}
 
 			_, err := validatorClient.CheckDoppelGanger(
-				context.Background(),
+				t.Context(),
 				&ethpb.DoppelGangerRequest{
 					ValidatorRequests: testCase.inputValidatorRequests,
 				},

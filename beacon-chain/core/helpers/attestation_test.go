@@ -1,21 +1,20 @@
 package helpers_test
 
 import (
-	"context"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/helpers"
-	state_native "github.com/prysmaticlabs/prysm/v5/beacon-chain/state/state-native"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
-	prysmTime "github.com/prysmaticlabs/prysm/v5/time"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/helpers"
+	state_native "github.com/OffchainLabs/prysm/v7/beacon-chain/state/state-native"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
+	prysmTime "github.com/OffchainLabs/prysm/v7/time"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
 )
 
 func TestAttestation_IsAggregator(t *testing.T) {
@@ -23,7 +22,7 @@ func TestAttestation_IsAggregator(t *testing.T) {
 		helpers.ClearCache()
 
 		beaconState, privKeys := util.DeterministicGenesisState(t, 100)
-		committee, err := helpers.BeaconCommitteeFromState(context.Background(), beaconState, 0, 0)
+		committee, err := helpers.BeaconCommitteeFromState(t.Context(), beaconState, 0, 0)
 		require.NoError(t, err)
 		sig := privKeys[0].Sign([]byte{'A'})
 		agg, err := helpers.IsAggregator(uint64(len(committee)), sig.Marshal())
@@ -38,7 +37,7 @@ func TestAttestation_IsAggregator(t *testing.T) {
 		params.OverrideBeaconConfig(params.MinimalSpecConfig())
 		beaconState, privKeys := util.DeterministicGenesisState(t, 2048)
 
-		committee, err := helpers.BeaconCommitteeFromState(context.Background(), beaconState, 0, 0)
+		committee, err := helpers.BeaconCommitteeFromState(t.Context(), beaconState, 0, 0)
 		require.NoError(t, err)
 		sig := privKeys[0].Sign([]byte{'A'})
 		agg, err := helpers.IsAggregator(uint64(len(committee)), sig.Marshal())
@@ -55,7 +54,7 @@ func TestAttestation_ComputeSubnetForAttestation(t *testing.T) {
 	validatorCount := committeeCount * params.BeaconConfig().TargetCommitteeSize
 	validators := make([]*ethpb.Validator, validatorCount)
 
-	for i := 0; i < len(validators); i++ {
+	for i := range validators {
 		k := make([]byte, 48)
 		copy(k, strconv.Itoa(i))
 		validators[i] = &ethpb.Validator{
@@ -73,7 +72,7 @@ func TestAttestation_ComputeSubnetForAttestation(t *testing.T) {
 		RandaoMixes: make([][]byte, params.BeaconConfig().EpochsPerHistoricalVector),
 	})
 	require.NoError(t, err)
-	valCount, err := helpers.ActiveValidatorCount(context.Background(), state, slots.ToEpoch(34))
+	valCount, err := helpers.ActiveValidatorCount(t.Context(), state, slots.ToEpoch(34))
 	require.NoError(t, err)
 
 	t.Run("Phase 0", func(t *testing.T) {
@@ -218,10 +217,10 @@ func Test_ValidateAttestationTime(t *testing.T) {
 		{
 			name: "attestation.slot is well beyond current slot",
 			args: args{
-				attSlot:     1 << 32,
-				genesisTime: prysmTime.Now().Add(-15 * time.Duration(params.BeaconConfig().SecondsPerSlot) * time.Second),
+				attSlot:     1024,
+				genesisTime: time.Now().Add(-15 * time.Duration(params.BeaconConfig().SecondsPerSlot) * time.Second),
 			},
-			wantedErr: "attestation slot 4294967296 not within attestation propagation range of 0 to 15 (current slot)",
+			wantedErr: "attestation slot 1024 not within attestation propagation range of 0 to 15 (current slot)",
 		},
 	}
 	for _, tt := range tests {

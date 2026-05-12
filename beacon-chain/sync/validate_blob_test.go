@@ -2,33 +2,32 @@ package sync
 
 import (
 	"bytes"
-	"context"
 	"reflect"
 	"testing"
 	"time"
 
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	dbtest "github.com/OffchainLabs/prysm/v7/beacon-chain/db/testing"
+	doublylinkedtree "github.com/OffchainLabs/prysm/v7/beacon-chain/forkchoice/doubly-linked-tree"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	p2ptest "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	mockSync "github.com/OffchainLabs/prysm/v7/beacon-chain/sync/initial-sync/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/verification"
+	lruwrpr "github.com/OffchainLabs/prysm/v7/cache/lru"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/blocks"
+	eth "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/pkg/errors"
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	dbtest "github.com/prysmaticlabs/prysm/v5/beacon-chain/db/testing"
-	doublylinkedtree "github.com/prysmaticlabs/prysm/v5/beacon-chain/forkchoice/doubly-linked-tree"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	p2ptest "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	mockSync "github.com/prysmaticlabs/prysm/v5/beacon-chain/sync/initial-sync/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/verification"
-	lruwrpr "github.com/prysmaticlabs/prysm/v5/cache/lru"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/blocks"
-	eth "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
 )
 
 func TestValidateBlob_FromSelf(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	p := p2ptest.NewTestP2P(t)
 	s := &Service{cfg: &config{p2p: p}}
 	result, err := s.validateBlob(ctx, s.cfg.p2p.PeerID(), nil)
@@ -37,7 +36,7 @@ func TestValidateBlob_FromSelf(t *testing.T) {
 }
 
 func TestValidateBlob_InitSync(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	p := p2ptest.NewTestP2P(t)
 	s := &Service{cfg: &config{p2p: p, initialSync: &mockSync.Sync{IsSyncing: true}}}
 	result, err := s.validateBlob(ctx, "", nil)
@@ -46,18 +45,18 @@ func TestValidateBlob_InitSync(t *testing.T) {
 }
 
 func TestValidateBlob_InvalidTopic(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	p := p2ptest.NewTestP2P(t)
 	s := &Service{cfg: &config{p2p: p, initialSync: &mockSync.Sync{}}}
 	result, err := s.validateBlob(ctx, "", &pubsub.Message{
 		Message: &pb.Message{},
 	})
-	require.ErrorIs(t, errInvalidTopic, err)
+	require.ErrorIs(t, p2p.ErrInvalidTopic, err)
 	require.Equal(t, result, pubsub.ValidationReject)
 }
 
 func TestValidateBlob_InvalidMessageType(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	p := p2ptest.NewTestP2P(t)
 	chainService := &mock.ChainService{Genesis: time.Unix(time.Now().Unix()-int64(params.BeaconConfig().SecondsPerSlot), 0)}
 	s := &Service{cfg: &config{p2p: p, initialSync: &mockSync.Sync{}, clock: startup.NewClock(chainService.Genesis, chainService.ValidatorsRoot)}}
@@ -68,7 +67,7 @@ func TestValidateBlob_InvalidMessageType(t *testing.T) {
 	_, err := p.Encoding().EncodeGossip(buf, msg)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(msg)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*eth.SignedBeaconBlock]()]
 	digest, err := s.currentForkDigest()
 	require.NoError(t, err)
 	topic = s.addDigestToTopic(topic, digest)
@@ -83,7 +82,7 @@ func TestValidateBlob_InvalidMessageType(t *testing.T) {
 
 func TestValidateBlob_AlreadySeenInCache(t *testing.T) {
 	db := dbtest.SetupDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	p := p2ptest.NewTestP2P(t)
 	chainService := &mock.ChainService{Genesis: time.Now(), FinalizedCheckPoint: &eth.Checkpoint{}, DB: db}
 	stateGen := stategen.New(db, doublylinkedtree.New())
@@ -127,7 +126,7 @@ func TestValidateBlob_AlreadySeenInCache(t *testing.T) {
 	_, err = p.Encoding().EncodeGossip(buf, b)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(b)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*eth.BlobSidecar]()]
 	digest, err := s.currentForkDigest()
 	require.NoError(t, err)
 	topic = s.addDigestAndIndexToTopic(topic, digest, 0)
@@ -143,10 +142,12 @@ func TestValidateBlob_AlreadySeenInCache(t *testing.T) {
 }
 
 func TestValidateBlob_InvalidTopicIndex(t *testing.T) {
-	ctx := context.Background()
+	params.SetupTestConfigCleanup(t)
+	params.BeaconConfig().InitializeForkSchedule()
+	ctx := t.Context()
 	p := p2ptest.NewTestP2P(t)
 	chainService := &mock.ChainService{Genesis: time.Unix(time.Now().Unix()-int64(params.BeaconConfig().SecondsPerSlot), 0)}
-	s := &Service{cfg: &config{p2p: p, initialSync: &mockSync.Sync{}, clock: startup.NewClock(chainService.Genesis, chainService.ValidatorsRoot)}}
+	s := &Service{cfg: &config{p2p: p, initialSync: &mockSync.Sync{}, clock: startup.NewClock(chainService.Genesis, params.BeaconConfig().GenesisValidatorsRoot)}}
 	s.newBlobVerifier = testNewBlobVerifier()
 
 	_, scs := util.GenerateTestDenebBlockWithSidecar(t, [32]byte{}, chainService.CurrentSlot()+1, 1)
@@ -155,7 +156,7 @@ func TestValidateBlob_InvalidTopicIndex(t *testing.T) {
 	_, err := p.Encoding().EncodeGossip(buf, msg)
 	require.NoError(t, err)
 
-	topic := p2p.GossipTypeMapping[reflect.TypeOf(msg)]
+	topic := p2p.GossipTypeMapping[reflect.TypeFor[*eth.BlobSidecar]()]
 	digest, err := s.currentForkDigest()
 	require.NoError(t, err)
 	topic = s.addDigestAndIndexToTopic(topic, digest, 1)
@@ -164,7 +165,7 @@ func TestValidateBlob_InvalidTopicIndex(t *testing.T) {
 			Data:  buf.Bytes(),
 			Topic: &topic,
 		}})
-	require.ErrorContains(t, "/eth2/f5a5fd42/blob_sidecar_1", err)
+	require.ErrorContains(t, "blob_sidecar_1", err)
 	require.Equal(t, result, pubsub.ValidationReject)
 }
 
@@ -255,7 +256,7 @@ func TestValidateBlob_ErrorPathsWithMock(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.error.Error(), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			p := p2ptest.NewTestP2P(t)
 			chainService := &mock.ChainService{Genesis: time.Unix(time.Now().Unix()-int64(params.BeaconConfig().SecondsPerSlot), 0)}
 			s := &Service{
@@ -270,7 +271,7 @@ func TestValidateBlob_ErrorPathsWithMock(t *testing.T) {
 			_, err := p.Encoding().EncodeGossip(buf, msg)
 			require.NoError(t, err)
 
-			topic := p2p.GossipTypeMapping[reflect.TypeOf(msg)]
+			topic := p2p.GossipTypeMapping[reflect.TypeFor[*eth.BlobSidecar]()]
 			digest, err := s.currentForkDigest()
 			require.NoError(t, err)
 			topic = s.addDigestAndIndexToTopic(topic, digest, 0)

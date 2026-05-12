@@ -1,25 +1,22 @@
 package sync
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/types"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/startup"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pkg/errors"
 	ssz "github.com/prysmaticlabs/fastssz"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/signing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/types"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/startup"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
 )
 
 var errNilPubsubMessage = errors.New("nil pubsub message")
-var errInvalidTopic = errors.New("invalid topic format")
 
 func (s *Service) decodePubsubMessage(msg *pubsub.Message) (ssz.Unmarshaler, error) {
 	if msg == nil || msg.Topic == nil || *msg.Topic == "" {
@@ -38,13 +35,15 @@ func (s *Service) decodePubsubMessage(msg *pubsub.Message) (ssz.Unmarshaler, err
 	// Specially handle subnet messages.
 	switch {
 	case strings.Contains(topic, p2p.GossipAttestationMessage):
-		topic = p2p.GossipTypeMapping[reflect.TypeOf(&ethpb.Attestation{})]
+		topic = p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.Attestation]()]
 		// Given that both sync message related subnets have the same message name, we have to
 		// differentiate them below.
 	case strings.Contains(topic, p2p.GossipSyncCommitteeMessage) && !strings.Contains(topic, p2p.SyncContributionAndProofSubnetTopicFormat):
-		topic = p2p.GossipTypeMapping[reflect.TypeOf(&ethpb.SyncCommitteeMessage{})]
+		topic = p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.SyncCommitteeMessage]()]
 	case strings.Contains(topic, p2p.GossipBlobSidecarMessage):
-		topic = p2p.GossipTypeMapping[reflect.TypeOf(&ethpb.BlobSidecar{})]
+		topic = p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.BlobSidecar]()]
+	case strings.Contains(topic, p2p.GossipDataColumnSidecarMessage):
+		topic = p2p.GossipTypeMapping[reflect.TypeFor[*ethpb.DataColumnSidecar]()]
 	}
 
 	base := p2p.GossipTopicMappings(topic, 0)
@@ -73,7 +72,7 @@ func (s *Service) decodePubsubMessage(msg *pubsub.Message) (ssz.Unmarshaler, err
 func (*Service) replaceForkDigest(topic string) (string, error) {
 	subStrings := strings.Split(topic, "/")
 	if len(subStrings) != 4 {
-		return "", errInvalidTopic
+		return "", p2p.ErrInvalidTopic
 	}
 	subStrings[2] = "%x"
 	return strings.Join(subStrings, "/"), nil
@@ -87,6 +86,14 @@ func extractValidDataTypeFromTopic(topic string, digest []byte, clock *startup.C
 		return extractDataTypeFromTypeMap(types.AttestationMap, digest, clock)
 	case p2p.AggregateAndProofSubnetTopicFormat:
 		return extractDataTypeFromTypeMap(types.AggregateAttestationMap, digest, clock)
+	case p2p.AttesterSlashingSubnetTopicFormat:
+		return extractDataTypeFromTypeMap(types.AttesterSlashingMap, digest, clock)
+	case p2p.LightClientOptimisticUpdateTopicFormat:
+		return extractDataTypeFromTypeMap(types.LightClientOptimisticUpdateMap, digest, clock)
+	case p2p.LightClientFinalityUpdateTopicFormat:
+		return extractDataTypeFromTypeMap(types.LightClientFinalityUpdateMap, digest, clock)
+	case p2p.DataColumnSubnetTopicFormat:
+		return extractDataTypeFromTypeMap(types.DataColumnSidecarMap, digest, clock)
 	}
 	return nil, nil
 }
@@ -97,29 +104,21 @@ func extractDataTypeFromTypeMap[T any](typeMap map[[4]byte]func() (T, error), di
 	if len(digest) == 0 {
 		f, ok := typeMap[bytesutil.ToBytes4(params.BeaconConfig().GenesisForkVersion)]
 		if !ok {
-			return zero, fmt.Errorf("no %T type exists for the genesis fork version", zero)
+			return zero, errors.Wrapf(errInvalidDigest, "no %T type exists for the genesis fork version", zero)
 		}
 		return f()
 	}
 	if len(digest) != forkDigestLength {
-		return zero, errors.Errorf("invalid digest returned, wanted a length of %d but received %d", forkDigestLength, len(digest))
+		return zero, errors.Wrapf(errInvalidDigest, "invalid digest returned, wanted a length of %d but received %d", forkDigestLength, len(digest))
 	}
-	vRoot := tor.GenesisValidatorsRoot()
-	for k, f := range typeMap {
-		rDigest, err := signing.ComputeForkDigest(k[:], vRoot[:])
-		if err != nil {
-			return zero, err
-		}
-		if rDigest == bytesutil.ToBytes4(digest) {
-			return f()
-		}
+	forkVersion, _, err := params.ForkDataFromDigest([4]byte(digest))
+	if err != nil {
+		return zero, errors.Wrapf(ErrNoValidDigest, "could not extract %T data type, saw digest=%#x", zero, digest)
 	}
-	return zero, errors.Wrapf(
-		ErrNoValidDigest,
-		"could not extract %T data type, saw digest=%#x, genesis=%v, vr=%#x",
-		zero,
-		digest,
-		tor.GenesisTime(),
-		tor.GenesisValidatorsRoot(),
-	)
+
+	f, ok := typeMap[forkVersion]
+	if ok {
+		return f()
+	}
+	return zero, errors.Wrapf(ErrNoValidDigest, "could not extract %T data type, saw digest=%#x", zero, digest)
 }

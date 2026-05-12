@@ -1,25 +1,24 @@
 package validator
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	mock "github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed"
-	opfeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/operation"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/core/transition"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/operations/synccommittee"
-	mockp2p "github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p/testing"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/rpc/core"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/crypto/bls"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/testing/util"
+	mock "github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed"
+	opfeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/operation"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/core/transition"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/operations/synccommittee"
+	mockp2p "github.com/OffchainLabs/prysm/v7/beacon-chain/p2p/testing"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/rpc/core"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/crypto/bls"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/testing/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -31,7 +30,7 @@ func TestGetSyncMessageBlockRoot_OK(t *testing.T) {
 		HeadFetcher: &mock.ChainService{Root: r},
 		TimeFetcher: &mock.ChainService{Genesis: time.Now()},
 	}
-	res, err := server.GetSyncMessageBlockRoot(context.Background(), &emptypb.Empty{})
+	res, err := server.GetSyncMessageBlockRoot(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 	require.DeepEqual(t, r, res.Root)
 }
@@ -47,7 +46,7 @@ func TestGetSyncMessageBlockRoot_Optimistic(t *testing.T) {
 		TimeFetcher:           &mock.ChainService{Genesis: time.Now()},
 		OptimisticModeFetcher: &mock.ChainService{Optimistic: true},
 	}
-	_, err := server.GetSyncMessageBlockRoot(context.Background(), &emptypb.Empty{})
+	_, err := server.GetSyncMessageBlockRoot(t.Context(), &emptypb.Empty{})
 	s, ok := status.FromError(err)
 	require.Equal(t, true, ok)
 	require.DeepEqual(t, codes.Unavailable, s.Code())
@@ -58,7 +57,7 @@ func TestGetSyncMessageBlockRoot_Optimistic(t *testing.T) {
 		TimeFetcher:           &mock.ChainService{Genesis: time.Now()},
 		OptimisticModeFetcher: &mock.ChainService{Optimistic: false},
 	}
-	_, err = server.GetSyncMessageBlockRoot(context.Background(), &emptypb.Empty{})
+	_, err = server.GetSyncMessageBlockRoot(t.Context(), &emptypb.Empty{})
 	require.NoError(t, err)
 }
 
@@ -77,7 +76,7 @@ func TestSubmitSyncMessage_OK(t *testing.T) {
 		Slot:           1,
 		ValidatorIndex: 2,
 	}
-	_, err := server.SubmitSyncMessage(context.Background(), msg)
+	_, err := server.SubmitSyncMessage(t.Context(), msg)
 	require.NoError(t, err)
 	savedMsgs, err := server.CoreService.SyncCommitteePool.SyncCommitteeMessages(1)
 	require.NoError(t, err)
@@ -95,7 +94,7 @@ func TestGetSyncSubcommitteeIndex_Ok(t *testing.T) {
 	}
 	var pubKey [fieldparams.BLSPubkeyLength]byte
 	// Request slot 0, should get the index 0 for validator 0.
-	res, err := server.GetSyncSubcommitteeIndex(context.Background(), &ethpb.SyncSubcommitteeIndexRequest{
+	res, err := server.GetSyncSubcommitteeIndex(t.Context(), &ethpb.SyncSubcommitteeIndexRequest{
 		PublicKey: pubKey[:], Slot: primitives.Slot(0),
 	})
 	require.NoError(t, err)
@@ -129,14 +128,14 @@ func TestGetSyncCommitteeContribution_FiltersDuplicates(t *testing.T) {
 		BlockRoot:      make([]byte, 32),
 		Signature:      sig,
 	}
-	_, err = server.SubmitSyncMessage(context.Background(), msg)
+	_, err = server.SubmitSyncMessage(t.Context(), msg)
 	require.NoError(t, err)
-	_, err = server.SubmitSyncMessage(context.Background(), msg)
+	_, err = server.SubmitSyncMessage(t.Context(), msg)
 	require.NoError(t, err)
 	val, err := st.ValidatorAtIndex(2)
 	require.NoError(t, err)
 
-	contr, err := server.GetSyncCommitteeContribution(context.Background(),
+	contr, err := server.GetSyncCommitteeContribution(t.Context(),
 		&ethpb.SyncCommitteeContributionRequest{
 			Slot:      1,
 			PublicKey: val.PublicKey,
@@ -161,7 +160,7 @@ func TestSubmitSignedContributionAndProof_OK(t *testing.T) {
 			},
 		},
 	}
-	_, err := server.SubmitSignedContributionAndProof(context.Background(), contribution)
+	_, err := server.SubmitSignedContributionAndProof(t.Context(), contribution)
 	require.NoError(t, err)
 	savedMsgs, err := server.CoreService.SyncCommitteePool.SyncCommitteeContributions(1)
 	require.NoError(t, err)
@@ -190,7 +189,7 @@ func TestSubmitSignedContributionAndProof_Notification(t *testing.T) {
 			},
 		},
 	}
-	_, err := server.SubmitSignedContributionAndProof(context.Background(), contribution)
+	_, err := server.SubmitSignedContributionAndProof(t.Context(), contribution)
 	require.NoError(t, err)
 
 	// Ensure the state notification was broadcast.

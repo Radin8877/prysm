@@ -4,11 +4,11 @@
 package node
 
 import (
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/blockchain"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/execution"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/p2p"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/sync"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/blockchain"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/execution"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/p2p"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/sync"
 	"google.golang.org/grpc"
 )
 
@@ -26,4 +26,5 @@ type Server struct {
 	GenesisTimeFetcher        blockchain.TimeFetcher
 	HeadFetcher               blockchain.HeadFetcher
 	ExecutionChainInfoFetcher execution.ChainInfoFetcher
+	ExecutionEngineCaller     execution.EngineCaller
 }

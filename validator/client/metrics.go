@@ -4,14 +4,16 @@ import (
 	"context"
 	"fmt"
 
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/consensus-types/primitives"
+	"github.com/OffchainLabs/prysm/v7/encoding/bytesutil"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/time/slots"
+	"github.com/OffchainLabs/prysm/v7/validator/client/iface"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/consensus-types/primitives"
-	"github.com/prysmaticlabs/prysm/v5/encoding/bytesutil"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/time/slots"
 	"github.com/sirupsen/logrus"
 )
 
@@ -203,6 +205,22 @@ var (
 			"pubkey",
 		},
 	)
+	validatorPayloadAttestationSubmissionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "validator",
+			Name:      "payload_attestation_submission_total",
+			Help:      "The number of payload attestation submissions by result in the validator client.",
+		},
+		[]string{"result"},
+	)
+	validatorSelfBuildEnvelopeSubmissionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "validator",
+			Name:      "self_build_envelope_submission_total",
+			Help:      "The number of self-build execution payload envelope submissions by result.",
+		},
+		[]string{"result"},
+	)
 )
 
 // LogValidatorGainsAndLosses logs important metrics related to this validator client's
@@ -229,8 +247,12 @@ func (v *validator) LogValidatorGainsAndLosses(ctx context.Context, slot primiti
 	req := &ethpb.ValidatorPerformanceRequest{
 		PublicKeys: pubKeys,
 	}
-	resp, err := v.chainClient.ValidatorPerformance(ctx, req)
+	resp, err := v.prysmChainClient.ValidatorPerformance(ctx, req)
 	if err != nil {
+		if errors.Is(err, iface.ErrNotSupported) {
+			log.WithError(err).Debug("Skipping validator performance metric for non-Prysm beacon node")
+			return nil
+		}
 		return err
 	}
 

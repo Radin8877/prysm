@@ -1,22 +1,21 @@
 package stateutil_test
 
 import (
-	"context"
 	"reflect"
 	"strconv"
 	"testing"
 
-	fieldparams "github.com/prysmaticlabs/prysm/v5/config/fieldparams"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/runtime/interop"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
+	fieldparams "github.com/OffchainLabs/prysm/v7/config/fieldparams"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/runtime/interop"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
 )
 
 func TestState_FieldCount(t *testing.T) {
 	count := params.BeaconConfig().BeaconStateFieldCount
-	typ := reflect.TypeOf(ethpb.BeaconState{})
+	typ := reflect.TypeFor[ethpb.BeaconState]()
 	numFields := 0
 	for i := 0; i < typ.NumField(); i++ {
 		if typ.Field(i).Name == "state" ||
@@ -30,38 +29,38 @@ func TestState_FieldCount(t *testing.T) {
 }
 
 func BenchmarkHashTreeRoot_Generic_512(b *testing.B) {
-	b.StopTimer()
+
 	genesisState := setupGenesisState(b, 512)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, err := genesisState.HashTreeRoot()
 		require.NoError(b, err)
 	}
 }
 
 func BenchmarkHashTreeRoot_Generic_16384(b *testing.B) {
-	b.StopTimer()
+
 	genesisState := setupGenesisState(b, 16384)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, err := genesisState.HashTreeRoot()
 		require.NoError(b, err)
 	}
 }
 
 func BenchmarkHashTreeRoot_Generic_300000(b *testing.B) {
-	b.StopTimer()
+
 	genesisState := setupGenesisState(b, 300000)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_, err := genesisState.HashTreeRoot()
 		require.NoError(b, err)
 	}
 }
 
-func setupGenesisState(tb testing.TB, count uint64) *ethpb.BeaconState {
-	genesisState, _, err := interop.GenerateGenesisState(context.Background(), 0, 1)
-	require.NoError(tb, err, "Could not generate genesis beacon state")
+func setupGenesisState(t testing.TB, count uint64) *ethpb.BeaconState {
+	genesisState, _, err := interop.GenerateGenesisState(t.Context(), 0, 1)
+	require.NoError(t, err, "Could not generate genesis beacon state")
 	for i := uint64(1); i < count; i++ {
 		var someRoot [32]byte
 		var someKey [fieldparams.BLSPubkeyLength]byte

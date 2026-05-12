@@ -1,15 +1,15 @@
 package execution
 
 import (
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/cache"
+	statefeed "github.com/OffchainLabs/prysm/v7/beacon-chain/core/feed/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/db"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/state/stategen"
+	"github.com/OffchainLabs/prysm/v7/beacon-chain/verification"
+	"github.com/OffchainLabs/prysm/v7/network"
+	"github.com/OffchainLabs/prysm/v7/network/authorization"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/cache"
-	statefeed "github.com/prysmaticlabs/prysm/v5/beacon-chain/core/feed/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/state/stategen"
-	"github.com/prysmaticlabs/prysm/v5/beacon-chain/verification"
-	"github.com/prysmaticlabs/prysm/v5/network"
-	"github.com/prysmaticlabs/prysm/v5/network/authorization"
 )
 
 type Option func(s *Service) error
@@ -121,6 +121,14 @@ func WithJwtId(jwtId string) Option {
 func WithVerifierWaiter(v *verification.InitializerWaiter) Option {
 	return func(s *Service) error {
 		s.verifierWaiter = v
+		return nil
+	}
+}
+
+// WithGraffitiInfo sets the GraffitiInfo for client version tracking.
+func WithGraffitiInfo(g *GraffitiInfo) Option {
+	return func(s *Service) error {
+		s.graffitiInfo = g
 		return nil
 	}
 }

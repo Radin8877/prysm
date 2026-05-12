@@ -3,7 +3,6 @@ package rpc
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,20 +13,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/prysm/v7/api"
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	ethpb "github.com/OffchainLabs/prysm/v7/proto/prysm/v1alpha1"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	validatormock "github.com/OffchainLabs/prysm/v7/testing/validator-mock"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/client"
+	"github.com/OffchainLabs/prysm/v7/validator/client/testutil"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager/derived"
+	constant "github.com/OffchainLabs/prysm/v7/validator/testing"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/api"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	ethpb "github.com/prysmaticlabs/prysm/v5/proto/prysm/v1alpha1"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	validatormock "github.com/prysmaticlabs/prysm/v5/testing/validator-mock"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/iface"
-	mock "github.com/prysmaticlabs/prysm/v5/validator/accounts/testing"
-	"github.com/prysmaticlabs/prysm/v5/validator/client"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager/derived"
-	constant "github.com/prysmaticlabs/prysm/v5/validator/testing"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -37,7 +36,7 @@ var (
 )
 
 func TestServer_ListAccounts(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
 	// We attempt to create the wallet.
@@ -54,8 +53,9 @@ func TestServer_ListAccounts(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   constant.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -142,7 +142,7 @@ func TestServer_ListAccounts(t *testing.T) {
 }
 
 func TestServer_BackupAccounts(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	localWalletDir := setupWalletDir(t)
 	defaultWalletPath = localWalletDir
 	// We attempt to create the wallet.
@@ -159,8 +159,9 @@ func TestServer_BackupAccounts(t *testing.T) {
 	km, err := w.InitializeKeymanager(ctx, iface.InitKeymanagerConfig{ListenForChanges: false})
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   constant.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})
@@ -235,7 +236,7 @@ func TestServer_BackupAccounts(t *testing.T) {
 func TestServer_VoluntaryExit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-	ctx := context.Background()
+	ctx := t.Context()
 	mockValidatorClient := validatormock.NewMockValidatorClient(ctrl)
 	mockNodeClient := validatormock.NewMockNodeClient(ctrl)
 
@@ -283,8 +284,9 @@ func TestServer_VoluntaryExit(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, err)
 	vs, err := client.NewValidatorService(ctx, &client.Config{
+		Conn:   constant.MockNodeConnection(),
 		Wallet: w,
-		Validator: &mock.Validator{
+		Validator: &testutil.FakeValidator{
 			Km: km,
 		},
 	})

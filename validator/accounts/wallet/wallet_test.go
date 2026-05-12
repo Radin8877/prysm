@@ -1,7 +1,6 @@
 package wallet_test
 
 import (
-	"context"
 	"flag"
 	"io"
 	"os"
@@ -9,15 +8,15 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/OffchainLabs/prysm/v7/cmd/validator/flags"
+	"github.com/OffchainLabs/prysm/v7/config/params"
+	"github.com/OffchainLabs/prysm/v7/testing/assert"
+	"github.com/OffchainLabs/prysm/v7/testing/require"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/iface"
+	"github.com/OffchainLabs/prysm/v7/validator/accounts/wallet"
+	"github.com/OffchainLabs/prysm/v7/validator/keymanager"
+	remoteweb3signer "github.com/OffchainLabs/prysm/v7/validator/keymanager/remote-web3signer"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/prysmaticlabs/prysm/v5/cmd/validator/flags"
-	"github.com/prysmaticlabs/prysm/v5/config/params"
-	"github.com/prysmaticlabs/prysm/v5/testing/assert"
-	"github.com/prysmaticlabs/prysm/v5/testing/require"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/iface"
-	"github.com/prysmaticlabs/prysm/v5/validator/accounts/wallet"
-	"github.com/prysmaticlabs/prysm/v5/validator/keymanager"
-	remoteweb3signer "github.com/prysmaticlabs/prysm/v5/validator/keymanager/remote-web3signer"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -66,7 +65,7 @@ func TestWallet_InitializeKeymanager_web3Signer_HappyPath(t *testing.T) {
 	newDir := filepath.Join(t.TempDir(), "new")
 	set.String(flags.WalletDirFlag.Name, newDir, "")
 	w := wallet.NewWalletForWeb3Signer(cli.NewContext(&app, set, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 	root, err := hexutil.Decode("0x270d43e74ce340de4bca2b1936beca0f4f5408d9e78aec4850920baf659d5b69")
 	require.NoError(t, err)
 	config := iface.InitKeymanagerConfig{
@@ -87,7 +86,7 @@ func TestWallet_InitializeKeymanager_web3Signer_nilConfig(t *testing.T) {
 	newDir := filepath.Join(t.TempDir(), "new")
 	set.String(flags.WalletDirFlag.Name, newDir, "")
 	w := wallet.NewWalletForWeb3Signer(cli.NewContext(&app, set, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 	config := iface.InitKeymanagerConfig{
 		ListenForChanges: false,
 		Web3SignerConfig: nil,
